@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import re
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 # max images returned to the UI picker (product galleries can be long)
 MAX_PRODUCT_IMAGES = 16
@@ -60,6 +61,51 @@ def _looks_like_logo(url: str) -> bool:
     u = url.lower()
     # tp=nav / ?TP=NAV are navigation/marketing model shots, not the product
     return any(k in u for k in (".svg", "logo", "favicon", "spacer", "pixel", "transparent", "tp=nav"))
+
+
+# Target long edge for garment images. Store CDNs (Gap Inc et al.) serve a tiny
+# thumbnail when the URL has width/wid/w=N (e.g. ?width=92) — rewriting it up
+# gives CatVTON real fabric detail instead of a mushy low-res blob.
+TARGET_IMAGE_WIDTH = 1024
+
+# Pure tracking/fingerprint noise in image URLs — safe to drop.
+JUNK_QUERY_PARAMS = {
+    "ts", "t", "timestamp", "v", "ver", "itok", "rand", "nonce",
+    "srsltid", "gclid", "fbclid", "mc_eid", "msclkid",
+    "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
+}
+WIDTH_QUERY_PARAMS = {"width", "wid", "w"}
+
+
+def clean_image_url(url: str) -> str:
+    """Normalize a store image URL for fetching: drop tracking/junk query
+    params and rewrite width/wid/w=N up to TARGET_IMAGE_WIDTH (so we don't save
+    92px thumbnails). Everything else is left intact — some CDNs return 404 if
+    you remove params they expect. Returns the URL unchanged if it can't be
+    parsed or has no query string."""
+    if not url or url.startswith("data:"):
+        return url
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return url
+    if not parts.query:
+        return url
+    kept: list[tuple[str, str]] = []
+    for k, v in parse_qsl(parts.query, keep_blank_values=True):
+        kl = k.lower()
+        if kl in JUNK_QUERY_PARAMS:
+            continue
+        if kl in WIDTH_QUERY_PARAMS:
+            try:
+                n = int(float(v))
+            except ValueError:
+                n = 0
+            if n and n < TARGET_IMAGE_WIDTH:
+                v = str(TARGET_IMAGE_WIDTH)
+        kept.append((k, v))
+    q = urlencode(kept) if kept else ""
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, q, parts.fragment))
 
 
 def jsonld_image_urls(node: Any) -> list[str]:

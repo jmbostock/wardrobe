@@ -148,6 +148,30 @@ def test_extract_product_page_expanded_images():
     assert "flat-lay.jpg" in " ".join(urls)
 
 
+def test_clean_image_url():
+    # tiny thumbnail width rewritten up; tracking/junk params dropped
+    got = imglink.clean_image_url(
+        "https://oldnavy.gap.com/webcontent/0023/543/365/cn23343565.jpg"
+        "?width=92&ts=1700000000&srsltid=afjkl&utm_source=newsletter"
+    )
+    assert "width=1024" in got, got
+    assert "ts=" not in got
+    assert "srsltid" not in got
+    assert "utm_source" not in got
+    # wid / w variants handled too
+    assert "wid=1024" in imglink.clean_image_url("https://cdn.com/x.jpg?wid=60")
+    assert "w=1024" in imglink.clean_image_url("https://cdn.com/x.jpg?w=200")
+    # already-large widths are left alone
+    assert "width=1600" in imglink.clean_image_url("https://cdn.com/x.jpg?width=1600&qlt=80")
+    # non-width params preserved
+    got = imglink.clean_image_url("https://cdn.com/x.jpg?width=92&qlt=70&fmt=webp&op_sharpen=1")
+    assert "qlt=70" in got and "fmt=webp" in got and "op_sharpen=1" in got
+    # no-query / data / protocol-relative pass through sensibly
+    assert imglink.clean_image_url("https://cdn.com/x.jpg") == "https://cdn.com/x.jpg"
+    assert imglink.clean_image_url("data:image/png;base64,AAAA") == "data:image/png;base64,AAAA"
+    assert "width=1024" in imglink.clean_image_url("//cdn.com/x.jpg?width=92")
+
+
 if __name__ == "__main__":
     test_create_upload_serve_delete()
     test_cross_user_isolation()
@@ -157,4 +181,5 @@ if __name__ == "__main__":
     test_extract_product_page()
     test_extract_product_page_color_from_text()
     test_extract_product_page_expanded_images()
+    test_clean_image_url()
     print("wardrobe tests OK")

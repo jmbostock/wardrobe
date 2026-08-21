@@ -23,7 +23,13 @@ from urllib.parse import urljoin
 import httpx
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 
-from .imglink import detect_ext, extract_image_url_from_html, extract_product_page, is_image_bytes
+from .imglink import (
+    clean_image_url,
+    detect_ext,
+    extract_image_url_from_html,
+    extract_product_page,
+    is_image_bytes,
+)
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -112,8 +118,9 @@ def _fetch_product_image(url: str) -> bytes:
     """Fetch an image from a direct image URL OR a store product page (HTML).
     For HTML pages we extract the product image (og:image → JSON-LD → largest
     product <img>) and fetch that. Protocol-relative / relative image URLs are
-    resolved against the page URL."""
-    data = _fetch_url_bytes(url)
+    resolved against the page URL. URLs are cleaned first (junk query params
+    dropped, width/wid/w bumped up) so we don't save 92px CDN thumbnails."""
+    data = _fetch_url_bytes(clean_image_url(url))
     if is_image_bytes(data):
         return data
     img_url = extract_image_url_from_html(data.decode("utf-8", errors="ignore"))
@@ -122,7 +129,7 @@ def _fetch_product_image(url: str) -> bytes:
             400,
             "no product image found on that page — try a direct image URL or upload the file",
         )
-    return _fetch_url_bytes(urljoin(url, img_url))
+    return _fetch_url_bytes(clean_image_url(urljoin(url, img_url)))
 
 
 def _garment_dict(user_id: int, g) -> dict:
@@ -337,8 +344,10 @@ def parse_garment_link(
             400,
             "no product images found on that page — try a direct image URL or upload the file",
         )
-    # resolve protocol-relative / relative image URLs against the page URL
-    info["images"] = [urljoin(req.url, u) for u in info["images"]]
+    # resolve protocol-relative / relative image URLs against the page URL,
+    # then clean them (drop tracking params, bump width) so the picker shows
+    # high-res previews and the chosen URL fetches clean.
+    info["images"] = [clean_image_url(urljoin(req.url, u)) for u in info["images"]]
     return info
 
 
