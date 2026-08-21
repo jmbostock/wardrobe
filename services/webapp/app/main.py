@@ -34,7 +34,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import auth, imageqa, outfits, photos, recommender, tryon, weather
+from . import auth, imageqa, outfits, photos, recommender, render, tryon, weather
 from .config import settings
 from .outfits import OutfitStore
 from .recommender import Weather
@@ -119,11 +119,18 @@ def _fetch_product_image(url: str) -> bytes:
     For HTML pages we extract the product image (og:image → JSON-LD → largest
     product <img>) and fetch that. Protocol-relative / relative image URLs are
     resolved against the page URL. URLs are cleaned first (junk query params
-    dropped, width/wid/w bumped up) so we don't save 92px CDN thumbnails."""
+    dropped, width/wid/w bumped up) so we don't save 92px CDN thumbnails. If the
+    page is a JS-rendered SPA with no images in the raw HTML, we render it in
+    headless Chromium as a fallback before giving up."""
     data = _fetch_url_bytes(clean_image_url(url))
     if is_image_bytes(data):
         return data
-    img_url = extract_image_url_from_html(data.decode("utf-8", errors="ignore"))
+    html = data.decode("utf-8", errors="ignore")
+    img_url = extract_image_url_from_html(html)
+    if not img_url:
+        rendered = render.render_page_html(clean_image_url(url))
+        if rendered:
+            img_url = extract_image_url_from_html(rendered)
     if not img_url:
         raise HTTPException(
             400,
@@ -187,18 +194,18 @@ class PhotoDescriptionRequest(BaseModel):
 
 
 class WardrobeCreate(BaseModel):
-    name: str = Field(..., min_length=1, max_length=100)
+    name: str = Field(..., min_length=1, max_length=255)
     category: str = Field(...)
-    color: str = Field("", max_length=40)
-    image_url: str | None = Field(None, max_length=500)
+    color: str = Field("", max_length=60)
+    image_url: str | None = Field(None, max_length=2000)
 
 
 class ImageUrlRequest(BaseModel):
-    url: str = Field(..., max_length=500)
+    url: str = Field(..., max_length=2000)
 
 
 class ParseLinkRequest(BaseModel):
-    url: str = Field(..., max_length=500)
+    url: str = Field(..., max_length=2000)
 
 
 class OutfitSave(BaseModel):
@@ -314,7 +321,7 @@ def create_garment(req: WardrobeCreate, user: dict = Depends(get_current_user)) 
         raise HTTPException(
             400, f"category must be one of: {', '.join(sorted(WARDROBE_CATEGORIES))}"
         )
-    name = req.name.strip()
+    name = req.name.strip()[:200]
     if not name:
         raise HTTPException(400, "name required")
     color = req.color.strip().lower()
@@ -339,6 +346,12 @@ def parse_garment_link(
     if is_image_bytes(data):
         return {"name": "", "description": "", "color": "", "category": None, "images": [req.url]}
     info = extract_product_page(data.decode("utf-8", errors="ignore"))
+    if not info["images"]:
+        # JS-rendered page (SPA like Express): the product HTML only exists after
+        # client-side render — try headless Chromium before giving up.
+        rendered = render.render_page_html(req.url)
+        if rendered:
+            info = extract_product_page(rendered)
     if not info["images"]:
         raise HTTPException(
             400,

@@ -900,7 +900,7 @@ function selectPreview(card) {
 
 $('g-add').addEventListener('click', async () => {
   const status = $('g-status');
-  const name = $('g-name').value.trim();
+  const name = $('g-name').value.trim().slice(0, 200);
   const category = $('g-category').value;
   const color = $('g-color').value.trim();
   if (!name) { status.textContent = 'name required'; return; }

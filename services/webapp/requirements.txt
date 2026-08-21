@@ -5,6 +5,7 @@ python-multipart>=0.0.9
 httpx>=0.27
 pillow>=10.0
 beautifulsoup4>=4.12
+playwright>=1.44
 
 # Phase 2 (optional): garment background removal before try-on
 # rembg[cpu]>=2.0
