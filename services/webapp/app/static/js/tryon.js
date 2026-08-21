@@ -360,10 +360,9 @@ async function runEdit(baseUrl, prompt) {
     const data = await res.json();
     lastResultUrl = data.result_url;
     const url = await authImageUrl(data.result_url);
-    $('result').innerHTML = '';
-    const img = document.createElement('img'); img.src = url; $('result').appendChild(img);
-    // before/after: original (base) next to the edited render
-    showCompare(baseUrl, url);
+    $('result').innerHTML = '';             // drop the progress panel
+    $('savedimg-preview').hidden = true;    // compare is now the 2 side-by-side images
+    showCompare(baseUrl, url);              // original | latest
     $('chat-bar').hidden = false;
     $('chat-input').disabled = false;
     $('chat-note').textContent = 'edited with: “' + prompt + '”';
