@@ -50,3 +50,10 @@ ENV HF_HOME=/root/.cache/huggingface
 EXPOSE 8188
 CMD ["python", "main.py", "--listen", "0.0.0.0", "--port", "8188", "--disable-auto-launch"]
 
+# ComfyUI's requirements may have upgraded torch to a cu13 build that needs
+# libcudart.so.13 — re-pin torch/torchvision/torchaudio to CUDA 12.8 (matches
+# this base image / Blackwell sm_120) and expose the CUDA runtime libs.
+RUN pip install --no-cache-dir torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1 \
+      --index-url https://download.pytorch.org/whl/cu128
+ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:${LD_LIBRARY_PATH:-}
+
