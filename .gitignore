@@ -8,3 +8,9 @@ data/
 __pycache__/
 *.pyc
 .venv/
+
+# stray screenshots / temp renders dropped in the repo root during QA
+/tmp_*.png
+/tmp_*.jpg
+/tmp_*.jpeg
+/tmp_*.webp
