@@ -12,11 +12,11 @@
       "negative": ["7", 0],
       "latent_image": ["8", 0],
       "seed": 0,
-      "steps": 40,
-      "cfg": 7.5,
+      "steps": 30,
+      "cfg": 7.0,
       "sampler_name": "euler",
       "scheduler": "normal",
-      "denoise": 1.0
+      "denoise": 0.7
     }
   },
   "9": { "class_type": "VAEDecode", "inputs": { "samples": ["3", 0], "vae": ["4", 2] } },
