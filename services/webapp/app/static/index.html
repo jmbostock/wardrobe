@@ -8,19 +8,24 @@
   :root { --bg:#0f1216; --card:#181d24; --line:#262d36; --txt:#e8ecf1; --mut:#9aa7b4; --acc:#4f9cf9; }
   * { box-sizing: border-box; }
   body { margin:0; font-family: system-ui, sans-serif; background:var(--bg); color:var(--txt); }
-  header { padding:20px 24px; border-bottom:1px solid var(--line); display:flex; gap:12px; align-items:baseline; }
-  header h1 { font-size:20px; margin:0; }
-  header span { color:var(--mut); font-size:13px; }
+  header { padding:14px 24px; border-bottom:1px solid var(--line); display:flex; gap:14px; align-items:center; }
+  header h1 { font-size:19px; margin:0; }
+  header .tag { color:var(--mut); font-size:13px; }
+  nav { margin-left:auto; display:flex; gap:8px; align-items:center; }
+  nav button { background:transparent; border:1px solid var(--line); }
+  nav button.active { background:var(--acc); border-color:var(--acc); }
   main { max-width:960px; margin:0 auto; padding:24px; display:grid; gap:20px; }
   .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; }
   .card h2 { margin:0 0 12px; font-size:15px; color:var(--mut); text-transform:uppercase; letter-spacing:.5px; }
   .row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
-  select, input[type=text], input[type=password], input[type=file], button { padding:10px 12px; border-radius:8px; border:1px solid var(--line);
-    background:#0f1216; color:var(--txt); font-size:14px; }
+  select, input[type=text], input[type=email], input[type=password], input[type=file], button {
+    padding:10px 12px; border-radius:8px; border:1px solid var(--line); background:#0f1216; color:var(--txt); font-size:14px; }
   button { background:var(--acc); border:none; cursor:pointer; font-weight:600; }
   button:disabled { opacity:.5; cursor:default; }
-  #weather { display:flex; gap:16px; flex-wrap:wrap; }
-  #weather b { font-size:26px; }
+  button.ghost { background:transparent; border:1px solid var(--line); }
+  button.danger { background:#7a2430; }
+  #weather { display:flex; gap:18px; flex-wrap:wrap; align-items:baseline; }
+  #weather b { font-size:30px; }
   .cond { color:var(--mut); }
   .garment { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px dashed var(--line); }
   .garment:last-child { border-bottom:none; }
@@ -31,148 +36,251 @@
   #result img { max-width:100%; border-radius:10px; border:1px solid var(--line); }
   #webcam { max-width:100%; border-radius:10px; border:1px solid var(--line); background:#000; }
   .muted { color:var(--mut); font-size:13px; }
+  .block { display:grid; gap:10px; margin-bottom:14px; }
+  .block label { font-size:12px; color:var(--mut); text-transform:uppercase; }
+  .photos { display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:12px; }
+  .photo { border:1px solid var(--line); border-radius:10px; overflow:hidden; background:#0f1216; }
+  .photo img { width:100%; height:130px; object-fit:cover; display:block; }
+  .photo .meta { padding:8px; display:grid; gap:6px; }
+  .badge { font-size:11px; color:#0f1216; background:var(--acc); border-radius:5px; padding:1px 6px; justify-self:start; }
+  .toast { position:fixed; bottom:18px; left:50%; transform:translateX(-50%); background:var(--acc);
+    color:#0f1216; padding:10px 16px; border-radius:8px; font-weight:600; display:none; z-index:10; }
+  .field { flex:1; min-width:220px; }
 </style>
 </head>
 <body>
-<header><h1>altacloset</h1><span>local AI stylist</span><button id="signout-btn" hidden style="margin-left:auto">Sign out</button></header>
+<header>
+  <h1>altacloset</h1><span class="tag">local AI stylist</span>
+  <nav>
+    <button id="tab-outfit" class="active">Outfit</button>
+    <button id="tab-tryon">Try on</button>
+    <button id="tab-account">Account</button>
+    <button id="signout-btn" hidden class="ghost">Sign out</button>
+  </nav>
+</header>
 <main>
 
   <section class="card" id="auth-card">
     <h2>Account</h2>
+    <div class="block">
+      <label>Email</label>
+      <input type="email" id="auth-email" placeholder="you@example.com" autocomplete="email" class="field" />
+    </div>
+    <div class="block">
+      <label>Password</label>
+      <input type="password" id="auth-pass" placeholder="password (8+ chars)" autocomplete="current-password" class="field" />
+    </div>
     <div class="row">
-      <input type="text" id="auth-user" placeholder="username" autocomplete="username" />
-      <input type="password" id="auth-pass" placeholder="password (8+ chars)" autocomplete="current-password" />
       <button id="auth-login">Log in</button>
-      <button id="auth-register">Register</button>
+      <button id="auth-register">Sign up</button>
       <span class="muted" id="auth-status"></span>
     </div>
   </section>
 
   <div id="app" hidden>
-  <section class="card">
-    <h2>Weather</h2>
-    <div id="weather"><span class="muted">loading…</span></div>
-  </section>
 
-  <section class="card">
-    <h2>What's the occasion?</h2>
-    <div class="row">
-      <select id="activity">
-        <option value="casual">Casual / errands</option>
-        <option value="office" selected>Office / work</option>
-        <option value="date">Date / dinner</option>
-        <option value="hiking">Hiking / active</option>
-        <option value="beach">Beach</option>
-        <option value="formal">Wedding / formal</option>
-      </select>
-      <input type="text" id="prompt" placeholder="style hint (e.g. navy, casual, wool…)" style="flex:1" />
-      <button id="recommend-btn">Recommend outfit</button>
-    </div>
-    <div id="outfit"></div>
-    <ul id="reasons"></ul>
-  </section>
+    <!-- ============ Outfit ============ -->
+    <section id="view-outfit">
+      <div class="card">
+        <h2>Weather</h2>
+        <div id="weather"><span class="muted">loading…</span></div>
+        <div class="muted" id="weather-loc"></div>
+      </div>
+      <div class="card" style="margin-top:20px">
+        <h2>What's the occasion?</h2>
+        <div class="row">
+          <select id="activity">
+            <option value="casual">Casual / errands</option>
+            <option value="office" selected>Office / work</option>
+            <option value="date">Date / dinner</option>
+            <option value="hiking">Hiking / active</option>
+            <option value="beach">Beach</option>
+            <option value="formal">Wedding / formal</option>
+          </select>
+          <input type="text" id="prompt" placeholder="style hint (e.g. navy, casual, wool…)" class="field" />
+          <button id="recommend-btn">Recommend outfit</button>
+        </div>
+        <div id="outfit" style="margin-top:10px"></div>
+        <ul id="reasons"></ul>
+      </div>
+    </section>
 
-  <section class="card">
-    <h2>Try it on</h2>
-    <p class="muted">Put the recommended top on a photo — upload one, or capture from webcam. (Phase 2: requires ComfyUI + CatVTON running.)</p>
-    <div class="row">
-      <select id="garment-select"></select>
-      <label class="muted">person photo: <input type="file" id="person-file" accept="image/*" /></label>
-      <button id="webcam-btn">Capture from webcam</button>
-      <button id="tryon-btn">Try on</button>
-    </div>
-    <video id="webcam" hidden playsinline></video>
-    <div id="result" style="margin-top:12px"></div>
-  </section>
+    <!-- ============ Try on ============ -->
+    <section id="view-tryon" hidden>
+      <div class="card">
+        <h2>Try it on</h2>
+        <p class="muted">Put a garment on a photo of you — use a saved photo, upload one, or capture from webcam. (Phase 2: requires ComfyUI + CatVTON running.)</p>
+        <div class="block">
+          <label>Person photo source</label>
+          <div class="row">
+            <label><input type="radio" name="psrc" value="saved" checked /> Saved photo</label>
+            <label><input type="radio" name="psrc" value="upload" /> Upload</label>
+            <label><input type="radio" name="psrc" value="webcam" /> Webcam</label>
+          </div>
+          <select id="saved-photo" class="field"></select>
+          <input type="file" id="person-file" accept="image/*" hidden />
+          <div id="webcam-row" hidden>
+            <video id="webcam" hidden playsinline style="max-width:100%;border-radius:10px;background:#000"></video>
+            <div class="row" style="margin-top:8px">
+              <button id="webcam-btn" class="ghost">Start webcam</button>
+              <span class="muted">click the preview to capture</span>
+            </div>
+          </div>
+        </div>
+        <div class="block">
+          <label>Garment</label>
+          <select id="garment-select" class="field"></select>
+        </div>
+        <button id="tryon-btn">Try on</button>
+        <div id="result" style="margin-top:12px"></div>
+      </div>
+    </section>
+
+    <!-- ============ Account ============ -->
+    <section id="view-account" hidden>
+      <div class="card">
+        <h2>Account</h2>
+        <div class="block">
+          <label>Email</label>
+          <div id="acct-email" class="muted">—</div>
+        </div>
+        <div class="block">
+          <label>Location (zip, city, or "lat,lon") — default San Mateo, CA 94403</label>
+          <div class="row">
+            <input type="text" id="loc-input" placeholder="94403" class="field" />
+            <button id="loc-save">Save location</button>
+            <span class="muted" id="loc-status"></span>
+          </div>
+        </div>
+        <div class="block">
+          <label>Change password</label>
+          <div class="row">
+            <input type="password" id="pw-current" placeholder="current password" />
+            <input type="password" id="pw-new" placeholder="new password (8+)" />
+            <button id="pw-save">Update password</button>
+            <span class="muted" id="pw-status"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:20px">
+        <h2>My photos</h2>
+        <p class="muted">These are the person photos used for try-on. Mark one as default.</p>
+        <div class="row" style="margin-bottom:12px">
+          <input type="file" id="photo-upload" accept="image/*" hidden />
+          <button id="photo-upload-btn">Upload a photo</button>
+        </div>
+        <div id="photos" class="photos"></div>
+      </div>
+    </section>
+
   </div>
-
 </main>
+<div class="toast" id="toast"></div>
 
 <script>
 const $ = (id) => document.getElementById(id);
 const TOKEN_KEY = 'altacloset_token';
 
-// ---------- auth ----------
+// ---------- helpers ----------
 function getToken() { return localStorage.getItem(TOKEN_KEY); }
 function setToken(t) { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY); }
-
-// fetch wrapper that adds the bearer token and handles session expiry
+function toast(msg) {
+  const t = $('toast'); t.textContent = msg; t.style.display = 'block';
+  clearTimeout(t._h); t._h = setTimeout(() => { t.style.display = 'none'; }, 2500);
+}
 async function api(path, opts = {}) {
   const headers = new Headers(opts.headers || {});
   const token = getToken();
   if (token) headers.set('Authorization', 'Bearer ' + token);
   const res = await fetch(path, { ...opts, headers });
-  if (res.status === 401 && path !== '/api/auth/login' && path !== '/api/auth/register') {
+  if (res.status === 401 && !path.startsWith('/api/auth/')) {
     setToken(null); showAuth();
     $('auth-status').textContent = 'session expired — log in again';
     throw new Error('session expired');
   }
   return res;
 }
+async function apiJson(path, opts = {}) {
+  const res = await api(path, opts);
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || ('http ' + res.status));
+  return res.json();
+}
+async function authImageUrl(path) {
+  const res = await api(path);
+  return URL.createObjectURL(await res.blob());
+}
 
+// ---------- auth ----------
 async function authAction(endpoint) {
-  const body = { username: $('auth-user').value.trim(), password: $('auth-pass').value };
+  const body = { email: $('auth-email').value.trim(), password: $('auth-pass').value };
   const res = await fetch('/api/auth/' + endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   });
   if (!res.ok) { $('auth-status').textContent = (await res.json()).detail || 'error'; return; }
   const data = await res.json();
   setToken(data.token);
-  $('auth-status').textContent = 'signed in as ' + data.user.username;
+  $('auth-status').textContent = 'signed in as ' + data.user.email;
   $('auth-pass').value = '';
   enterApp();
 }
-
 $('auth-login').addEventListener('click', () => authAction('login'));
 $('auth-register').addEventListener('click', () => authAction('register'));
 $('auth-pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') authAction('login'); });
 $('signout-btn').addEventListener('click', () => { setToken(null); showAuth(); });
 
 function showAuth() {
-  $('auth-card').hidden = false;
-  $('app').hidden = true;
-  $('signout-btn').hidden = true;
+  $('auth-card').hidden = false; $('app').hidden = true; $('signout-btn').hidden = true;
 }
 function enterApp() {
-  $('auth-card').hidden = true;
-  $('app').hidden = false;
-  $('signout-btn').hidden = false;
-  loadWeather();
-  populateGarments(null);
+  $('auth-card').hidden = true; $('app').hidden = false; $('signout-btn').hidden = false;
+  showView('outfit');
+  loadWeather(); populateGarments(null); loadAccount(); loadPhotos(); loadSavedPhotos();
 }
+
+// ---------- tabs ----------
+function showView(name) {
+  ['outfit', 'tryon', 'account'].forEach((v) => {
+    $('view-' + v).hidden = (v !== name);
+    $('tab-' + v).classList.toggle('active', v === name);
+  });
+  if (name === 'tryon') { loadSavedPhotos(); populateGarments(null); }
+}
+$('tab-outfit').addEventListener('click', () => showView('outfit'));
+$('tab-tryon').addEventListener('click', () => showView('tryon'));
+$('tab-account').addEventListener('click', () => showView('account'));
 
 // ---------- weather ----------
 async function loadWeather() {
   try {
-    const res = await api('/api/weather');
-    if (!res.ok) throw new Error('http ' + res.status);
-    const w = await res.json();
+    const w = await apiJson('/api/weather');
     $('weather').innerHTML =
-      `<b>${w.feels_like_c ?? w.temp_c}°C</b>` +
+      `<b>${w.temp_f}°F</b>` +
+      `<span class="cond">feels ${w.feels_like_f}°F</span>` +
       `<span class="cond">${w.condition}</span>` +
       `<span class="cond">wind ${w.wind_kph} km/h</span>` +
       `<span class="cond">humidity ${w.humidity}%</span>`;
+    const acct = await apiJson('/api/account');
+    $('weather-loc').textContent = 'location: ' + (acct.location.label || `custom (${acct.location.lat}, ${acct.location.lon})`);
   } catch (e) { $('weather').innerHTML = '<span class="muted">weather unavailable</span>'; }
 }
 
 // ---------- recommend ----------
 let lastOutfit = null;
-
 $('recommend-btn').addEventListener('click', async () => {
   const btn = $('recommend-btn'); btn.disabled = true;
   try {
-    const res = await api('/api/recommend', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    const data = await apiJson('/api/recommend', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ activity: $('activity').value, prompt: $('prompt').value || null }),
     });
-    if (!res.ok) throw new Error(await res.text());
-    const data = await res.json();
     lastOutfit = data.outfit;
     renderOutfit(data.outfit);
     $('reasons').innerHTML = (data.reasoning || []).map((r) => `<li>${r}</li>`).join('');
+    $('weather').innerHTML =
+      `<b>${data.weather_used.temp_f}°F</b>` +
+      `<span class="cond">feels ${data.weather_used.feels_like_f}°F</span>` +
+      `<span class="cond">${data.weather_used.condition}</span>`;
     populateGarments(data.outfit);
   } catch (e) { alert('recommend failed: ' + e); }
   finally { btn.disabled = false; }
@@ -182,8 +290,7 @@ function renderOutfit(outfit) {
   const order = [['top','Top'], ['bottom','Bottom'], ['outerwear','Outer'], ['footwear','Shoes']];
   let html = '';
   for (const [key, label] of order) {
-    const g = outfit[key];
-    if (!g) continue;
+    const g = outfit[key]; if (!g) continue;
     html += `<div class="garment"><span class="role">${label}</span>` +
             `<span class="swatch" style="background:${g.color_hex || '#888'}"></span>` +
             `<span class="name">${g.name}</span></div>`;
@@ -196,55 +303,149 @@ function renderOutfit(outfit) {
   $('outfit').innerHTML = html || '<p class="muted">no outfit — wardrobe empty?</p>';
 }
 
-function populateGarments(outfit) {
+async function populateGarments(outfit) {
   const top = outfit && outfit.top;
-  const sel = $('garment-select');
-  sel.innerHTML = '';
+  const sel = $('garment-select'); sel.innerHTML = '';
   if (top) sel.add(new Option(`${top.name} (recommended #${top.id})`, top.id));
-  api('/api/wardrobe').then((r) => r.json()).then((items) => {
+  try {
+    const items = await apiJson('/api/wardrobe');
     items.filter((g) => g.category === 'top' || g.category === 'dress').forEach((g) => {
       if (!top || g.id !== top.id) sel.add(new Option(g.name, g.id));
     });
-  }).catch(() => {});
+  } catch (e) { /* ignore */ }
 }
+
+// ---------- account ----------
+async function loadAccount() {
+  try {
+    const a = await apiJson('/api/account');
+    $('acct-email').textContent = a.user.email;
+    $('loc-input').value = a.location.label ? '' : `${a.location.lat}, ${a.location.lon}`;
+  } catch (e) { /* ignore */ }
+}
+$('loc-save').addEventListener('click', async () => {
+  $('loc-status').textContent = 'resolving…';
+  try {
+    const r = await apiJson('/api/account/location', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ location: $('loc-input').value }),
+    });
+    $('loc-status').textContent = `saved: ${r.location.name}${r.location.country ? ', ' + r.location.country : ''}`;
+    loadWeather();
+  } catch (e) { $('loc-status').textContent = e.message; }
+});
+$('pw-save').addEventListener('click', async () => {
+  try {
+    await apiJson('/api/account/password', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ current_password: $('pw-current').value, new_password: $('pw-new').value }),
+    });
+    $('pw-current').value = ''; $('pw-new').value = '';
+    $('pw-status').textContent = 'password updated'; toast('password updated');
+  } catch (e) { $('pw-status').textContent = e.message; }
+});
+
+// ---------- photos ----------
+async function loadPhotos() {
+  try {
+    const items = await apiJson('/api/photos');
+    const grid = $('photos');
+    grid.innerHTML = '';
+    if (!items.length) { grid.innerHTML = '<p class="muted">no photos yet — upload one</p>'; return; }
+    for (const p of items) {
+      const url = await authImageUrl(p.url);
+      const card = document.createElement('div');
+      card.className = 'photo';
+      card.innerHTML = `<img src="${url}" alt="photo ${p.id}" />` +
+        `<div class="meta">${p.is_default ? '<span class="badge">default</span>' : '<span></span>'}
+          <div class="row">
+            ${p.is_default ? '' : `<button class="ghost" data-setdef="${p.id}">Default</button>`}
+            <button class="danger" data-del="${p.id}">Delete</button>
+          </div></div>`;
+      grid.appendChild(card);
+    }
+    grid.querySelectorAll('[data-setdef]').forEach((b) => b.addEventListener('click', async () => {
+      await apiJson(`/api/photos/${b.dataset.setdef}/default`, { method: 'POST' });
+      loadPhotos(); loadSavedPhotos(); toast('default photo set');
+    }));
+    grid.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', async () => {
+      if (!confirm('delete this photo?')) return;
+      await apiJson(`/api/photos/${b.dataset.del}`, { method: 'DELETE' });
+      loadPhotos(); loadSavedPhotos(); toast('photo deleted');
+    }));
+  } catch (e) { /* ignore */ }
+}
+$('photo-upload-btn').addEventListener('click', () => $('photo-upload').click());
+$('photo-upload').addEventListener('change', async () => {
+  const f = $('photo-upload').files[0]; if (!f) return;
+  const fd = new FormData(); fd.append('person', f);
+  try { await apiJson('/api/photos', { method: 'POST', body: fd }); toast('photo uploaded'); }
+  catch (e) { alert(e.message); }
+  $('photo-upload').value = '';
+  loadPhotos(); loadSavedPhotos();
+});
+
+async function loadSavedPhotos() {
+  try {
+    const items = await apiJson('/api/photos');
+    const sel = $('saved-photo'); sel.innerHTML = '';
+    if (!items.length) { sel.add(new Option('no saved photos — upload in Account', '')); return; }
+    for (const p of items) {
+      sel.add(new Option(`${p.is_default ? '★ ' : ''}photo ${p.id}`, p.id));
+    }
+  } catch (e) { /* ignore */ }
+}
+
+// ---------- person source ----------
+document.querySelectorAll('input[name=psrc]').forEach((r) => r.addEventListener('change', () => {
+  const src = document.querySelector('input[name=psrc]:checked').value;
+  $('saved-photo').hidden = src !== 'saved';
+  $('person-file').hidden = src !== 'upload';
+  $('webcam-row').hidden = src !== 'webcam';
+}));
 
 // ---------- try on ----------
 $('tryon-btn').addEventListener('click', async () => {
-  const file = $('person-file').files[0];
-  if (!file) { alert('pick a person photo first (or capture from webcam)'); return; }
+  const src = document.querySelector('input[name=psrc]:checked').value;
+  const garment_id = $('garment-select').value;
+  if (!garment_id) { alert('no garment selected'); return; }
   const fd = new FormData();
-  fd.append('garment_id', $('garment-select').value);
-  fd.append('person', file);
+  fd.append('garment_id', garment_id);
+  if (src === 'saved') {
+    const pid = $('saved-photo').value;
+    if (!pid) { alert('upload a saved photo first (Account → My photos)'); return; }
+    fd.append('photo_id', pid);
+  } else {
+    const f = $('person-file').files[0];
+    if (!f) { alert('pick a person photo or use a saved one'); return; }
+    fd.append('person', f);
+  }
   const btn = $('tryon-btn'); btn.disabled = true;
   $('result').innerHTML = '<p class="muted">rendering… (Phase 2 needs ComfyUI+CatVTON; can take ~20s)</p>';
   try {
     const res = await api('/api/tryon', { method: 'POST', body: fd });
-    if (!res.ok) { $('result').innerHTML = `<p class="muted">try-on failed: ${await res.text()}</p>`; return; }
+    if (!res.ok) { $('result').innerHTML = `<p class="muted">try-on failed: ${(await res.json().catch(() => ({}))).detail || await res.text()}</p>`; return; }
     const data = await res.json();
-    // result images are private → fetch as blob with our token, then show it
-    const imgRes = await api(data.result_url);
-    const blob = await imgRes.blob();
+    const url = await authImageUrl(data.result_url);
     $('result').innerHTML = '';
     const img = document.createElement('img');
-    img.src = URL.createObjectURL(blob);
+    img.src = url;
     $('result').appendChild(img);
   } catch (e) { $('result').innerHTML = `<p class="muted">error: ${e}</p>`; }
   finally { btn.disabled = false; }
 });
 
-// ---------- webcam capture ----------
+// ---------- webcam ----------
 let stream = null;
 $('webcam-btn').addEventListener('click', async () => {
   const video = $('webcam');
-  if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; video.hidden = true; return; }
+  if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; video.hidden = true; $('webcam-btn').textContent = 'Start webcam'; return; }
   try {
     stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
     video.srcObject = stream; video.hidden = false; await video.play();
     $('webcam-btn').textContent = 'Stop webcam';
   } catch (e) { alert('webcam unavailable: ' + e); }
 });
-
-// click the preview to capture a frame into the file input
 $('webcam').addEventListener('click', () => {
   if (!stream) return;
   const canvas = document.createElement('canvas');
@@ -257,8 +458,11 @@ $('webcam').addEventListener('click', () => {
     const dt = new DataTransfer();
     dt.items.add(new File([blob], 'webcam.jpg', { type: 'image/jpeg' }));
     $('person-file').files = dt.files;
-    $('webcam-btn').textContent = 'Capture from webcam';
+    document.querySelector('input[name=psrc][value=upload]').checked = true;
+    $('saved-photo').hidden = true; $('person-file').hidden = false; $('webcam-row').hidden = true;
     stream.getTracks().forEach((t) => t.stop()); stream = null; $('webcam').hidden = true;
+    $('webcam-btn').textContent = 'Start webcam';
+    toast('frame captured — pick a garment and try it on');
   }, 'image/jpeg', 0.92);
 });
 

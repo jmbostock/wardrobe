@@ -57,8 +57,28 @@ class Weather:
         return self.feels_like_c if self.feels_like_c is not None else self.temp_c
 
     @property
+    def temp_f(self) -> float:
+        return self.temp_c * 9 / 5 + 32
+
+    @property
+    def feels_like_f(self) -> float:
+        return self.feels * 9 / 5 + 32
+
+    @property
     def precipitating(self) -> bool:
         return self.condition.lower() in RAIN_CONDITIONS
+
+    def to_dict(self) -> dict:
+        return {
+            "temp_c": self.temp_c,
+            "temp_f": round(self.temp_f, 1),
+            "feels_like_c": self.feels,
+            "feels_like_f": round(self.feels_like_f, 1),
+            "condition": self.condition,
+            "wind_kph": self.wind_kph,
+            "humidity": self.humidity,
+            "uv_index": self.uv_index,
+        }
 
 
 # --------------------------------------------------------------------------- #
@@ -268,8 +288,13 @@ def recommend(
             w, target, formality, precipitating, _top, bottom, outerwear, prompt
         ),
         "weather_used": {
-            "temp_c": w.temp_c, "feels_like_c": w.feels, "condition": w.condition,
-            "wind_kph": w.wind_kph, "uv_index": w.uv_index,
+            "temp_c": w.temp_c,
+            "temp_f": round(w.temp_f, 1),
+            "feels_like_c": w.feels,
+            "feels_like_f": round(w.feels_like_f, 1),
+            "condition": w.condition,
+            "wind_kph": w.wind_kph,
+            "uv_index": w.uv_index,
         },
         "activity": activity,
     }

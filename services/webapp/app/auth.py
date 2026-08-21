@@ -13,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import os
+import re
 import secrets
 import sqlite3
 from datetime import datetime, timedelta, timezone
@@ -22,6 +23,7 @@ from . import db
 
 ITERATIONS = 200_000
 SESSION_TTL_DAYS = int(os.getenv("SESSION_TTL_DAYS", "30"))
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 class AuthError(Exception):
@@ -53,22 +55,22 @@ def _verify_password(password: str, salt_hex: str, hash_hex: str) -> bool:
     return hmac.compare_digest(digest.hex(), hash_hex)
 
 
-def create_user(username: str, password: str) -> dict[str, Any]:
+def create_user(email: str, password: str) -> dict[str, Any]:
     conn = db.init()
-    username = username.strip()
-    if not 3 <= len(username) <= 40:
-        raise AuthError("username must be 3-40 characters")
+    email = email.strip().lower()
+    if not EMAIL_RE.match(email) or len(email) > 200:
+        raise AuthError("enter a valid email address")
     if len(password) < 8:
         raise AuthError("password must be at least 8 characters")
     salt, digest = _hash_password(password)
     with db.lock():
         try:
             cur = conn.execute(
-                "INSERT INTO users (username, password_salt, password_hash) VALUES (?,?,?)",
-                (username, salt, digest),
+                "INSERT INTO users (email, password_salt, password_hash) VALUES (?,?,?)",
+                (email, salt, digest),
             )
         except sqlite3.IntegrityError as e:
-            raise AuthError("username already taken") from e
+            raise AuthError("email already registered") from e
         conn.commit()
         user_id = cur.lastrowid
     # every user gets a copy of the seed wardrobe
@@ -82,20 +84,24 @@ def get_user(user_id: int) -> dict[str, Any] | None:
     conn = db.init()
     with db.lock():
         row = conn.execute(
-            "SELECT id, username, created_at FROM users WHERE id=?", (user_id,)
+            "SELECT id, email, lat, lon, created_at FROM users WHERE id=?", (user_id,)
         ).fetchone()
     return dict(row) if row else None
 
 
-def authenticate(username: str, password: str) -> dict[str, Any] | None:
+def authenticate(email: str, password: str) -> dict[str, Any] | None:
     conn = db.init()
+    email = email.strip().lower()
     with db.lock():
         row = conn.execute(
-            "SELECT * FROM users WHERE username=?", (username.strip(),)
+            "SELECT * FROM users WHERE email=?", (email,)
         ).fetchone()
     if row is None or not _verify_password(password, row["password_salt"], row["password_hash"]):
         return None
-    return {"id": row["id"], "username": row["username"], "created_at": row["created_at"]}
+    return {
+        "id": row["id"], "email": row["email"],
+        "lat": row["lat"], "lon": row["lon"], "created_at": row["created_at"],
+    }
 
 
 def create_session(user_id: int) -> str:
@@ -116,7 +122,7 @@ def get_user_by_token(token: str | None) -> dict[str, Any] | None:
     conn = db.init()
     with db.lock():
         row = conn.execute(
-            """SELECT u.id, u.username, u.created_at, s.expires_at
+            """SELECT u.id, u.email, u.lat, u.lon, u.created_at, s.expires_at
                FROM sessions s JOIN users u ON u.id = s.user_id
                WHERE s.token = ?""",
             (token,),
@@ -126,11 +132,41 @@ def get_user_by_token(token: str | None) -> dict[str, Any] | None:
     if row["expires_at"] and row["expires_at"] < _now_iso():
         delete_session(token)
         return None
-    return {"id": row["id"], "username": row["username"], "created_at": row["created_at"]}
+    return {
+        "id": row["id"], "email": row["email"],
+        "lat": row["lat"], "lon": row["lon"], "created_at": row["created_at"],
+    }
 
 
 def delete_session(token: str) -> None:
     conn = db.init()
     with db.lock():
         conn.execute("DELETE FROM sessions WHERE token=?", (token,))
+        conn.commit()
+
+
+def change_password(user_id: int, current_password: str, new_password: str) -> None:
+    """Verify the current password, then set the new one. Raises AuthError on failure."""
+    conn = db.init()
+    with db.lock():
+        row = conn.execute(
+            "SELECT password_salt, password_hash FROM users WHERE id=?", (user_id,)
+        ).fetchone()
+    if row is None or not _verify_password(current_password, row["password_salt"], row["password_hash"]):
+        raise AuthError("current password is incorrect")
+    if len(new_password) < 8:
+        raise AuthError("new password must be at least 8 characters")
+    salt, digest = _hash_password(new_password)
+    with db.lock():
+        conn.execute(
+            "UPDATE users SET password_salt=?, password_hash=? WHERE id=?",
+            (salt, digest, user_id),
+        )
+        conn.commit()
+
+
+def set_location(user_id: int, lat: float, lon: float) -> None:
+    conn = db.init()
+    with db.lock():
+        conn.execute("UPDATE users SET lat=?, lon=? WHERE id=?", (lat, lon, user_id))
         conn.commit()

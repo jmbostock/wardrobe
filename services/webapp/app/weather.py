@@ -13,15 +13,19 @@ from .config import settings
 from .recommender import Weather
 
 
-def fetch() -> Weather:
+DEFAULT_LOCATION = {"lat": 37.5396, "lon": -122.2974, "name": "San Mateo, CA 94403"}
+
+
+def fetch(lat: float | None = None, lon: float | None = None) -> Weather:
+    """Current weather. Defaults to San Mateo, CA 94403 unless coords given."""
+    lat = float(lat) if lat is not None else DEFAULT_LOCATION["lat"]
+    lon = float(lon) if lon is not None else DEFAULT_LOCATION["lon"]
     if settings.weather_source == "homeassistant":
         return _fetch_ha()
-    return _fetch_openmeteo()
+    return _fetch_openmeteo(lat, lon)
 
 
-def _fetch_openmeteo() -> Weather:
-    lat = settings.weather_lat or "37.7749"
-    lon = settings.weather_lon or "-122.4194"
+def _fetch_openmeteo(lat: float, lon: float) -> Weather:
     url = "https://api.open-meteo.com/v1/forecast"
     params = {
         "latitude": lat,
@@ -42,6 +46,37 @@ def _fetch_openmeteo() -> Weather:
         humidity=int(cur.get("relative_humidity_2m", 50)),
         uv_index=0.0,  # separate daily endpoint; 0 keeps MVP simple
     )
+
+
+def geocode(query: str) -> dict | None:
+    """Resolve a free-text location (zip, city, 'lat,lon') to coords via Open-Meteo."""
+    query = query.strip()
+    if not query:
+        return None
+    # allow explicit "lat,lon"
+    if "," in query:
+        try:
+            lat, lon = (float(x) for x in query.split(",", 1))
+            return {"lat": lat, "lon": lon, "name": query, "country": ""}
+        except ValueError:
+            pass
+    url = "https://geocoding-api.open-meteo.com/v1/search"
+    params = {"name": query, "count": 1, "language": "en", "format": "json"}
+    try:
+        r = httpx.get(url, params=params, timeout=10)
+        r.raise_for_status()
+        results = (r.json() or {}).get("results") or []
+    except Exception:
+        return None
+    if not results:
+        return None
+    best = results[0]
+    return {
+        "lat": best["latitude"],
+        "lon": best["longitude"],
+        "name": best.get("name", query),
+        "country": best.get("country", ""),
+    }
 
 
 def _fetch_ha() -> Weather:

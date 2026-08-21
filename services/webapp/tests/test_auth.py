@@ -17,42 +17,69 @@ from app.wardrobe import Wardrobe  # noqa: E402
 
 
 def test_register_login_session_roundtrip():
-    u = auth.create_user("alice", "password123")
-    assert u["username"] == "alice"
-    assert auth.authenticate("alice", "password123")["id"] == u["id"]
-    assert auth.authenticate("alice", "wrongpass") is None
+    u = auth.create_user("alice@example.com", "password123")
+    assert u["email"] == "alice@example.com"
+    assert auth.authenticate("alice@example.com", "password123")["id"] == u["id"]
+    assert auth.authenticate("Alice@Example.com", "password123")["id"] == u["id"]  # case-insensitive
+    assert auth.authenticate("alice@example.com", "wrongpass") is None
     tok = auth.create_session(u["id"])
-    assert auth.get_user_by_token(tok)["username"] == "alice"
+    assert auth.get_user_by_token(tok)["email"] == "alice@example.com"
     auth.delete_session(tok)
     assert auth.get_user_by_token(tok) is None
 
 
-def test_duplicate_username_rejected():
-    auth.create_user("alice2", "password123")  # take the name first
+def test_duplicate_email_rejected():
+    auth.create_user("alice2@example.com", "password123")
     try:
-        auth.create_user("alice2", "anotherpass123")
-        raise AssertionError("expected AuthError for duplicate username")
+        auth.create_user("alice2@example.com", "anotherpass123")
+        raise AssertionError("expected AuthError for duplicate email")
     except auth.AuthError:
         pass
 
 
+def test_invalid_email_rejected():
+    for bad in ("not-an-email", "no-at-sign", "@example.com"):
+        try:
+            auth.create_user(bad, "password123")
+            raise AssertionError(f"expected AuthError for {bad!r}")
+        except auth.AuthError:
+            pass
+
+
 def test_short_password_rejected():
     try:
-        auth.create_user("newuser", "short")
+        auth.create_user("new@example.com", "short")
         raise AssertionError("expected AuthError for short password")
     except auth.AuthError:
         pass
 
 
+def test_change_password():
+    u = auth.create_user("pw@example.com", "password123")
+    auth.change_password(u["id"], "password123", "newpass456")
+    assert auth.authenticate("pw@example.com", "newpass456") is not None
+    assert auth.authenticate("pw@example.com", "password123") is None
+    try:
+        auth.change_password(u["id"], "wrong", "another456")
+        raise AssertionError("expected AuthError for wrong current password")
+    except auth.AuthError:
+        pass
+
+
+def test_set_location():
+    u = auth.create_user("loc@example.com", "password123")
+    assert u["lat"] is None  # default location applies at fetch time
+    auth.set_location(u["id"], 37.5396, -122.2974)
+    assert auth.get_user(u["id"])["lat"] == 37.5396
+
+
 def test_users_have_isolated_wardrobes():
-    ua = auth.create_user("bob", "password123")
-    ub = auth.create_user("carol", "password123")
+    ua = auth.create_user("bob@example.com", "password123")
+    ub = auth.create_user("carol@example.com", "password123")
     w = Wardrobe()
     ga, gb = w.all(ua["id"]), w.all(ub["id"])
     assert len(ga) == 25 and len(gb) == 25
-    # every garment row belongs to exactly one user
     assert {g.id for g in ga}.isdisjoint({g.id for g in gb})
-    # recommend for bob only ever returns bob's garments
     res = recommend(
         Weather(temp_c=13, feels_like_c=12, condition="rain"),
         "office",

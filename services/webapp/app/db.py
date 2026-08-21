@@ -19,9 +19,11 @@ _lock = threading.Lock()
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
     id             INTEGER PRIMARY KEY,
-    username       TEXT NOT NULL UNIQUE,
+    email          TEXT NOT NULL UNIQUE,
     password_salt  TEXT NOT NULL,
     password_hash  TEXT NOT NULL,
+    lat            REAL,                -- per-user location; NULL -> default (San Mateo, CA 94403)
+    lon            REAL,
     created_at     TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -31,6 +33,15 @@ CREATE TABLE IF NOT EXISTS sessions (
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     expires_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS photos (
+    id         INTEGER PRIMARY KEY,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    filename   TEXT NOT NULL,
+    is_default INTEGER NOT NULL DEFAULT 0,   -- only one per user
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_photos_user ON photos(user_id);
 
 CREATE TABLE IF NOT EXISTS garments (
     id          INTEGER PRIMARY KEY,
