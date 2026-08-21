@@ -1,0 +1,46 @@
+{
+  "10": {
+    "class_type": "LoadImage",
+    "inputs": {"image": "person.png"}
+  },
+  "11": {
+    "class_type": "LoadImage",
+    "inputs": {"image": "garment.png"}
+  },
+  "12": {
+    "class_type": "LoadAutoMasker",
+    "inputs": {"catvton_path": "zhengchong/CatVTON"}
+  },
+  "13": {
+    "class_type": "AutoMasker",
+    "inputs": {
+      "pipe": ["12", 0],
+      "target_image": ["10", 0],
+      "cloth_type": "upper"
+    }
+  },
+  "17": {
+    "class_type": "LoadCatVTONPipeline",
+    "inputs": {
+      "sd15_inpaint_path": "booksforcharlie/stable-diffusion-inpainting",
+      "catvton_path": "zhengchong/CatVTON",
+      "mixed_precision": "bf16"
+    }
+  },
+  "16": {
+    "class_type": "CatVTON",
+    "inputs": {
+      "pipe": ["17", 0],
+      "target_image": ["10", 0],
+      "refer_image": ["11", 0],
+      "mask_image": ["13", 0],
+      "seed": 42,
+      "steps": 50,
+      "cfg": 2.5
+    }
+  },
+  "18": {
+    "class_type": "SaveImage",
+    "inputs": {"images": ["16", 0], "filename_prefix": "catvton"}
+  }
+}

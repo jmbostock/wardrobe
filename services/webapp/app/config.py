@@ -14,6 +14,9 @@ class Settings:
         self.ollama_url = os.getenv("OLLAMA_URL", "http://ollama:11434").rstrip("/")
         self.max_upload_px = int(os.getenv("MAX_UPLOAD_PX", "1024"))
         self.data_dir = os.getenv("DATA_DIR", "/data")
+        # optional fixed seed for reproducible try-on (None = random per request)
+        seed = os.getenv("TRYON_SEED", "")
+        self.tryon_seed: int | None = int(seed) if seed.isdigit() else None
 
 
 settings = Settings()

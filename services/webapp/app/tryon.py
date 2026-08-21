@@ -1,18 +1,20 @@
 """ComfyUI / CatVTON client for virtual try-on.
 
 ComfyUI is internal-only (comfyui:8188). Flow:
-  1. upload person + garment images
-  2. wire the CatVTON workflow JSON (see workflows/README.md)
+  1. upload person + garment images to ComfyUI /upload/image
+  2. load workflows/catvton.json, wire the uploaded image names + cloth_type
   3. submit to /prompt, poll /history/{id}
   4. return the rendered image bytes
 
-Phase 2 TODO: once the official CatVTON ComfyUI workflow is committed to
-app/workflows/catvton.json, fill NODE_IDS and _wire_workflow().
+The CatVTON node (release `ComfyUI-CatVTON.zip`) exposes:
+  LoadAutoMasker / AutoMasker (cloth_type: upper|lower|overall)
+  LoadCatVTONPipeline / CatVTON (try-on)
 """
 from __future__ import annotations
 
 import asyncio
 import json
+import random
 import time
 from pathlib import Path
 
@@ -23,12 +25,23 @@ from .wardrobe import Garment
 
 WORKFLOW_PATH = Path(__file__).parent / "workflows" / "catvton.json"
 
-# Semantic role -> node id in catvton.json (fill in at Phase 2)
+# node ids in workflows/catvton.json
 NODE_IDS = {
-    "person_image": "??",
-    "garment_image": "??",
-    "ckpt": "??",
-    "output_image": "??",
+    "person_image": "10",
+    "garment_image": "11",
+    "masker_pipe": "12",
+    "automasker": "13",
+    "tryon_pipe": "17",
+    "catvton": "16",
+    "output": "18",
+}
+
+# garment category -> CatVTON cloth_type
+CLOTH_TYPE = {
+    "top": "upper",
+    "outerwear": "upper",
+    "dress": "overall",
+    "bottom": "lower",
 }
 
 
@@ -39,15 +52,16 @@ class ComfyUnavailable(Exception):
 async def run_tryon(person_bytes: bytes, garment: Garment, user_id: int) -> bytes:
     if not WORKFLOW_PATH.exists():
         raise ComfyUnavailable(
-            "workflows/catvton.json missing — see workflows/README.md (Phase 2)"
+            "workflows/catvton.json missing — see workflows/README.md"
         )
     workflow = json.loads(WORKFLOW_PATH.read_text())
     garment_bytes = _load_garment_image(garment, user_id)
+    cloth_type = CLOTH_TYPE.get(garment.category, "upper")
 
     async with httpx.AsyncClient(timeout=30) as client:
         person_name = await _upload(client, "person.png", person_bytes)
         garment_name = await _upload(client, "garment.png", garment_bytes)
-        _wire_workflow(workflow, person_name, garment_name)
+        _wire_workflow(workflow, person_name, garment_name, cloth_type)
         prompt_id = await _submit(client, workflow)
         entry = await _poll(client, prompt_id)
         return await _fetch_output(client, entry)
@@ -72,19 +86,27 @@ async def _upload(client: httpx.AsyncClient, name: str, data: bytes) -> str:
     return r.json()["name"]
 
 
-def _wire_workflow(workflow: dict, person_name: str, garment_name: str) -> None:
-    # TODO(phase 2): set person/garment LoadImage node inputs to the uploaded
-    # names, and point the checkpoint node at a model in data/comfyui/models.
-    ...
+def _wire_workflow(
+    workflow: dict, person_name: str, garment_name: str, cloth_type: str
+) -> None:
+    """Point the workflow at the freshly-uploaded images + garment type."""
+    n = NODE_IDS
+    workflow[n["person_image"]]["inputs"]["image"] = person_name
+    workflow[n["garment_image"]]["inputs"]["image"] = garment_name
+    workflow[n["automasker"]]["inputs"]["cloth_type"] = cloth_type
+    # random seed per request for variety (override via TRYON_SEED for reproducibility)
+    seed = settings.tryon_seed if settings.tryon_seed is not None else random.randint(0, 2**31)
+    workflow[n["catvton"]]["inputs"]["seed"] = seed
 
 
 async def _submit(client: httpx.AsyncClient, workflow: dict) -> str:
     r = await client.post(f"{settings.comfyui_url}/prompt", json={"prompt": workflow})
-    r.raise_for_status()
+    if r.status_code != 200:
+        raise ComfyUnavailable(f"ComfyUI rejected prompt: {r.text[:300]}")
     return r.json()["prompt_id"]
 
 
-async def _poll(client: httpx.AsyncClient, prompt_id: str, timeout: float = 120.0) -> dict:
+async def _poll(client: httpx.AsyncClient, prompt_id: str, timeout: float = 240.0) -> dict:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         r = await client.get(f"{settings.comfyui_url}/history/{prompt_id}")
@@ -96,7 +118,7 @@ async def _poll(client: httpx.AsyncClient, prompt_id: str, timeout: float = 120.
                 return entry
             if status.get("status_str") == "error":
                 raise ComfyUnavailable(f"ComfyUI error: {status.get('messages')}")
-        await asyncio.sleep(1)
+        await asyncio.sleep(2)
     raise ComfyUnavailable(f"ComfyUI timeout after {timeout:.0f}s")
 
 
