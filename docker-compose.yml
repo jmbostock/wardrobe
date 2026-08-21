@@ -22,15 +22,12 @@ services:
       - models:/models
     ports:
       - "127.0.0.1:${WEBAPP_PORT:-28082}:8000"
-    depends_on:
-      comfyui:
-        condition: service_healthy
-      ollama:
-        condition: service_healthy
     networks: [altacloset]
 
   comfyui:
-    # GPU-only service. Image pulls the official ComfyUI CUDA build.
+    # GPU-only service, started explicitly with: docker compose --profile gpu up -d
+    profiles: ["gpu"]
+    # Image pulls the official ComfyUI CUDA build.
     # CatVTON custom node + weights are baked in via services/comfyui/Dockerfile
     # (bootstrap) so the target machine needs NO manual install steps.
     build: ./services/comfyui
@@ -65,8 +62,8 @@ services:
     networks: [altacloset]
 
   ollama:
-    # Phase 3 (LLM stylist). Kept in compose from the start so the network/volumes
-    # are stable and the target machine is a no-op to enable.
+    # Phase 3 (LLM stylist). GPU service, enabled with: docker compose --profile gpu up -d
+    profiles: ["gpu"]
     image: ollama/ollama:latest
     container_name: altacloset-ollama
     restart: unless-stopped
