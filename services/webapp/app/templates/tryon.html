@@ -24,6 +24,7 @@
       </div>
       <div id="savedimg-row" hidden>
         <select id="saved-img" class="field"></select>
+        <img id="savedimg-preview" alt="saved image" hidden style="max-width:220px;width:100%;border-radius:10px;border:1px solid var(--line);background:#000" />
         <span class="muted">Chat below to refine this image — the look controls aren’t needed here.</span>
       </div>
       <div id="person-qa" hidden></div>
@@ -51,8 +52,8 @@
     </div>
     <div id="result" style="margin-top:12px"></div>
     <div id="compare" class="compare" hidden>
-      <figure><img id="compare-base" alt="original" /><figcaption class="muted">original</figcaption></figure>
-      <figure><img id="compare-new" alt="latest" /><figcaption class="muted">latest</figcaption></figure>
+      <figure id="compare-base-fig"><img id="compare-base" alt="original" /><figcaption class="muted">original</figcaption></figure>
+      <figure id="compare-new-fig" hidden><img id="compare-new" alt="latest" /><figcaption class="muted">latest</figcaption></figure>
     </div>
     <div id="chat-bar" hidden>
       <div class="row">

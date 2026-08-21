@@ -106,11 +106,24 @@ async def do_tryon_outfit(
                 person_bytes = await tryon.run_tryon(person_bytes, garment, user["id"])
         except tryon.ComfyUnavailable as ex:
             raise HTTPException(503, str(ex)) from ex
-    out_dir = UPLOAD_DIR / str(user["id"]) / "out"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_name = f"tryon_outfit_{int(time.time())}.png"
-    (out_dir / out_name).write_bytes(person_bytes)
-    return {"result_url": f"/api/uploads/{out_name}", "garment_ids": ids, "prompt": prompt or ""}
+        out_dir = UPLOAD_DIR / str(user["id"]) / "out"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_name = f"tryon_outfit_{int(time.time())}.png"
+        (out_dir / out_name).write_bytes(person_bytes)
+        result_url = f"/api/uploads/{out_name}"
+    elif base_result:
+        # garment-free refine of an existing render — nothing new to draw, so
+        # return the same image without writing a duplicate file.
+        result_url = base_result
+    else:
+        # first saved-image refine from a person photo: serve the photo as a
+        # stable result so the UI can compare base vs result (one file only).
+        out_dir = UPLOAD_DIR / str(user["id"]) / "out"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_name = f"tryon_refine_{int(time.time())}.png"
+        (out_dir / out_name).write_bytes(person_bytes)
+        result_url = f"/api/uploads/{out_name}"
+    return {"result_url": result_url, "garment_ids": ids, "prompt": prompt or ""}
 
 
 @router.get("/api/uploads/{filename}")

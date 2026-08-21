@@ -1,6 +1,8 @@
 /* Clueless Closet — shared stylesheet (used by every page via base.html) */
 :root { --bg:#0f1216; --card:#181d24; --line:#262d36; --txt:#e8ecf1; --mut:#9aa7b4; --acc:#4f9cf9; }
 * { box-sizing: border-box; }
+/* the hidden attribute must always win over display rules (.block/.compare etc) */
+[hidden] { display:none !important; }
 body { margin:0; font-family: system-ui, sans-serif; background:var(--bg); color:var(--txt); }
 header { padding:14px 24px; border-bottom:1px solid var(--line); display:flex; gap:14px; align-items:center; }
 header h1 { font-size:19px; margin:0; }

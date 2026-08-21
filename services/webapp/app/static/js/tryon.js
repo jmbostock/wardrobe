@@ -18,6 +18,32 @@ async function photoBaseUrl(pid) {
   return authImageUrl(p.url);
 }
 
+// ---- dynamic before/after: original side shows the base once we have one,
+// ---- latest side only appears after a re-render (no empty placeholders).
+function showCompare(baseUrl, newUrl) {
+  if (!baseUrl) { hideCompare(); return; }
+  $('compare-base').src = baseUrl;
+  $('compare-base-fig').hidden = false;
+  if (newUrl) {
+    $('compare-new').src = newUrl;
+    $('compare-new-fig').hidden = false;
+  } else {
+    $('compare-new-fig').hidden = true;
+  }
+  $('compare').hidden = false;
+}
+function hideCompare() {
+  $('compare').hidden = true;
+  $('compare-base').src = '';
+  $('compare-new').src = '';
+}
+async function showSavedImagePreview(pid) {
+  const img = $('savedimg-preview');
+  if (!pid) { img.hidden = true; img.src = ''; return; }
+  const url = await photoBaseUrl(pid);
+  if (url) { img.src = url; img.hidden = false; }
+}
+
 // ---------- look builder ----------
 async function populateLook() {
   let items = [];
@@ -105,11 +131,26 @@ document.querySelectorAll('input[name=psrc]').forEach((r) => r.addEventListener(
   $('savedimg-row').hidden = src !== 'savedimg';
   $('look-builder').hidden = src === 'savedimg';
   $('chat-bar').hidden = (src !== 'savedimg' && !lastResultUrl);
+  if (src === 'savedimg') {
+    const pid = $('saved-img').value;
+    if (pid) showSavedImagePreview(pid);
+  } else {
+    $('savedimg-preview').hidden = true;
+    if (!lastResultUrl) hideCompare();
+  }
   checkPersonImage();
 }));
 $('saved-photo').addEventListener('change', checkPersonImage);
 $('person-file').addEventListener('change', checkPersonImage);
-$('saved-img').addEventListener('change', checkPersonImage);
+$('saved-img').addEventListener('change', async () => {
+  const src = document.querySelector('input[name=psrc]:checked')?.value;
+  if (src === 'savedimg') {
+    const pid = $('saved-img').value;
+    if (pid) showSavedImagePreview(pid);
+    else { $('savedimg-preview').hidden = true; hideCompare(); }
+  }
+  checkPersonImage();
+});
 
 // ---------- image quality feedback ----------
 function renderQa(el, qa) {
@@ -247,11 +288,7 @@ async function runTryon(ids, baseResult, prompt, photoId) {
     $('result').innerHTML = '';
     const img = document.createElement('img'); img.src = url; $('result').appendChild(img);
     // before/after: original (base) next to the latest render
-    if (baseUrl) {
-      $('compare-base').src = baseUrl;
-      $('compare-new').src = url;
-      $('compare').hidden = false;
-    }
+    showCompare(baseUrl, url);
     // show + re-enable the chat bar so the user can refine the image
     $('chat-bar').hidden = false;
     $('chat-input').disabled = false;
