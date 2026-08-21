@@ -62,6 +62,15 @@ CREATE TABLE IF NOT EXISTS garments (
     image_path  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_garments_user ON garments(user_id);
+
+CREATE TABLE IF NOT EXISTS outfits (
+    id          INTEGER PRIMARY KEY,
+    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name        TEXT NOT NULL,
+    garment_ids TEXT NOT NULL DEFAULT '[]',  -- JSON array of garment ids
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_outfits_user ON outfits(user_id);
 """
 
 
@@ -85,6 +94,17 @@ def _migrate(conn: sqlite3.Connection) -> None:
     cols = {r[1] for r in conn.execute("PRAGMA table_info(photos)").fetchall()}
     if "description" not in cols:
         conn.execute("ALTER TABLE photos ADD COLUMN description TEXT NOT NULL DEFAULT ''")
+    # outfits table (added 2026-08-21)
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS outfits (
+            id          INTEGER PRIMARY KEY,
+            user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            name        TEXT NOT NULL,
+            garment_ids TEXT NOT NULL DEFAULT '[]',
+            created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+        )"""
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_outfits_user ON outfits(user_id)")
 
 
 def lock() -> threading.Lock:

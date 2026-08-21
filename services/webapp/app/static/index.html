@@ -153,6 +153,9 @@
           <p class="muted">Build it from your wardrobe (top / bottom / dress) or pull it from the recommendation. Only garments with a photo are listed.</p>
           <div class="row" style="margin-bottom:10px">
             <button id="tryon-use-reco" class="ghost">Use recommendation</button>
+            <button id="tryon-reset" class="ghost">Reset look</button>
+            <input type="text" id="outfit-name" placeholder="outfit name (optional)" class="field" style="max-width:230px" />
+            <button id="tryon-save" class="ghost">Save outfit</button>
             <span class="muted" id="look-status"></span>
           </div>
           <div id="look">
@@ -248,6 +251,12 @@
         </div>
         <div id="photos" class="photos"></div>
       </div>
+
+      <div class="card" style="margin-top:20px">
+        <h2>Saved outfits</h2>
+        <p class="muted">Looks you saved from the Try-on tab. Load one to re-try it, or delete it.</p>
+        <div id="saved-outfits"></div>
+      </div>
     </section>
 
   </div>
@@ -323,7 +332,7 @@ function showAuth() {
 function enterApp() {
   $('auth-card').hidden = true; $('app').hidden = false; $('signout-btn').hidden = false;
   showView('outfit');
-  loadWeather(); populateLook(); loadAccount(); loadPhotos(); loadSavedPhotos();
+  loadWeather(); populateLook(); loadAccount(); loadPhotos(); loadSavedPhotos(); loadSavedOutfits();
 }
 
 // ---------- tabs ----------
@@ -334,6 +343,7 @@ function showView(name) {
   });
   if (name === 'tryon') { loadSavedPhotos(); populateLook(); }
   if (name === 'wardrobe') { loadWardrobe(); populateLook(); }
+  if (name === 'account') { loadSavedOutfits(); }
 }
 $('tab-outfit').addEventListener('click', () => showView('outfit'));
 $('tab-tryon').addEventListener('click', () => showView('tryon'));
@@ -439,6 +449,28 @@ $('tryon-use-reco').addEventListener('click', () => {
     applyOutfitToLook(outfit);
     status.textContent = 'look set from recommendation — tweak if you like';
   })();
+});
+$('tryon-reset').addEventListener('click', () => {
+  ['top', 'bottom', 'dress'].forEach((role) => {
+    document.querySelector('.look-select[data-role="' + role + '"]').value = '';
+  });
+  $('look-status').textContent = 'look cleared';
+});
+$('tryon-save').addEventListener('click', async () => {
+  const ids = [...document.querySelectorAll('.look-select')]
+    .map((s) => Number(s.value)).filter(Boolean);
+  if (!ids.length) { alert('pick at least one garment in the look first'); return; }
+  const name = ($('outfit-name').value || '').trim() || ('Outfit ' + new Date().toLocaleDateString());
+  try {
+    await apiJson('/api/outfits', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, garment_ids: ids }),
+    });
+    $('outfit-name').value = '';
+    $('look-status').textContent = 'saved "' + name + '"';
+    toast('outfit saved — see Account → Saved outfits');
+    loadSavedOutfits();
+  } catch (e) { alert(e.message); }
 });
 
 // ---------- account ----------
@@ -839,6 +871,43 @@ $('g-add').addEventListener('click', async () => {
     loadWardrobe(); populateLook();
   } catch (e) { status.textContent = e.message; }
 });
+
+// ---------- saved outfits ----------
+async function loadSavedOutfits() {
+  const box = $('saved-outfits');
+  box.innerHTML = '<p class="muted">loading…</p>';
+  let items;
+  try { items = await apiJson('/api/outfits'); }
+  catch (e) { box.innerHTML = '<p class="muted">failed to load</p>'; return; }
+  if (!items.length) { box.innerHTML = '<p class="muted">no saved outfits yet — save one from the Try-on tab</p>'; return; }
+  box.innerHTML = '';
+  for (const o of items) {
+    const row = document.createElement('div'); row.className = 'garment';
+    const name = document.createElement('span'); name.className = 'name'; name.textContent = o.name;
+    const itemsDesc = document.createElement('span'); itemsDesc.className = 'muted';
+    itemsDesc.textContent = ' — ' + (o.garments.map((g) => g.name).join(' + ') || 'n/a');
+    const load = document.createElement('button'); load.className = 'ghost'; load.textContent = 'Load';
+    load.addEventListener('click', () => applySavedOutfit(o));
+    const del = document.createElement('button'); del.className = 'danger'; del.textContent = 'Delete';
+    del.addEventListener('click', async () => {
+      if (!confirm('delete "' + o.name + '"?')) return;
+      try { await apiJson('/api/outfits/' + o.id, { method: 'DELETE' }); toast('deleted'); }
+      catch (e) { alert(e.message); }
+      loadSavedOutfits();
+    });
+    row.appendChild(name); row.appendChild(itemsDesc); row.appendChild(load); row.appendChild(del);
+    box.appendChild(row);
+  }
+}
+function applySavedOutfit(o) {
+  showView('tryon');
+  ['top', 'bottom', 'dress'].forEach((role) => {
+    const sel = document.querySelector('.look-select[data-role="' + role + '"]');
+    const g = (o.garments || []).find((x) => x.category === role);
+    sel.value = g ? String(g.id) : '';
+  });
+  $('look-status').textContent = 'loaded "' + o.name + '" — ready to try on';
+}
 
 // ---------- boot ----------
 if (getToken()) enterApp(); else showAuth();

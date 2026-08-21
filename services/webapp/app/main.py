@@ -28,8 +28,9 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import auth, photos, recommender, tryon, weather
+from . import auth, outfits, photos, recommender, tryon, weather
 from .config import settings
+from .outfits import OutfitStore
 from .recommender import Weather
 from .wardrobe import Wardrobe
 
@@ -39,6 +40,7 @@ STATIC_DIR = Path(__file__).parent / "static"
 UPLOAD_DIR = Path(settings.data_dir) / "uploads"
 
 _wardrobe = Wardrobe()
+_outfits = OutfitStore()
 
 WARDROBE_DIR = Path(settings.data_dir) / "wardrobe"
 WARDROBE_CATEGORIES = {"top", "bottom", "dress", "outerwear", "footwear", "accessory"}
@@ -190,6 +192,11 @@ class ImageUrlRequest(BaseModel):
 
 class ParseLinkRequest(BaseModel):
     url: str = Field(..., max_length=500)
+
+
+class OutfitSave(BaseModel):
+    name: str = Field("", max_length=120)
+    garment_ids: list[int] = Field(..., min_length=1, max_length=8)
 
 
 # --------------------------------------------------------------------------- #
@@ -389,6 +396,40 @@ def delete_garment(garment_id: int, user: dict = Depends(get_current_user)) -> d
         except OSError:
             pass
     _wardrobe.delete(user["id"], garment_id)
+    return {"ok": True}
+
+
+# --------------------------------------------------------------------------- #
+# authenticated — saved outfits
+# --------------------------------------------------------------------------- #
+@app.get("/api/outfits")
+def list_outfits(user: dict = Depends(get_current_user)) -> list[dict]:
+    out = []
+    for o in _outfits.list(user["id"]):
+        d = dict(o)
+        gs = []
+        for gid in o["garment_ids"]:
+            g = _wardrobe.get(user["id"], gid)
+            if g:
+                gs.append(_garment_dict(user["id"], g))
+        d["garments"] = gs
+        out.append(d)
+    return out
+
+
+@app.post("/api/outfits")
+def save_outfit(req: OutfitSave, user: dict = Depends(get_current_user)) -> dict:
+    for gid in req.garment_ids:
+        if _wardrobe.get(user["id"], gid) is None:
+            raise HTTPException(404, f"garment {gid} not in your wardrobe")
+    name = (req.name or "").strip()[:120] or "Saved outfit"
+    return _outfits.create(user["id"], name, req.garment_ids)
+
+
+@app.delete("/api/outfits/{outfit_id}")
+def delete_outfit(outfit_id: int, user: dict = Depends(get_current_user)) -> dict:
+    if not _outfits.delete(user["id"], outfit_id):
+        raise HTTPException(404, "outfit not found")
     return {"ok": True}
 
 
