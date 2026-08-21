@@ -4,24 +4,16 @@
 <section id="view-tryon">
   <div class="card">
     <h2>Try it on</h2>
-    <p class="muted">Put a garment on a photo of you — use a saved photo, upload one, or capture from webcam. (Requires ComfyUI + CatVTON running.)</p>
+    <p class="muted">Put a garment on a photo of you — use a saved photo or upload one. (Requires ComfyUI + CatVTON running.)</p>
     <div class="block">
       <label>Person photo source</label>
       <div class="row">
         <label><input type="radio" name="psrc" value="saved" checked /> Saved photo</label>
         <label><input type="radio" name="psrc" value="upload" /> Upload</label>
-        <label><input type="radio" name="psrc" value="webcam" /> Webcam</label>
-          <label><input type="radio" name="psrc" value="savedimg" /> Saved outfit</label>
+        <label><input type="radio" name="psrc" value="savedimg" /> Saved outfit</label>
       </div>
       <select id="saved-photo" class="field"></select>
       <input type="file" id="person-file" accept="image/*" hidden />
-      <div id="webcam-row" hidden>
-        <video id="webcam" hidden playsinline style="max-width:100%;border-radius:10px;background:#000"></video>
-        <div class="row" style="margin-top:8px">
-          <button id="webcam-btn" class="ghost">Start webcam</button>
-          <span class="muted">click the preview to capture</span>
-        </div>
-      </div>
       <div id="savedimg-row" hidden>
         <select id="saved-img" class="field"></select>
         <img id="savedimg-preview" alt="saved outfit render" hidden />

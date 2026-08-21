@@ -140,7 +140,6 @@ document.querySelectorAll('input[name=psrc]').forEach((r) => r.addEventListener(
   const src = document.querySelector('input[name=psrc]:checked').value;
   $('saved-photo').hidden = src !== 'saved';
   $('person-file').hidden = src !== 'upload';
-  $('webcam-row').hidden = src !== 'webcam';
   $('savedimg-row').hidden = src !== 'savedimg';
   $('look-builder').hidden = src === 'savedimg';
   $('chat-bar').hidden = (src !== 'savedimg' && !lastResultUrl);
@@ -337,34 +336,5 @@ $('tryon-btn').addEventListener('click', async () => {
 // UI and shown as "coming soon". The backend (editor.py / /api/tryon/edit)
 // stays in place for the future swap-in editor (EDITOR_ENGINE=fluxkontext).
 
-// ---------- webcam ----------
-let stream = null;
-$('webcam-btn').addEventListener('click', async () => {
-  const video = $('webcam');
-  if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; video.hidden = true; $('webcam-btn').textContent = 'Start webcam'; return; }
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
-    video.srcObject = stream; video.hidden = false; await video.play();
-    $('webcam-btn').textContent = 'Stop webcam';
-  } catch (e) { alert('webcam unavailable: ' + e); }
-});
-$('webcam').addEventListener('click', () => {
-  if (!stream) return;
-  const canvas = document.createElement('canvas');
-  const MAX = 1024;
-  const scale = Math.min(MAX / $('webcam').videoWidth, 1);
-  canvas.width = Math.round($('webcam').videoWidth * scale);
-  canvas.height = Math.round($('webcam').videoHeight * scale);
-  canvas.getContext('2d').drawImage($('webcam'), 0, 0, canvas.width, canvas.height);
-  canvas.toBlob((blob) => {
-    const dt = new DataTransfer();
-    dt.items.add(new File([blob], 'webcam.jpg', { type: 'image/jpeg' }));
-    $('person-file').files = dt.files;
-    document.querySelector('input[name=psrc][value=upload]').checked = true;
-    $('saved-photo').hidden = true; $('person-file').hidden = false; $('webcam-row').hidden = true;
-    stream.getTracks().forEach((t) => t.stop()); stream = null; $('webcam').hidden = true;
-    $('webcam-btn').textContent = 'Start webcam';
-    toast('frame captured — pick a garment and try it on');
-    checkPersonImage();
-  }, 'image/jpeg', 0.92);
-});
+// webcam person-source removed (2026-08-21) — picture-based sources only
+// (Saved photo / Upload / Saved outfit).
