@@ -134,6 +134,20 @@ def test_extract_product_page_color_from_text():
     assert info["category"] == "top", info
 
 
+def test_extract_product_page_expanded_images():
+    # gallery shots + flat-lay/outfit shots included; TP=NAV nav shots excluded
+    html = """<html><body>
+      <img src="https://cdn.com/img1.png?width=737" alt="Image number 1 showing, Pants" />
+      <img src="https://cdn.com/img2.png?width=737" alt="Image number 2 showing, Pants" />
+      <img src="https://cdn.com/nav-shot.jpg?TP=NAV" alt="Image of a model wearing the collection" />
+      <img src="https://cdn.com/flat-lay.jpg" alt="" />
+    </body></html>"""
+    urls = imglink.extract_product_page(html)["images"]
+    assert len(urls) == 3, urls  # 2 gallery + 1 flat-lay
+    assert "nav-shot.jpg" not in " ".join(urls)
+    assert "flat-lay.jpg" in " ".join(urls)
+
+
 if __name__ == "__main__":
     test_create_upload_serve_delete()
     test_cross_user_isolation()
@@ -142,4 +156,5 @@ if __name__ == "__main__":
     test_imglink_og_image_last_resort_and_byte_detection()
     test_extract_product_page()
     test_extract_product_page_color_from_text()
+    test_extract_product_page_expanded_images()
     print("wardrobe tests OK")

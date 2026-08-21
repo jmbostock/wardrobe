@@ -9,6 +9,9 @@ import json
 import re
 from typing import Any
 
+# max images returned to the UI picker (product galleries can be long)
+MAX_PRODUCT_IMAGES = 16
+
 # common color words (longer phrases first so "navy blue" wins over "navy")
 COLOR_WORDS = [
     "navy blue", "olive green", "charcoal gray", "charcoal grey", "navy", "black",
@@ -55,7 +58,8 @@ def detect_ext(data: bytes) -> str:
 
 def _looks_like_logo(url: str) -> bool:
     u = url.lower()
-    return any(k in u for k in (".svg", "logo", "favicon", "spacer", "pixel", "transparent"))
+    # tp=nav / ?TP=NAV are navigation/marketing model shots, not the product
+    return any(k in u for k in (".svg", "logo", "favicon", "spacer", "pixel", "transparent", "tp=nav"))
 
 
 def jsonld_image_urls(node: Any) -> list[str]:
@@ -303,8 +307,12 @@ def extract_product_page(html: str) -> dict:
             w = 0
         hay = " ".join(str(x) for x in [img.get("class"), img.get("id"), src, img.get("alt")]).lower()
         score = w
-        if any(k in hay for k in ("product", "pdp", "hero", "main", "zoom", "gallery", "model")):
+        if any(k in hay for k in ("product", "pdp", "hero", "main", "zoom", "gallery", "model", "outfit", "flat", "lifestyle")):
             score += 500
+        # content CDN images (e.g. content.gapinc.com/d/...) are flat-lay / outfit
+        # shots — include them, they're often the best try-on reference.
+        if "/d/" in src or "?width=" in src:
+            score += 300
         candidates.append((score, src))
     candidates.sort(key=lambda x: x[0], reverse=True)
     for _, src in candidates:
@@ -317,5 +325,5 @@ def extract_product_page(html: str) -> dict:
         if m:
             add(m.get("content"))
 
-    out["images"] = seen[:8]
+    out["images"] = seen[:MAX_PRODUCT_IMAGES]
     return out
