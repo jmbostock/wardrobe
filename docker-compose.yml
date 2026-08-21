@@ -47,9 +47,10 @@ services:
       - HF_HOME=/root/.cache/huggingface
     volumes:
       # CatVTON custom node is BAKED INTO the image (services/comfyui/Dockerfile).
-      # Only weights (bind-mounted) and outputs persist on disk.
+      # Weights (HF cache) and ComfyUI input/output persist on disk.
       - ./data/comfyui/models:/root/.cache/huggingface
-      - ./data/comfyui/output:/root/comfyui/output
+      - ./data/comfyui/input:/opt/ComfyUI/input
+      - ./data/comfyui/output:/opt/ComfyUI/output
     ports:
       - "127.0.0.1:${COMFYUI_PORT:-28188}:8188"
     healthcheck:
