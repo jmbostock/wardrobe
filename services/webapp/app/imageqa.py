@@ -10,7 +10,7 @@ from __future__ import annotations
 import io
 from typing import Any
 
-from PIL import Image, ImageFilter, ImageStat
+from PIL import Image, ImageFilter, ImageOps, ImageStat
 
 PERSON_MIN_PX = 400       # smaller → "low resolution"
 PERSON_IDEAL_PX = 768
@@ -25,7 +25,10 @@ def _load(data: bytes) -> Image.Image | None:
     try:
         img = Image.open(io.BytesIO(data))
         img.load()
-        return img
+        # Respect EXIF orientation: phones store portrait shots rotated (e.g.
+        # 5312×2988 landscape + orientation=6). Without this, a portrait full-body
+        # photo is scored as "nearly square/landscape" and unfairly penalized.
+        return ImageOps.exif_transpose(img)
     except Exception:  # noqa: BLE001
         return None
 

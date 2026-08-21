@@ -44,7 +44,26 @@ def test_garment_model_hint():
     assert any("flat-lay" in i.lower() for i in r["issues"]), r
 
 
+def test_exif_rotated_portrait_not_penalized():
+    # A portrait photo stored rotated (landscape pixels + EXIF orientation=6)
+    # must be scored as portrait, not as "nearly square or landscape".
+    base = Image.new("RGB", (1000, 500), (200, 200, 200))  # raw landscape pixels
+    d = ImageDraw.Draw(base)
+    for x in range(0, 1000, 12):
+        d.line([(x, 0), (x, 500)], fill=(0, 0, 0), width=4)
+    exif = Image.Exif()
+    exif[0x0112] = 6  # rotate 90° CW to display → should read as portrait
+    buf = io.BytesIO()
+    base.save(buf, "JPEG", exif=exif)
+    data = buf.getvalue()
+    assert Image.open(io.BytesIO(data)).size == (1000, 500)  # raw is landscape
+    r = imageqa.assess_person(data)
+    assert r["score"] >= 85, r
+    assert not any("landscape" in i.lower() for i in r["issues"]), r
+
+
 if __name__ == "__main__":
     test_person_good_vs_poor()
     test_garment_model_hint()
+    test_exif_rotated_portrait_not_penalized()
     print("imageqa tests OK")
