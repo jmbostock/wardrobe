@@ -1,0 +1,71 @@
+"""Shared sqlite connection + schema for altacloset.
+
+Single connection (check_same_thread=False) + one lock, shared by `wardrobe`,
+`auth`, and anything else that touches the DB. Safe for FastAPI's threadpool.
+"""
+from __future__ import annotations
+
+import sqlite3
+import threading
+from pathlib import Path
+
+from .config import settings
+
+DB_PATH = Path(settings.data_dir) / "db" / "altacloset.db"
+
+_conn: sqlite3.Connection | None = None
+_lock = threading.Lock()
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS users (
+    id             INTEGER PRIMARY KEY,
+    username       TEXT NOT NULL UNIQUE,
+    password_salt  TEXT NOT NULL,
+    password_hash  TEXT NOT NULL,
+    created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+    token      TEXT PRIMARY KEY,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS garments (
+    id          INTEGER PRIMARY KEY,
+    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name        TEXT NOT NULL,
+    category    TEXT NOT NULL,          -- top|bottom|dress|outerwear|footwear|accessory
+    color_hex   TEXT,
+    color_tags  TEXT,                   -- comma list e.g. "navy,dark"
+    warmth      INTEGER NOT NULL DEFAULT 3,  -- 1 (thin) .. 5 (heavy)
+    waterproof  INTEGER NOT NULL DEFAULT 0,
+    formality   TEXT NOT NULL DEFAULT 'casual', -- casual|smart-casual|business|formal
+    occasions   TEXT,                   -- comma list: office,date,hiking,event,...
+    material    TEXT,
+    fit         TEXT DEFAULT 'regular',
+    last_worn   TEXT,
+    wear_count  INTEGER NOT NULL DEFAULT 0,
+    image_path  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_garments_user ON garments(user_id);
+"""
+
+
+def init() -> sqlite3.Connection:
+    """Return the shared connection, creating it + schema on first use."""
+    global _conn
+    with _lock:
+        if _conn is None:
+            DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+            _conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+            _conn.row_factory = sqlite3.Row
+            _conn.execute("PRAGMA busy_timeout=5000")
+            _conn.executescript(SCHEMA)
+            _conn.commit()
+    return _conn
+
+
+def lock() -> threading.Lock:
+    return _lock

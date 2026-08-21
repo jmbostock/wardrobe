@@ -1,0 +1,1 @@
+"""altacloset webapp package."""

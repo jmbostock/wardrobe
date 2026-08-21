@@ -1,0 +1,10 @@
+# secrets / env
+.env
+
+# mutable runtime data (bind mounts / named volume)
+data/
+
+# python
+__pycache__/
+*.pyc
+.venv/

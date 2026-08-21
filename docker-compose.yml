@@ -1,0 +1,96 @@
+# altacloset — Docker stack
+# Tested host: 10.0.1.202 (RTX 5060 Ti 16GB, toolkit 1.12.1, Docker 29.4.1)
+# Migration: identical compose works on the target machine (same GPU); see PLAN.md §7.
+
+name: altacloset
+
+services:
+  webapp:
+    build: ./services/webapp
+    image: altacloset-webapp:local
+    container_name: altacloset-webapp
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - HF_HOME=/models/huggingface
+      - COMFYUI_URL=http://comfyui:8188
+      - OLLAMA_URL=http://ollama:11434
+    volumes:
+      - ./data/wardrobe:/data/wardrobe
+      - ./data/uploads:/data/uploads
+      - ./data/db:/data/db
+      - models:/models
+    ports:
+      - "127.0.0.1:${WEBAPP_PORT:-28082}:8000"
+    depends_on:
+      comfyui:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    networks: [altacloset]
+
+  comfyui:
+    # GPU-only service. Image pulls the official ComfyUI CUDA build.
+    # CatVTON custom node + weights are baked in via services/comfyui/Dockerfile
+    # (bootstrap) so the target machine needs NO manual install steps.
+    build: ./services/comfyui
+    image: altacloset-comfyui:local
+    container_name: altacloset-comfyui
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - HF_HOME=/root/.cache/huggingface
+    volumes:
+      # CatVTON custom node is BAKED INTO the image (services/comfyui/Dockerfile).
+      # Only weights (bind-mounted) and outputs persist on disk.
+      - ./data/comfyui/models:/root/.cache/huggingface
+      - ./data/comfyui/output:/root/comfyui/output
+    ports:
+      - "127.0.0.1:${COMFYUI_PORT:-28188}:8188"
+    healthcheck:
+      # official image includes curl; /system_stats confirms the API + GPU up
+      test: ["CMD", "curl", "-fsS", "http://localhost:8188/system_stats"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks: [altacloset]
+
+  ollama:
+    # Phase 3 (LLM stylist). Kept in compose from the start so the network/volumes
+    # are stable and the target machine is a no-op to enable.
+    image: ollama/ollama:latest
+    container_name: altacloset-ollama
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    volumes:
+      - ./data/ollama:/root/.ollama
+    ports:
+      - "127.0.0.1:${OLLAMA_PORT:-28114}:11434"
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    networks: [altacloset]
+
+volumes:
+  models:
+
+networks:
+  altacloset:
