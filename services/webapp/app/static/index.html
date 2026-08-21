@@ -147,6 +147,7 @@
               <span class="muted">click the preview to capture</span>
             </div>
           </div>
+          <div id="person-qa" hidden></div>
         </div>
         <div class="block">
           <label>Look</label>
@@ -164,6 +165,7 @@
             <div class="look-row"><label>Dress</label><select class="look-select" data-role="dress"></select></div>
           </div>
           <span class="muted" id="look-hint">Pick a top, a bottom, or a dress (one-piece). Choose 2 for a full look — they render one after another.</span>
+          <div id="garment-qa" hidden></div>
         </div>
         <button id="tryon-btn">Try on</button>
         <div id="result" style="margin-top:12px"></div>
@@ -341,7 +343,7 @@ function showView(name) {
     $('view-' + v).hidden = (v !== name);
     $('tab-' + v).classList.toggle('active', v === name);
   });
-  if (name === 'tryon') { loadSavedPhotos(); populateLook(); }
+  if (name === 'tryon') { loadSavedPhotos(); populateLook(); checkPersonImage(); checkGarmentImage(); }
   if (name === 'wardrobe') { loadWardrobe(); populateLook(); }
   if (name === 'account') { loadSavedOutfits(); }
 }
@@ -461,10 +463,12 @@ $('tryon-save').addEventListener('click', async () => {
     .map((s) => Number(s.value)).filter(Boolean);
   if (!ids.length) { alert('pick at least one garment in the look first'); return; }
   const name = ($('outfit-name').value || '').trim() || ('Outfit ' + new Date().toLocaleDateString());
+  // attach the try-on render only if it matches the current look
+  const result_url = (lastResultLook === JSON.stringify(ids)) ? (lastResultUrl || '') : '';
   try {
     await apiJson('/api/outfits', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, garment_ids: ids }),
+      body: JSON.stringify({ name, garment_ids: ids, result_url }),
     });
     $('outfit-name').value = '';
     $('look-status').textContent = 'saved "' + name + '"';
@@ -600,7 +604,51 @@ document.querySelectorAll('input[name=psrc]').forEach((r) => r.addEventListener(
   $('saved-photo').hidden = src !== 'saved';
   $('person-file').hidden = src !== 'upload';
   $('webcam-row').hidden = src !== 'webcam';
+  checkPersonImage();
 }));
+$('saved-photo').addEventListener('change', checkPersonImage);
+$('person-file').addEventListener('change', checkPersonImage);
+
+// ---------- image quality feedback ----------
+function renderQa(el, qa) {
+  if (!qa) { el.hidden = true; return; }
+  const color = qa.score >= 70 ? '#2ea043' : qa.score >= 55 ? '#d4a72c' : qa.score >= 40 ? '#d4762c' : '#d9534f';
+  el.hidden = false;
+  el.innerHTML =
+    '<div style="display:flex;align-items:baseline;gap:8px;margin-top:8px"><b style="color:' + color + '">' +
+    qa.grade + ' (' + qa.score + '/100)</b><span class="muted">image quality</span></div>' +
+    (qa.issues.length
+      ? '<ul class="muted" style="margin:6px 0 0;padding-left:18px">' + qa.issues.map((i) => '<li>' + i + '</li>').join('') + '</ul>'
+      : '') +
+    (qa.tips.length ? '<div class="muted" style="margin-top:4px">💡 ' + qa.tips.join(' ') + '</div>' : '');
+}
+async function checkPersonImage() {
+  const el = $('person-qa'); if (!el) return;
+  const src = document.querySelector('input[name=psrc]:checked')?.value || 'saved';
+  let fd;
+  if (src === 'saved') {
+    const pid = $('saved-photo').value;
+    if (!pid) { el.hidden = true; return; }
+    fd = new FormData(); fd.append('kind', 'person'); fd.append('photo_id', pid);
+  } else {
+    const f = $('person-file').files[0];
+    if (!f) { el.hidden = true; return; }
+    fd = new FormData(); fd.append('kind', 'person'); fd.append('image', f);
+  }
+  try { renderQa(el, await apiJson('/api/image-quality', { method: 'POST', body: fd })); }
+  catch (e) { el.hidden = true; }
+}
+async function checkGarmentImage() {
+  const el = $('garment-qa'); if (!el) return;
+  const sel = (document.querySelector('.look-select[data-role=top]')?.value
+    || document.querySelector('.look-select[data-role=dress]')?.value
+    || document.querySelector('.look-select[data-role=bottom]')?.value);
+  if (!sel) { el.hidden = true; return; }
+  const fd = new FormData(); fd.append('kind', 'garment'); fd.append('garment_id', sel);
+  try { renderQa(el, await apiJson('/api/image-quality', { method: 'POST', body: fd })); }
+  catch (e) { el.hidden = true; }
+}
+document.querySelectorAll('.look-select').forEach((s) => s.addEventListener('change', checkGarmentImage));
 
 // ---------- try on ----------
 const TRYON_STAGES = [
@@ -611,6 +659,8 @@ const TRYON_STAGES = [
   ['Finalizing…', 'writing the result image'],
 ];
 let tryonInt = null;
+let lastResultUrl = null;
+let lastResultLook = null;
 
 $('tryon-btn').addEventListener('click', async () => {
   // always ensure a person-photo source is selected (default: saved photo)
@@ -682,6 +732,8 @@ $('tryon-btn').addEventListener('click', async () => {
       return;
     }
     const data = await res.json();
+    lastResultUrl = data.result_url;
+    lastResultLook = JSON.stringify(ids);
     const url = await authImageUrl(data.result_url);
     $('result').innerHTML = '';
     const img = document.createElement('img');
@@ -724,6 +776,7 @@ $('webcam').addEventListener('click', () => {
     stream.getTracks().forEach((t) => t.stop()); stream = null; $('webcam').hidden = true;
     $('webcam-btn').textContent = 'Start webcam';
     toast('frame captured — pick a garment and try it on');
+    checkPersonImage();
   }, 'image/jpeg', 0.92);
 });
 
@@ -883,6 +936,16 @@ async function loadSavedOutfits() {
   box.innerHTML = '';
   for (const o of items) {
     const row = document.createElement('div'); row.className = 'garment';
+    if (o.result_url) {
+      const thumb = document.createElement('img');
+      thumb.width = 56; thumb.style.height = '64px'; thumb.style.objectFit = 'contain';
+      thumb.style.borderRadius = '6px'; thumb.style.border = '1px solid var(--line)';
+      thumb.style.background = '#000'; thumb.style.cursor = 'zoom-in'; thumb.style.flex = 'none';
+      const u = await authImageUrl(o.result_url);
+      thumb.src = u;
+      thumb.addEventListener('click', () => openLightbox(u));
+      row.appendChild(thumb);
+    }
     const name = document.createElement('span'); name.className = 'name'; name.textContent = o.name;
     const itemsDesc = document.createElement('span'); itemsDesc.className = 'muted';
     itemsDesc.textContent = ' — ' + (o.garments.map((g) => g.name).join(' + ') || 'n/a');

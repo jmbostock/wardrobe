@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS outfits (
     user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name        TEXT NOT NULL,
     garment_ids TEXT NOT NULL DEFAULT '[]',  -- JSON array of garment ids
+    result_url  TEXT NOT NULL DEFAULT '',    -- saved try-on render, if any
     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_outfits_user ON outfits(user_id);
@@ -101,10 +102,15 @@ def _migrate(conn: sqlite3.Connection) -> None:
             user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             name        TEXT NOT NULL,
             garment_ids TEXT NOT NULL DEFAULT '[]',
+            result_url  TEXT NOT NULL DEFAULT '',
             created_at  TEXT NOT NULL DEFAULT (datetime('now'))
         )"""
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_outfits_user ON outfits(user_id)")
+    # result_url column (added 2026-08-21) for existing outfits tables
+    ocols = {r[1] for r in conn.execute("PRAGMA table_info(outfits)").fetchall()}
+    if "result_url" not in ocols:
+        conn.execute("ALTER TABLE outfits ADD COLUMN result_url TEXT NOT NULL DEFAULT ''")
 
 
 def lock() -> threading.Lock:

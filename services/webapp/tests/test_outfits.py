@@ -23,8 +23,9 @@ def test_create_list_delete():
     t = w.create(uid, "Tee", "top")
     b = w.create(uid, "Pants", "bottom")
     assert store.list(uid) == []
-    o = store.create(uid, "My look", [t.id, b.id])
+    o = store.create(uid, "My look", [t.id, b.id], result_url="/api/uploads/x.png")
     assert o["name"] == "My look" and o["garment_ids"] == [t.id, b.id]
+    assert o["result_url"] == "/api/uploads/x.png"
     items = store.list(uid)
     assert len(items) == 1 and items[0]["id"] == o["id"]
     assert store.delete(uid, o["id"]) is True

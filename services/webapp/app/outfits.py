@@ -25,11 +25,13 @@ class OutfitStore:
             ).fetchall()
         return [self._row(r) for r in rows]
 
-    def create(self, user_id: int, name: str, garment_ids: list[int]) -> dict[str, Any]:
+    def create(
+        self, user_id: int, name: str, garment_ids: list[int], result_url: str = ""
+    ) -> dict[str, Any]:
         with self._lock:
             cur = self._conn.execute(
-                "INSERT INTO outfits (user_id, name, garment_ids) VALUES (?,?,?)",
-                (user_id, name, json.dumps([int(x) for x in garment_ids])),
+                "INSERT INTO outfits (user_id, name, garment_ids, result_url) VALUES (?,?,?,?)",
+                (user_id, name, json.dumps([int(x) for x in garment_ids]), result_url or ""),
             )
             self._conn.commit()
             row = self._conn.execute(
@@ -56,5 +58,6 @@ class OutfitStore:
             "user_id": r["user_id"],
             "name": r["name"],
             "garment_ids": [int(x) for x in ids],
+            "result_url": r["result_url"] if "result_url" in r.keys() else "",
             "created_at": r["created_at"],
         }

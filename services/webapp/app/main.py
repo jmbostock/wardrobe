@@ -28,7 +28,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import auth, outfits, photos, recommender, tryon, weather
+from . import auth, imageqa, outfits, photos, recommender, tryon, weather
 from .config import settings
 from .outfits import OutfitStore
 from .recommender import Weather
@@ -197,6 +197,7 @@ class ParseLinkRequest(BaseModel):
 class OutfitSave(BaseModel):
     name: str = Field("", max_length=120)
     garment_ids: list[int] = Field(..., min_length=1, max_length=8)
+    result_url: str = Field("", max_length=200)
 
 
 # --------------------------------------------------------------------------- #
@@ -423,7 +424,44 @@ def save_outfit(req: OutfitSave, user: dict = Depends(get_current_user)) -> dict
         if _wardrobe.get(user["id"], gid) is None:
             raise HTTPException(404, f"garment {gid} not in your wardrobe")
     name = (req.name or "").strip()[:120] or "Saved outfit"
-    return _outfits.create(user["id"], name, req.garment_ids)
+    result_url = (req.result_url or "").strip()[:200]
+    return _outfits.create(user["id"], name, req.garment_ids, result_url=result_url)
+
+
+@app.post("/api/image-quality")
+async def image_quality(
+    kind: str = Form(...),
+    image: UploadFile | None = File(None),
+    photo_id: int | None = Form(None),
+    garment_id: int | None = Form(None),
+    user: dict = Depends(get_current_user),
+) -> dict:
+    """Score a person photo or garment image before try-on and explain what
+    would make it better. Pure-PIL heuristics, returns {score, grade, issues, tips}."""
+    if kind == "person":
+        if photo_id is not None:
+            try:
+                data = photos.photo_bytes(user["id"], photo_id)
+            except photos.PhotoError as ex:
+                raise HTTPException(404, str(ex)) from ex
+        elif image is not None:
+            data = await image.read()
+        else:
+            raise HTTPException(400, "provide image or photo_id")
+        if not data:
+            raise HTTPException(400, "empty image")
+        return imageqa.assess_person(data)
+    if kind == "garment":
+        if garment_id is None:
+            raise HTTPException(400, "garment_id required")
+        g = _wardrobe.get(user["id"], garment_id)
+        if g is None:
+            raise HTTPException(404, "garment not found")
+        path = _garment_image_path(user["id"], garment_id)
+        if path is None:
+            raise HTTPException(404, "no image for this garment")
+        return imageqa.assess_garment(path.read_bytes())
+    raise HTTPException(400, "kind must be 'person' or 'garment'")
 
 
 @app.delete("/api/outfits/{outfit_id}")
