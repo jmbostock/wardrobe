@@ -83,6 +83,12 @@ ul#reasons { color:var(--mut); padding-left:18px; margin:8px 0 0; }
 #chat-bar { margin-top:12px; border-top:1px solid var(--line); padding-top:12px; }
 #chat-bar input { flex:1; min-width:0; }
 
+/* ---- try-on before/after compare ---- */
+.compare { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px; }
+.compare figure { margin:0; display:grid; gap:4px; }
+.compare img { width:100%; border-radius:10px; border:1px solid var(--line); background:#000; }
+.compare figcaption { color:var(--mut); font-size:12px; text-transform:uppercase; letter-spacing:.5px; }
+
 /* ---- iPhone-first responsive ---- */
 @media (max-width: 640px) {
   main { padding:14px; }
@@ -103,4 +109,5 @@ ul#reasons { color:var(--mut); padding-left:18px; margin:8px 0 0; }
   .garment .name { flex:1 1 100%; }
   .look-hint-row { align-items:stretch; }
   .look-hint-row .hint { flex:1; min-width:0; }
+  .compare { grid-template-columns:1fr; }
 }

@@ -74,8 +74,8 @@ async def do_tryon_outfit(
         ids = [int(x) for x in json.loads(garment_ids)]
     except Exception as ex:  # noqa: BLE001
         raise HTTPException(400, "garment_ids must be a JSON array of ids") from ex
-    if not ids:
-        raise HTTPException(400, "no garments selected")
+    if not ids and not (base_result or photo_id or person):
+        raise HTTPException(400, "no garments selected (provide a look, or a base image to re-render)")
     if base_result:
         safe = Path(base_result).name  # strips any directory components
         path = UPLOAD_DIR / str(user["id"]) / "out" / safe
@@ -93,14 +93,19 @@ async def do_tryon_outfit(
         raise HTTPException(400, "provide a person photo, saved photo_id, or base_result")
     if not person_bytes:
         raise HTTPException(400, "empty person image")
-    try:
-        for gid in ids:
-            garment = wardrobe.get(user["id"], gid)
-            if garment is None:
-                raise HTTPException(404, f"garment {gid} not found in your wardrobe")
-            person_bytes = await tryon.run_tryon(person_bytes, garment, user["id"])
-    except tryon.ComfyUnavailable as ex:
-        raise HTTPException(503, str(ex)) from ex
+    # Apply the look (garments) if any. With an empty look (Saved-image / chat
+    # refine mode) the base image passes through untouched — no garments are
+    # re-added to an already-rendered image. A promptable model (Phase 5) can
+    # later use `prompt` to actually alter the image here.
+    if ids:
+        try:
+            for gid in ids:
+                garment = wardrobe.get(user["id"], gid)
+                if garment is None:
+                    raise HTTPException(404, f"garment {gid} not found in your wardrobe")
+                person_bytes = await tryon.run_tryon(person_bytes, garment, user["id"])
+        except tryon.ComfyUnavailable as ex:
+            raise HTTPException(503, str(ex)) from ex
     out_dir = UPLOAD_DIR / str(user["id"]) / "out"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_name = f"tryon_outfit_{int(time.time())}.png"

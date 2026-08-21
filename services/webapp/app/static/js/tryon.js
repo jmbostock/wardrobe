@@ -10,6 +10,13 @@ let tryonInt = null;
 let lastResultUrl = null;   // last render URL (used as the chat base)
 let lastResultLook = null;  // JSON of the garment ids that produced lastResultUrl
 let lastIds = [];           // garment ids of the last render
+let savedPhotos = [];       // cached /api/photos (saved-photo + saved-image sources)
+
+async function photoBaseUrl(pid) {
+  const p = savedPhotos.find((x) => String(x.id) === String(pid));
+  if (!p) return null;
+  return authImageUrl(p.url);
+}
 
 // ---------- look builder ----------
 async function populateLook() {
@@ -95,10 +102,14 @@ document.querySelectorAll('input[name=psrc]').forEach((r) => r.addEventListener(
   $('saved-photo').hidden = src !== 'saved';
   $('person-file').hidden = src !== 'upload';
   $('webcam-row').hidden = src !== 'webcam';
+  $('savedimg-row').hidden = src !== 'savedimg';
+  $('look-builder').hidden = src === 'savedimg';
+  $('chat-bar').hidden = (src !== 'savedimg' && !lastResultUrl);
   checkPersonImage();
 }));
 $('saved-photo').addEventListener('change', checkPersonImage);
 $('person-file').addEventListener('change', checkPersonImage);
+$('saved-img').addEventListener('change', checkPersonImage);
 
 // ---------- image quality feedback ----------
 function renderQa(el, qa) {
@@ -117,8 +128,8 @@ async function checkPersonImage() {
   const el = $('person-qa'); if (!el) return;
   const src = document.querySelector('input[name=psrc]:checked')?.value || 'saved';
   let fd;
-  if (src === 'saved') {
-    const pid = $('saved-photo').value;
+  if (src === 'saved' || src === 'savedimg') {
+    const pid = (src === 'savedimg') ? $('saved-img').value : $('saved-photo').value;
     if (!pid) { el.hidden = true; return; }
     fd = new FormData(); fd.append('kind', 'person'); fd.append('photo_id', pid);
   } else {
@@ -143,34 +154,53 @@ document.querySelectorAll('.look-select').forEach((s) => s.addEventListener('cha
 
 async function loadSavedPhotos() {
   try {
-    const items = await apiJson('/api/photos');
+    savedPhotos = await apiJson('/api/photos');
     const sel = $('saved-photo'); sel.innerHTML = '';
-    if (!items.length) { sel.add(new Option('no saved photos — upload in Account', '')); return; }
-    for (const p of items) {
+    if (!savedPhotos.length) { sel.add(new Option('no saved photos — upload in Account', '')); return; }
+    for (const p of savedPhotos) {
       const label = p.description ? p.description : `photo ${p.id}`;
       sel.add(new Option(`${p.is_default ? '★ ' : ''}${label}`, p.id));
     }
   } catch (e) { /* ignore */ }
 }
-loadSavedPhotos(); populateLook();
+async function loadSavedImages() {
+  try {
+    if (!savedPhotos.length) savedPhotos = await apiJson('/api/photos');
+    const sel = $('saved-img'); sel.innerHTML = '';
+    if (!savedPhotos.length) { sel.add(new Option('no saved images — upload in Account', '')); return; }
+    for (const p of savedPhotos) {
+      const label = p.description ? p.description : `photo ${p.id}`;
+      sel.add(new Option(`${p.is_default ? '★ ' : ''}${label}`, p.id));
+    }
+  } catch (e) { /* ignore */ }
+}
+loadSavedPhotos(); loadSavedImages(); populateLook();
 
 // ---------- try on (shared by the Try on button and the chat bar) ----------
-async function runTryon(ids, baseResult, prompt) {
+async function runTryon(ids, baseResult, prompt, photoId) {
   const fd = new FormData();
   fd.append('garment_ids', JSON.stringify(ids));
+  let baseUrl = null; // what produced the latest render — shown as "original" in the compare
   if (baseResult) {
     fd.append('base_result', baseResult);      // use the last render as the base
     if (prompt) fd.append('prompt', prompt);
+    baseUrl = await authImageUrl(baseResult);
+  } else if (photoId) {
+    fd.append('photo_id', photoId);            // saved-image refine: no look needed
+    if (prompt) fd.append('prompt', prompt);
+    baseUrl = await photoBaseUrl(photoId);
   } else {
     const src = document.querySelector('input[name=psrc]:checked')?.value || 'saved';
     if (src === 'saved') {
       const pid = $('saved-photo').value;
       if (!pid) { alert('upload a saved photo first (Account → My photos)'); return; }
       fd.append('photo_id', pid);
+      baseUrl = await photoBaseUrl(pid);
     } else {
       const f = $('person-file').files[0];
       if (!f) { alert('pick a person photo or use a saved one'); return; }
       fd.append('person', f);
+      baseUrl = URL.createObjectURL(f);
     }
   }
 
@@ -179,14 +209,14 @@ async function runTryon(ids, baseResult, prompt) {
   const spinner = document.createElement('div'); spinner.className = 'spinner';
   const txt = document.createElement('div');
   const stage = document.createElement('div'); stage.className = 'status';
-  stage.textContent = baseResult
-    ? 'Re-rendering from the last image…'
-    : (multi ? `Rendering garment 1 of ${ids.length}…` : 'Rendering garment…');
+  stage.textContent = ids.length
+    ? (multi ? `Rendering garment 1 of ${ids.length}…` : 'Rendering garment…')
+    : 'Refining image…';
   const hint = document.createElement('div'); hint.className = 'hint';
-  hint.textContent = baseResult
-    ? `using the previous render as the base (${ids.length} garment(s)) — CatVTON applies the look again`
-    : (multi ? `applying ${ids.length} garments in sequence — this can take a while`
-             : 'first run may download ~4-6GB of model weights (can take a few minutes)');
+  hint.textContent = ids.length
+    ? (multi ? `applying ${ids.length} garments in sequence — this can take a while`
+             : 'first run may download ~4-6GB of model weights (can take a few minutes)')
+    : 'refining from the base image — no garments re-added';
   const timer = document.createElement('div'); timer.className = 'timer'; timer.textContent = '0s';
   txt.appendChild(stage); txt.appendChild(hint);
   box.appendChild(spinner); box.appendChild(txt); box.appendChild(timer);
@@ -216,6 +246,12 @@ async function runTryon(ids, baseResult, prompt) {
     const url = await authImageUrl(data.result_url);
     $('result').innerHTML = '';
     const img = document.createElement('img'); img.src = url; $('result').appendChild(img);
+    // before/after: original (base) next to the latest render
+    if (baseUrl) {
+      $('compare-base').src = baseUrl;
+      $('compare-new').src = url;
+      $('compare').hidden = false;
+    }
     // show + re-enable the chat bar so the user can refine the image
     $('chat-bar').hidden = false;
     $('chat-input').disabled = false;
@@ -241,10 +277,21 @@ async function sendChat() {
   const input = $('chat-input');
   const text = input.value.trim();
   if (!text) return;
-  if (!lastResultUrl || !lastIds.length) { toast('generate a try-on first'); return; }
+  const src = document.querySelector('input[name=psrc]:checked')?.value || 'saved';
   input.disabled = true;
-  try { await runTryon(lastIds, lastResultUrl, text); }
-  catch (e) { /* runTryon already shows errors */ }
+  try {
+    if (src === 'savedimg') {
+      // saved-image mode: refine from the base image — no garments re-added
+      const pid = $('saved-img').value;
+      if (lastResultUrl) await runTryon([], lastResultUrl, text, null);
+      else if (pid) await runTryon([], null, text, pid);
+      else toast('pick a saved image first');
+    } else if (lastResultUrl && lastIds.length) {
+      await runTryon(lastIds, lastResultUrl, text);   // re-run the current look
+    } else {
+      toast('generate a try-on first');
+    }
+  } catch (e) { /* runTryon already shows errors */ }
   finally { input.value = ''; input.disabled = false; }
 }
 $('chat-send').addEventListener('click', sendChat);
