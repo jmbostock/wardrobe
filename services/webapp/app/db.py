@@ -35,11 +35,12 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 
 CREATE TABLE IF NOT EXISTS photos (
-    id         INTEGER PRIMARY KEY,
-    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    filename   TEXT NOT NULL,
-    is_default INTEGER NOT NULL DEFAULT 0,   -- only one per user
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    id          INTEGER PRIMARY KEY,
+    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    filename    TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',   -- shown in the try-on picker
+    is_default  INTEGER NOT NULL DEFAULT 0, -- only one per user
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_photos_user ON photos(user_id);
 
@@ -74,8 +75,16 @@ def init() -> sqlite3.Connection:
             _conn.row_factory = sqlite3.Row
             _conn.execute("PRAGMA busy_timeout=5000")
             _conn.executescript(SCHEMA)
+            _migrate(_conn)
             _conn.commit()
     return _conn
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Additive migrations for DBs created by older schemas (no reset needed)."""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(photos)").fetchall()}
+    if "description" not in cols:
+        conn.execute("ALTER TABLE photos ADD COLUMN description TEXT NOT NULL DEFAULT ''")
 
 
 def lock() -> threading.Lock:

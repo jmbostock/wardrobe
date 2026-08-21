@@ -80,6 +80,10 @@ class LocationRequest(BaseModel):
     location: str = Field(..., min_length=1, max_length=120)
 
 
+class PhotoDescriptionRequest(BaseModel):
+    description: str = Field("", max_length=200)
+
+
 # --------------------------------------------------------------------------- #
 # public
 # --------------------------------------------------------------------------- #
@@ -218,6 +222,16 @@ def set_default_photo(photo_id: int, user: dict = Depends(get_current_user)) -> 
     except photos.PhotoError as ex:
         raise HTTPException(404, str(ex)) from ex
     return {"ok": True}
+
+
+@app.patch("/api/photos/{photo_id}")
+def update_photo(
+    photo_id: int, req: PhotoDescriptionRequest, user: dict = Depends(get_current_user)
+) -> dict:
+    try:
+        return photos.set_description(user["id"], photo_id, req.description)
+    except photos.PhotoError as ex:
+        raise HTTPException(404, str(ex)) from ex
 
 
 @app.delete("/api/photos/{photo_id}")

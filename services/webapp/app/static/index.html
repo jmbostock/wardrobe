@@ -40,8 +40,12 @@
   .block label { font-size:12px; color:var(--mut); text-transform:uppercase; }
   .photos { display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:12px; }
   .photo { border:1px solid var(--line); border-radius:10px; overflow:hidden; background:#0f1216; }
-  .photo img { width:100%; height:130px; object-fit:cover; display:block; }
+  .photo img { width:100%; height:150px; object-fit:contain; display:block; background:#000; cursor:zoom-in; }
   .photo .meta { padding:8px; display:grid; gap:6px; }
+  .photo .pdesc { font-size:13px; padding:6px 8px; }
+  #lightbox { position:fixed; inset:0; background:rgba(0,0,0,.85); display:flex; align-items:center; justify-content:center; z-index:20; cursor:zoom-out; }
+  #lightbox[hidden] { display:none; }
+  #lightbox img { max-width:92vw; max-height:92vh; border-radius:8px; }
   .badge { font-size:11px; color:#0f1216; background:var(--acc); border-radius:5px; padding:1px 6px; justify-self:start; }
   .toast { position:fixed; bottom:18px; left:50%; transform:translateX(-50%); background:var(--acc);
     color:#0f1216; padding:10px 16px; border-radius:8px; font-weight:600; display:none; z-index:10; }
@@ -85,6 +89,11 @@
         <h2>Weather</h2>
         <div id="weather"><span class="muted">loading…</span></div>
         <div class="muted" id="weather-loc"></div>
+        <div class="row" style="margin-top:12px">
+          <input type="text" id="outfit-loc" placeholder="change location (zip, city…)" class="field" />
+          <button id="outfit-loc-save" class="ghost">Update location</button>
+          <span class="muted" id="outfit-loc-status"></span>
+        </div>
       </div>
       <div class="card" style="margin-top:20px">
         <h2>What's the occasion?</h2>
@@ -177,6 +186,7 @@
   </div>
 </main>
 <div class="toast" id="toast"></div>
+<div id="lightbox" hidden><img id="lightbox-img" alt="" /></div>
 
 <script>
 const $ = (id) => document.getElementById(id);
@@ -323,17 +333,19 @@ async function loadAccount() {
     $('loc-input').value = a.location.label ? '' : `${a.location.lat}, ${a.location.lon}`;
   } catch (e) { /* ignore */ }
 }
-$('loc-save').addEventListener('click', async () => {
-  $('loc-status').textContent = 'resolving…';
+async function saveLocationFrom(inputId, statusId) {
+  const status = $(statusId); status.textContent = 'resolving…';
   try {
     const r = await apiJson('/api/account/location', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ location: $('loc-input').value }),
+      body: JSON.stringify({ location: $(inputId).value }),
     });
-    $('loc-status').textContent = `saved: ${r.location.name}${r.location.country ? ', ' + r.location.country : ''}`;
-    loadWeather();
-  } catch (e) { $('loc-status').textContent = e.message; }
-});
+    status.textContent = `saved: ${r.location.name}${r.location.country ? ', ' + r.location.country : ''}`;
+    loadWeather(); loadAccount();
+  } catch (e) { status.textContent = e.message; }
+}
+$('loc-save').addEventListener('click', () => saveLocationFrom('loc-input', 'loc-status'));
+$('outfit-loc-save').addEventListener('click', () => saveLocationFrom('outfit-loc', 'outfit-loc-status'));
 $('pw-save').addEventListener('click', async () => {
   try {
     await apiJson('/api/account/password', {
@@ -356,12 +368,29 @@ async function loadPhotos() {
       const url = await authImageUrl(p.url);
       const card = document.createElement('div');
       card.className = 'photo';
-      card.innerHTML = `<img src="${url}" alt="photo ${p.id}" />` +
-        `<div class="meta">${p.is_default ? '<span class="badge">default</span>' : '<span></span>'}
-          <div class="row">
-            ${p.is_default ? '' : `<button class="ghost" data-setdef="${p.id}">Default</button>`}
-            <button class="danger" data-del="${p.id}">Delete</button>
-          </div></div>`;
+
+      const img = document.createElement('img');
+      img.src = url; img.alt = 'photo ' + p.id;
+      img.addEventListener('click', () => openLightbox(url));
+
+      const meta = document.createElement('div'); meta.className = 'meta';
+      if (p.is_default) { const b = document.createElement('span'); b.className = 'badge'; b.textContent = 'default'; meta.appendChild(b); }
+
+      const desc = document.createElement('input');
+      desc.type = 'text'; desc.className = 'pdesc'; desc.value = p.description || '';
+      desc.placeholder = 'description (shows in try-on)';
+
+      const row = document.createElement('div'); row.className = 'row';
+      const saveD = document.createElement('button'); saveD.className = 'ghost'; saveD.textContent = 'Save desc'; saveD.dataset.id = p.id;
+      const del = document.createElement('button'); del.className = 'danger'; del.textContent = 'Delete'; del.dataset.del = p.id;
+      row.appendChild(saveD);
+      if (!p.is_default) {
+        const def = document.createElement('button'); def.className = 'ghost'; def.textContent = 'Default'; def.dataset.setdef = p.id;
+        row.appendChild(def);
+      }
+      row.appendChild(del);
+      meta.appendChild(desc); meta.appendChild(row);
+      card.appendChild(img); card.appendChild(meta);
       grid.appendChild(card);
     }
     grid.querySelectorAll('[data-setdef]').forEach((b) => b.addEventListener('click', async () => {
@@ -372,6 +401,16 @@ async function loadPhotos() {
       if (!confirm('delete this photo?')) return;
       await apiJson(`/api/photos/${b.dataset.del}`, { method: 'DELETE' });
       loadPhotos(); loadSavedPhotos(); toast('photo deleted');
+    }));
+    grid.querySelectorAll('[data-id]').forEach((b) => b.addEventListener('click', async () => {
+      const card = b.closest('.photo');
+      const input = card.querySelector('.pdesc');
+      await apiJson(`/api/photos/${b.dataset.id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description: input.value }),
+      });
+      toast('description saved');
+      loadSavedPhotos();
     }));
   } catch (e) { /* ignore */ }
 }
@@ -391,10 +430,21 @@ async function loadSavedPhotos() {
     const sel = $('saved-photo'); sel.innerHTML = '';
     if (!items.length) { sel.add(new Option('no saved photos — upload in Account', '')); return; }
     for (const p of items) {
-      sel.add(new Option(`${p.is_default ? '★ ' : ''}photo ${p.id}`, p.id));
+      const label = p.description ? p.description : `photo ${p.id}`;
+      sel.add(new Option(`${p.is_default ? '★ ' : ''}${label}`, p.id));
     }
   } catch (e) { /* ignore */ }
 }
+
+// ---------- lightbox ----------
+function openLightbox(url) {
+  $('lightbox-img').src = url;
+  $('lightbox').hidden = false;
+}
+$('lightbox').addEventListener('click', () => {
+  $('lightbox').hidden = true;
+  $('lightbox-img').src = '';
+});
 
 // ---------- person source ----------
 document.querySelectorAll('input[name=psrc]').forEach((r) => r.addEventListener('change', () => {

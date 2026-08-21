@@ -50,6 +50,23 @@ def test_cross_user_isolation():
         pass
 
 
+def test_description_roundtrip():
+    ua = auth.create_user("photodesc@example.com", "password123")
+    p = photos.upload(ua["id"], b"desc-jpeg", ".jpg")
+    assert p["description"] == ""
+    updated = photos.set_description(ua["id"], p["id"], "front view, summer")
+    assert updated["description"] == "front view, summer"
+    listed = photos.list(ua["id"])
+    assert next(x["description"] for x in listed if x["id"] == p["id"]) == "front view, summer"
+    # cross-user guard
+    ub = auth.create_user("photodesc2@example.com", "password123")
+    try:
+        photos.set_description(ub["id"], p["id"], "hijack")
+        raise AssertionError("expected PhotoError for cross-user description")
+    except photos.PhotoError:
+        pass
+
+
 def _run_all():
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failures = 0

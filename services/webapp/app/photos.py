@@ -31,6 +31,7 @@ def _row_to_dict(row: Any) -> dict[str, Any]:
         "id": row["id"],
         "user_id": row["user_id"],
         "filename": row["filename"],
+        "description": row["description"] or "",
         "is_default": bool(row["is_default"]),
         "created_at": row["created_at"],
         "url": f"/api/photos/{row['id']}/image",
@@ -138,3 +139,21 @@ def photo_path(user_id: int, photo_id: int) -> Path:
     if row is None:
         raise PhotoError("photo not found")
     return _photo_dir(user_id) / row["filename"]
+
+
+def set_description(user_id: int, photo_id: int, description: str) -> dict[str, Any]:
+    conn = db.init()
+    row = _get(user_id, photo_id)
+    if row is None:
+        raise PhotoError("photo not found")
+    description = (description or "").strip()[:200]
+    with db.lock():
+        conn.execute(
+            "UPDATE photos SET description=? WHERE user_id=? AND id=?",
+            (description, user_id, photo_id),
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM photos WHERE user_id=? AND id=?", (user_id, photo_id)
+        ).fetchone()
+    return _row_to_dict(row)
