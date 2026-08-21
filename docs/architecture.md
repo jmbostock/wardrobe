@@ -2,11 +2,13 @@
 
 ## Services (all in Docker, single GPU box)
 
-| Service | Role | Port (127.0.0.1) | GPU | VRAM |
+| Service | Role | Port | GPU | VRAM |
 |---|---|---|---|---|
-| `webapp` | FastAPI app (recommend, weather, tryon, chat) | 28082 | no | — |
-| `comfyui` | Renderer host (CatVTON try-on) | 28188 (internal) | yes | ~8GB |
+| `webapp` | FastAPI app (recommend, weather, tryon, chat) | 28085 on 202 (default 28082, 0.0.0.0 for LAN) | no | — |
+| `comfyui` | Renderer host (CatVTON try-on) | 28190 on 202 (default 28188, internal :8188) | yes | ~8GB |
 | `ollama` | LLM stylist (phase 3) | 28114 (internal) | yes | ~3–3.5GB |
+
+> 202 is a busy box — VS Code occupies 28082/28188/28189, so the running stack uses 28085/28190.
 
 ## Decision log
 
@@ -19,6 +21,9 @@
 | 5 | All state in `data/` bind-mounts + `models` volume; all config in `.env` | 2026-08-21 | Guarantees `docker compose up` parity between 202 and the target machine |
 | 6 | Services bound to 127.0.0.1, Caddy in front if LAN/TLS needed | 2026-08-21 | Keep ML endpoints off the LAN; match homelab convention (Caddy already used in `compose/caddy`) |
 | 7 | Multi-user: local accounts (PBKDF2 + bearer sessions) + per-user wardrobe/uploads | 2026-08-21 | Self-contained & portable (no external IdP). All rows carry `user_id`; try-on results are private per user. OIDC/SSO is the phase-3 upgrade — `auth.get_user_by_token` is the swap boundary |
+| 8 | Image-quality = pure-PIL heuristics (no ML) | 2026-08-21 | `POST /api/image-quality` scores person/garment; deterministic, no extra GPU/RAM. Reused by the Account **base-suitability chips** (frontend-only) so bad base photos are obvious before a ~40s GPU render |
+| 9 | iPhone-first responsive UI | 2026-08-21 | Most usage is on iPhone. `@media (max-width:640px)` block; uniform `aspect-ratio:3/4` card grid (2-col mobile); card buttons stack full-width on mobile. Verified no overflow at 390px |
+| 10 | One Edit modal per garment (consolidated actions) | 2026-08-21 | Cards show a single **Edit** button; photo upload/from-link, name/category/color, Save + Delete all live in one modal (per user request). Backed by new `PATCH /api/wardrobe/{id}` + `Wardrobe.update()` |
 
 ## Performance targets (5060 Ti 16GB)
 

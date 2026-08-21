@@ -171,6 +171,20 @@ class Wardrobe:
             self._conn.commit()
             return cur.rowcount > 0
 
+    def update(self, user_id: int, garment_id: int, **fields: Any) -> bool:
+        """Update arbitrary garment columns (caller validates the values).
+        Field names must be real columns on `garments`."""
+        if not fields:
+            return False
+        sets = ", ".join(f"{k}=?" for k in fields)
+        with self._lock:
+            cur = self._conn.execute(
+                f"UPDATE garments SET {sets} WHERE user_id=? AND id=?",
+                (*fields.values(), user_id, garment_id),
+            )
+            self._conn.commit()
+            return cur.rowcount > 0
+
     def delete(self, user_id: int, garment_id: int) -> bool:
         with self._lock:
             cur = self._conn.execute(

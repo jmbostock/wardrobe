@@ -38,11 +38,23 @@
   .muted { color:var(--mut); font-size:13px; }
   .block { display:grid; gap:10px; margin-bottom:14px; }
   .block label { font-size:12px; color:var(--mut); text-transform:uppercase; }
-  .photos { display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:12px; }
-  .photo { border:1px solid var(--line); border-radius:10px; overflow:hidden; background:#0f1216; }
-  .photo img { width:100%; height:150px; object-fit:contain; display:block; background:#000; cursor:zoom-in; }
-  .photo .meta { padding:8px; display:grid; gap:6px; }
-  .photo .pdesc { font-size:13px; padding:6px 8px; }
+  .photos { display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:14px; }
+  .photo { border:1px solid var(--line); border-radius:12px; overflow:hidden; background:#0f1216; }
+  .photo img { width:100%; aspect-ratio:3/4; object-fit:contain; display:block; background:#000; cursor:zoom-in; }
+  .photo .meta { padding:10px; display:grid; gap:8px; }
+  .photo .pdesc { font-size:13px; padding:6px 8px; width:100%; }
+  .photo .qachip { font-size:11px; font-weight:700; border-radius:5px; padding:2px 7px; justify-self:start; }
+  .photo.bad { border-color:#d9534f; box-shadow:0 0 0 1px #d9534f; }
+  .photo .badnote { color:#d9534f; font-size:12px; }
+  .photo .meta > button { width:100%; }
+  .photo .row { gap:6px; }
+  .photo .row button { flex:1 1 0; min-width:0; padding:8px 6px; font-size:12px; }
+  #edit-modal { position:fixed; inset:0; background:rgba(0,0,0,.85); display:flex; align-items:flex-start; justify-content:center; overflow-y:auto; z-index:30; padding:20px; }
+  #edit-modal[hidden] { display:none; }
+  #edit-modal .modal { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; width:100%; max-width:440px; display:grid; gap:14px; margin:auto 0; }
+  #edit-modal .modal-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+  #edit-modal .modal-head h2 { margin:0; font-size:16px; overflow-wrap:anywhere; }
+  #edit-modal img { width:100%; max-height:340px; object-fit:contain; background:#000; border-radius:10px; border:1px solid var(--line); }
   #lightbox { position:fixed; inset:0; background:rgba(0,0,0,.85); display:flex; align-items:center; justify-content:center; z-index:20; cursor:zoom-out; }
   #lightbox[hidden] { display:none; }
   #lightbox img { max-width:92vw; max-height:92vh; border-radius:8px; }
@@ -61,6 +73,26 @@
   .look-row { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
   .look-row label { width:70px; flex:none; color:var(--mut); font-size:12px; text-transform:uppercase; }
   .look-row select { flex:1; }
+
+  /* ---- iPhone-first responsive ---- */
+  @media (max-width: 640px) {
+    main { padding:14px; }
+    header { padding:10px 14px; flex-wrap:wrap; gap:10px; }
+    header h1 { font-size:17px; }
+    header .tag { display:none; }
+    nav { flex-wrap:wrap; gap:6px; }
+    nav button { padding:8px 10px; font-size:13px; }
+    .card { padding:14px; }
+    .photos { grid-template-columns:repeat(2,1fr); gap:10px; }
+    .photo .row { flex-direction:column; align-items:stretch; }
+    .photo .row button { width:100%; padding:10px 8px; font-size:13px; }
+    .row > .field, .row > select, .row > input[type=text], .row > input[type=email], .row > input[type=password] {
+      flex-basis:100%; min-width:0; }
+    .row > button { flex:1 1 auto; }
+    .field { min-width:0; }
+    .garment { flex-wrap:wrap; }
+    .garment .name { flex:1 1 100%; }
+  }
 </style>
 </head>
 <body>
@@ -206,6 +238,7 @@
         </div>
         <div class="row">
           <button id="g-add">Add garment</button>
+          <button id="g-clear" class="ghost">Clear</button>
           <span class="muted" id="g-status"></span>
         </div>
       </div>
@@ -246,7 +279,7 @@
 
       <div class="card" style="margin-top:20px">
         <h2>My photos</h2>
-        <p class="muted">These are the person photos used for try-on. Mark one as default.</p>
+        <p class="muted">These are the person photos used for try-on. Mark one as default. Each card shows a suitability chip for use as a base image — red means low quality, skip it for try-on.</p>
         <div class="row" style="margin-bottom:12px">
           <input type="file" id="photo-upload" accept="image/*" hidden />
           <button id="photo-upload-btn">Upload a photo</button>
@@ -265,6 +298,39 @@
 </main>
 <div class="toast" id="toast"></div>
 <div id="lightbox" hidden><img id="lightbox-img" alt="" /></div>
+<div id="edit-modal" hidden>
+  <div class="modal">
+    <div class="modal-head">
+      <h2 id="edit-title">Edit garment</h2>
+      <button id="edit-close" class="ghost">✕</button>
+    </div>
+    <img id="edit-img" alt="" />
+    <div class="block">
+      <label>Photo — upload a file or set it from a link</label>
+      <div class="row">
+        <input type="file" id="edit-file" accept="image/*" hidden />
+        <button id="edit-upload" class="ghost">Upload photo</button>
+      </div>
+      <div class="row">
+        <input type="text" id="edit-url" placeholder="https://… image URL" class="field" />
+        <button id="edit-url-btn" class="ghost">Set from link</button>
+      </div>
+    </div>
+    <div class="block">
+      <label>Name</label>
+      <input type="text" id="edit-name" class="field" placeholder="garment name" />
+    </div>
+    <div class="row">
+      <div class="block" style="flex:1;min-width:0"><label>Category</label><select id="edit-category"></select></div>
+      <div class="block" style="flex:1;min-width:0"><label>Color</label><input type="text" id="edit-color" class="field" placeholder="e.g. navy" /></div>
+    </div>
+    <div class="row">
+      <button id="edit-save">Save</button>
+      <button id="edit-delete" class="danger">Delete</button>
+      <span class="muted" id="edit-status"></span>
+    </div>
+  </div>
+</div>
 
 <script>
 const $ = (id) => document.getElementById(id);
@@ -544,6 +610,7 @@ async function loadPhotos() {
       meta.appendChild(desc); meta.appendChild(row);
       card.appendChild(img); card.appendChild(meta);
       grid.appendChild(card);
+      attachPhotoQa(card, p.id);
     }
     grid.querySelectorAll('[data-setdef]').forEach((b) => b.addEventListener('click', async () => {
       await apiJson(`/api/photos/${b.dataset.setdef}/default`, { method: 'POST' });
@@ -575,6 +642,34 @@ $('photo-upload').addEventListener('change', async () => {
   $('photo-upload').value = '';
   loadPhotos(); loadSavedPhotos();
 });
+
+function photoQaColor(score) {
+  return score >= 70 ? '#2ea043' : score >= 55 ? '#d4a72c' : score >= 40 ? '#d4762c' : '#d9534f';
+}
+// suitability chip for a saved base image (Account → My photos), so you can
+// spot bad ones before wasting a try-on render on them
+async function attachPhotoQa(card, photoId) {
+  try {
+    const fd = new FormData(); fd.append('kind', 'person'); fd.append('photo_id', photoId);
+    const qa = await apiJson('/api/image-quality', { method: 'POST', body: fd });
+    const chip = document.createElement('span');
+    chip.className = 'qachip';
+    chip.style.color = '#0f1216';
+    chip.style.background = photoQaColor(qa.score);
+    chip.textContent = `base ${qa.grade} ${qa.score}/100`;
+    chip.title = qa.issues.length ? qa.issues.join(' · ') : 'looks good — great try-on base';
+    const meta = card.querySelector('.meta');
+    if (meta) meta.prepend(chip);
+    if (qa.score < 55) {
+      card.classList.add('bad');
+      const note = document.createElement('div');
+      note.className = 'badnote';
+      note.textContent = '⚠ low-quality base — try-on will be soft';
+      note.title = qa.issues.join(' · ');
+      if (meta) meta.appendChild(note);
+    }
+  } catch (e) { /* ignore */ }
+}
 
 async function loadSavedPhotos() {
   try {
@@ -798,50 +893,88 @@ async function loadWardrobe() {
       img.addEventListener('click', () => openLightbox(url));
     } else {
       img.style.background = g.color_hex || '#333';
-      img.title = 'no image yet — set one below';
+      img.title = 'no image yet — add one in Edit';
     }
     const meta = document.createElement('div'); meta.className = 'meta';
     const badge = document.createElement('span'); badge.className = 'badge'; badge.textContent = g.category;
     const name = document.createElement('div'); name.textContent = g.name; name.style.fontSize = '13px';
     meta.appendChild(badge); meta.appendChild(name);
-
-    const fileInput = document.createElement('input');
-    fileInput.type = 'file'; fileInput.accept = 'image/*'; fileInput.hidden = true;
-    fileInput.addEventListener('change', async () => {
-      const f = fileInput.files[0]; if (!f) return;
-      const fd = new FormData(); fd.append('image', f);
-      try { await apiJson('/api/wardrobe/' + g.id + '/image', { method: 'POST', body: fd }); toast('image saved'); }
-      catch (e) { alert(e.message); }
-      loadWardrobe(); populateLook();
-    });
-    const setBtn = document.createElement('button'); setBtn.className = 'ghost'; setBtn.textContent = 'Set image';
-    setBtn.addEventListener('click', () => fileInput.click());
-    const urlBtn = document.createElement('button'); urlBtn.className = 'ghost'; urlBtn.textContent = 'From link';
-    urlBtn.addEventListener('click', async () => {
-      const u = prompt('Image URL for "' + g.name + '":');
-      if (!u) return;
-      try {
-        await apiJson('/api/wardrobe/' + g.id + '/image-url', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: u }),
-        });
-        toast('image saved');
-      } catch (e) { alert(e.message); }
-      loadWardrobe(); populateLook();
-    });
-    const delBtn = document.createElement('button'); delBtn.className = 'danger'; delBtn.textContent = 'Delete';
-    delBtn.addEventListener('click', async () => {
-      if (!confirm('delete "' + g.name + '"?')) return;
-      try { await apiJson('/api/wardrobe/' + g.id, { method: 'DELETE' }); toast('deleted'); }
-      catch (e) { alert(e.message); }
-      loadWardrobe(); populateLook();
-    });
-    const row = document.createElement('div'); row.className = 'row';
-    row.appendChild(fileInput); row.appendChild(setBtn); row.appendChild(urlBtn); row.appendChild(delBtn);
-    meta.appendChild(row);
+    const editBtn = document.createElement('button'); editBtn.className = 'ghost'; editBtn.textContent = 'Edit';
+    editBtn.addEventListener('click', () => openEdit(g));
+    meta.appendChild(editBtn);
     card.appendChild(img); card.appendChild(meta);
     grid.appendChild(card);
   }
 }
+
+// ---------- wardrobe edit modal ----------
+let editingGarment = null;
+function openEdit(g) {
+  editingGarment = g;
+  $('edit-title').textContent = 'Edit — ' + g.name;
+  $('edit-name').value = g.name;
+  $('edit-color').value = (g.color_tags || []).join(', ');
+  const cat = $('edit-category'); cat.innerHTML = '';
+  Array.from($('g-category').options).forEach((o) => cat.add(new Option(o.text, o.value)));
+  cat.value = g.category;
+  $('edit-url').value = '';
+  $('edit-status').textContent = '';
+  const img = $('edit-img');
+  img.style.background = g.color_hex || '#333'; img.src = '';
+  if (g.has_image) {
+    authImageUrl('/api/wardrobe/' + g.id + '/image').then((u) => { img.src = u; }).catch(() => {});
+  }
+  $('edit-modal').hidden = false;
+}
+function closeEdit() { $('edit-modal').hidden = true; editingGarment = null; }
+function refreshEditImage() {
+  if (editingGarment && editingGarment.has_image) {
+    authImageUrl('/api/wardrobe/' + editingGarment.id + '/image').then((u) => { $('edit-img').src = u; }).catch(() => {});
+  }
+}
+$('edit-close').addEventListener('click', closeEdit);
+$('edit-modal').addEventListener('click', (e) => { if (e.target === $('edit-modal')) closeEdit(); });
+$('edit-upload').addEventListener('click', () => $('edit-file').click());
+$('edit-file').addEventListener('change', async () => {
+  const f = $('edit-file').files[0]; if (!f || !editingGarment) return;
+  const fd = new FormData(); fd.append('image', f);
+  $('edit-status').textContent = 'uploading…';
+  try {
+    await apiJson('/api/wardrobe/' + editingGarment.id + '/image', { method: 'POST', body: fd });
+    $('edit-status').textContent = 'photo saved'; $('edit-file').value = '';
+    refreshEditImage(); loadWardrobe(); populateLook();
+  } catch (e) { alert(e.message); }
+});
+$('edit-url-btn').addEventListener('click', async () => {
+  const u = $('edit-url').value.trim(); if (!u || !editingGarment) return;
+  $('edit-status').textContent = 'fetching…';
+  try {
+    await apiJson('/api/wardrobe/' + editingGarment.id + '/image-url', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: u }),
+    });
+    $('edit-status').textContent = 'photo saved'; $('edit-url').value = '';
+    refreshEditImage(); loadWardrobe(); populateLook();
+  } catch (e) { alert(e.message); }
+});
+$('edit-save').addEventListener('click', async () => {
+  if (!editingGarment) return;
+  const body = { name: $('edit-name').value.trim(), category: $('edit-category').value, color: $('edit-color').value.trim() };
+  $('edit-status').textContent = 'saving…';
+  try {
+    await apiJson('/api/wardrobe/' + editingGarment.id, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    $('edit-status').textContent = 'saved'; toast('garment updated');
+    loadWardrobe(); populateLook();
+  } catch (e) { $('edit-status').textContent = e.message; }
+});
+$('edit-delete').addEventListener('click', async () => {
+  if (!editingGarment) return;
+  if (!confirm('delete "' + editingGarment.name + '"?')) return;
+  try { await apiJson('/api/wardrobe/' + editingGarment.id, { method: 'DELETE' }); toast('deleted'); }
+  catch (e) { alert(e.message); }
+  closeEdit(); loadWardrobe(); populateLook();
+});
 
 let pickedImage = null;
 let previewImages = [];
@@ -880,7 +1013,7 @@ function renderPreview() {
   previewImages.forEach((u) => {
     const card = document.createElement('div'); card.className = 'photo';
     const img = document.createElement('img');
-    img.style.height = '150px'; img.style.objectFit = 'contain';
+    img.style.objectFit = 'contain';
     img.src = u; img.alt = 'image option'; img.loading = 'lazy';
     card.appendChild(img);
     card.dataset.url = u;
@@ -923,6 +1056,13 @@ $('g-add').addEventListener('click', async () => {
     $('g-preview').hidden = true; $('g-preview').innerHTML = '';
     loadWardrobe(); populateLook();
   } catch (e) { status.textContent = e.message; }
+});
+$('g-clear').addEventListener('click', () => {
+  $('g-name').value = ''; $('g-color').value = ''; $('g-url').value = ''; $('g-file').value = '';
+  $('g-category').selectedIndex = 0;
+  pickedImage = null; previewImages = [];
+  $('g-preview').hidden = true; $('g-preview').innerHTML = '';
+  $('g-status').textContent = 'form cleared — paste a new link or add manually';
 });
 
 // ---------- saved outfits ----------

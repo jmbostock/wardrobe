@@ -5,7 +5,9 @@
 > Test on **202** (RTX 5060 Ti 16GB), then migrate to a second machine with the **same GPU**
 > — everything must be portable (Docker-only, env-driven, no host hardcoding).
 
-- Status: **PLANNING** (Phase 0 not started)
+- Status: **ACTIVE** — Phase 1 & 2 DONE; Phase 4 polish in progress (2026-08-21).
+  Current build is live on `http://10.0.1.202:28085`.
+  See `docs/product.md` for the current-state write-up + prioritized roadmap.
 - Test host: `10.0.1.202` (pop-os)
 - Target host: TBD — "another computer with the same GPU" (RTX 5060 Ti 16GB)
 
@@ -141,9 +143,12 @@ photo (garment 27 on testdata/person.jpg). See `docs/tryon-pipeline.md` §8 + re
 - [ ] Keeps concurrent with CatVTON (~11.5GB total).
 
 ### Phase 4 — Full outfit try-on + polish
-- [ ] Multi-garment try-on (top → result → bottom) or 2-garment CatVTON.
-- [x] Wardrobe manager: add garments + image upload / product-URL fetch, set/delete images, per-garment serve (2026-08-21).
-- [ ] Wardrobe CRUD auto-tagging (auto color/material from image).
+- [x] Multi-garment try-on (top → result → bottom) — chained via `/api/tryon/outfit` (2026-08-21).
+- [x] Wardrobe manager: add/edit/delete garments, image upload / product-URL fetch, per-garment serve (2026-08-21).
+- [x] Per-garment **Edit modal** (photo, name/category/color, delete) + add-form **Clear** (2026-08-21).
+- [x] Base-image suitability chips + iPhone-first responsive UI (2026-08-21).
+- [ ] Whole-look CatVTON in one pass (vs sequential chain) — see docs/product.md §7.
+- [ ] Wardrobe auto-tagging (auto color/material from image) — docs/product.md §7.
 - [ ] Daily digest (weather + "wear this today") like Alta's daily outfits.
 - [ ] Style calendar / history.
 
@@ -175,17 +180,26 @@ run solo as "quality mode") → CatVTON-FLUX / FLUX.1-Kontext (GGUF quantized, ~
 | Endpoint | Method | Body / Params | Returns |
 |---|---|---|---|
 | `/health` | GET | — | `{ok: true}` |
-| `/api/auth/register` | POST | `{username, password}` | `{token, user}` |
-| `/api/auth/login` | POST | `{username, password}` | `{token, user}` |
+| `/api/auth/register` | POST | `{email, password}` | `{token, user}` |
+| `/api/auth/login` | POST | `{email, password}` | `{token, user}` |
 | `/api/auth/logout` | POST | Bearer token | `{ok: true}` |
 | `/api/auth/me` | GET | Bearer token | `{user}` |
 | `/api/weather` | GET | Bearer token | `{temp_c, feels_like_c, condition, wind_kph, humidity, uv_index}` |
+| `/api/account` | GET | Bearer token | `{user, location}` |
+| `/api/account/password` | POST | Bearer + `{current_password, new_password}` | `{ok: true}` |
+| `/api/account/location` | POST | Bearer + `{location}` (zip/city/"lat,lon") | `{ok, location}` |
+| `/api/photos` | GET / POST | Bearer / multipart `person` | photos[] / created photo |
+| `/api/photos/{id}` | PATCH | Bearer + `{description}` | updated photo |
+| `/api/photos/{id}/default` | POST | Bearer token | `{ok: true}` |
+| `/api/photos/{id}/image` | GET | Bearer token | photo image (owner-only) |
+| `/api/photos/{id}` | DELETE | Bearer token | `{ok: true}` |
 | `/api/wardrobe` | GET | Bearer token | caller's garments (incl. `has_image`) |
 | `/api/wardrobe` | POST | Bearer + `{name, category, color?, image_url?}` | created garment (fetches `image_url` if given) |
 | `/api/wardrobe/parse-link` | POST | Bearer + `{url}` | `{name, description, color, category, images[]}` from a product page / image link |
 | `/api/wardrobe/{id}/image` | POST | Bearer + multipart `image` | updated garment (`has_image`) |
 | `/api/wardrobe/{id}/image-url` | POST | Bearer + `{url}` | updated garment (fetches image from URL) |
 | `/api/wardrobe/{id}/image` | GET | Bearer token | garment image (owner-only, 404 if none) |
+| `/api/wardrobe/{id}` | PATCH | Bearer + `{name?, category?, color?}` | updated garment |
 | `/api/wardrobe/{id}` | DELETE | Bearer token | `{ok: true}` |
 | `/api/recommend` | POST | Bearer + `{activity, prompt?, weather?}` | `{outfit, reasoning, scores, weather_used}` |
 | `/api/tryon` | POST | Bearer + multipart `person`, `garment_id` | `{result_url}` (private, owner-only) |
@@ -199,8 +213,12 @@ run solo as "quality mode") → CatVTON-FLUX / FLUX.1-Kontext (GGUF quantized, ~
 > All data endpoints require `Authorization: Bearer <token>` from register/login.
 > Try-on results are served via `GET /api/uploads/{name}` and only to their owner.
 
-Ports (all bound to 127.0.0.1 unless proxied):
-webapp `28082`, ComfyUI `28188` (internal only), Ollama `28114` (internal only).
+Ports (all bound to 127.0.0.1 unless proxied; webapp on 202 is 0.0.0.0 for LAN testing):
+webapp `28085` (202 actual; default 28082), ComfyUI `28190` (202 actual; default 28188,
+internal :8188), Ollama `28114` (internal only).
+
+> 202 is a busy box — VS Code occupies 28082/28188/28189, so the running stack uses
+> 28085/28190. Always check `docker ps` before choosing ports.
 
 ---
 
@@ -242,3 +260,25 @@ Everything must move via Docker + env; **no host-specific state**.
 3. Given a stored or live photo of a person + that outfit's top garment, the app returns
    a believable photo with the garment on the person.
 4. The same stack boots **unchanged on the target machine** after `migrate-to-target.sh`.
+
+---
+
+## 10. What's next (2026-08-21)
+
+Full prioritized roadmap with rationale: **`docs/product.md §7`**. Short version:
+
+**Near term (most useful first)**
+- `rembg` background removal for flat-lay garment images (cleaner CatVTON cutouts).
+- Webcam → try-on polish (downscale ≤1024px, retry, iPhone camera-permission UX).
+- Suitability check **on upload** + one-tap "delete low-quality base" in Account.
+- Whole-look CatVTON in **one pass** (vs sequential top→bottom chain).
+- `parse-link` browser fallback for Akamai/JS-heavy stores (Abercrombie 403s server-side).
+
+**Phase 3** — Ollama LLM stylist (Qwen2.5 3B / Gemma 3 4B): `/api/chat` explains picks,
+concurrent with CatVTON (~11.5GB total).
+
+**Phase 4** — auto-tagging (color/material from image) · daily digest ("wear this today") ·
+person profiles (named base photos) · OIDC/SSO.
+
+**Phase 5** — migrate to target GPU box · PWA/Add-to-Home-Screen for iPhone ·
+IDM-VTON (solo 16GB "quality mode") → FLUX.1-Kontext (GGUF ~12–16GB) renderer upgrade.

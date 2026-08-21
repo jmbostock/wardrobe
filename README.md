@@ -1,25 +1,34 @@
 # Clueless Closet
 
-Self-hosted, Dockerized personal stylist — recommends outfits from your own
-wardrobe (weather + activity + prompt) and renders them onto a photo of a person
-(stored image or live webcam), à la Alta Daily.
-Recommends outfits from **weather + activity + prompt**, then renders the recommended
-clothes onto a **photo of a person** (stored image or live webcam capture).
+Self-hosted, Dockerized personal stylist — keeps your real wardrobe, recommends
+outfits from **weather + activity + prompt**, and renders the recommended clothes
+onto a **photo of a person** (stored image, upload, or live webcam), à la Alta Daily.
 
 - Test host: `10.0.1.202` (RTX 5060 Ti 16GB) — then migrates to a second box with the same GPU.
 - Everything runs in Docker; all config via `.env`.
+- **Live:** `http://10.0.1.202:28085` (webapp) · ComfyUI try-on on `127.0.0.1:28190`.
 
-## Quickstart (Phase 0/1 — CPU-only webapp + recommender)
+## Current status (2026-08-21)
+
+- ✅ Phase 1 (email accounts, weather, rule-based recommender, wardrobe)
+- ✅ Phase 2 (CatVTON try-on via ComfyUI, GPU) — working end-to-end
+- ✅ Phase 4 polish: wardrobe **edit modal**, add-form **Clear**, saved outfits,
+  **image-quality / base-suitability chips**, uniform spacing + **iPhone-first** UI
+- ⬜ Phase 3 (LLM stylist) and Phase 5 (migration) — not started
+
+**What's next:** `docs/product.md §7` (prioritized roadmap). **Full plan:** `PLAN.md`.
+
+## Quickstart (webapp + recommender)
 
 ```bash
 cp .env.example .env
 docker compose up -d webapp
-curl http://127.0.0.1:28082/health
+curl http://127.0.0.1:28082/health          # port 28085 on 202
 
-# create an account, then use the returned token for everything else
+# create an account (email-based), then use the returned token for everything else
 TOKEN=$(curl -s -X POST http://127.0.0.1:28082/api/auth/register \
   -H 'Content-Type: application/json' \
-  -d '{"username": "you", "password": "a-secret-pass"}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])')
+  -d '{"email": "you@example.com", "password": "a-secret-pass"}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])')
 
 curl -s -X POST http://127.0.0.1:28082/api/recommend \
   -H "Authorization: Bearer $TOKEN" \
@@ -43,6 +52,7 @@ UI handles tokens automatically. Each account has its own wardrobe and results.
 
 ## Docs
 
+- `docs/product.md` — **current-state write-up + prioritized roadmap** (what's built, what's next)
 - `PLAN.md` — full project plan, phases, API contract, migration
 - `docs/architecture.md`, `docs/recommender.md`, `docs/tryon-pipeline.md`, `docs/host-202-notes.md`
 

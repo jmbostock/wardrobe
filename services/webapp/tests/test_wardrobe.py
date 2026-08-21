@@ -54,6 +54,20 @@ def test_cross_user_isolation():
     assert w.get(ua["id"], g.id) is not None
 
 
+def test_update():
+    ua = auth.create_user("wU@example.com", "password123")
+    g = w.create(ua["id"], "Old name", "top", color_hex="#1f2a44", color_tags="navy")
+    assert w.update(ua["id"], g.id, name="New name", category="dress",
+                    color_hex="#1a1a1a", color_tags="black") is True
+    g2 = w.get(ua["id"], g.id)
+    assert g2 is not None and g2.name == "New name" and g2.category == "dress"
+    assert g2.color_tags == "black"
+    # cross-user isolation + no-op
+    ub = auth.create_user("wU2@example.com", "password123")
+    assert w.update(ub["id"], g.id, name="nope") is False
+    assert w.update(ua["id"], g.id) is False
+
+
 def test_imglink_product_gallery_preferred_over_logo():
     # og:image is a logo; product-gallery <img> alt pattern should win
     html = """
@@ -175,6 +189,7 @@ def test_clean_image_url():
 if __name__ == "__main__":
     test_create_upload_serve_delete()
     test_cross_user_isolation()
+    test_update()
     test_imglink_product_gallery_preferred_over_logo()
     test_imglink_jsonld_product_image()
     test_imglink_og_image_last_resort_and_byte_detection()

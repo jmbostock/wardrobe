@@ -199,6 +199,10 @@ class WardrobeCreate(BaseModel):
     color: str = Field("", max_length=60)
     image_url: str | None = Field(None, max_length=2000)
 
+class WardrobeUpdate(BaseModel):
+    name: str | None = Field(None, min_length=1, max_length=200)
+    category: str | None = Field(None)
+    color: str | None = Field(None, max_length=40)
 
 class ImageUrlRequest(BaseModel):
     url: str = Field(..., max_length=2000)
@@ -405,6 +409,31 @@ def garment_image(garment_id: int, user: dict = Depends(get_current_user)) -> Fi
         ".webp": "image/webp", ".gif": "image/gif",
     }.get(path.suffix.lower(), "application/octet-stream")
     return FileResponse(path, media_type=media)
+
+
+@app.patch("/api/wardrobe/{garment_id}")
+def update_garment(garment_id: int, req: WardrobeUpdate, user: dict = Depends(get_current_user)) -> dict:
+    """Edit a garment's name / category / color. Any field may be omitted."""
+    g = _wardrobe.get(user["id"], garment_id)
+    if g is None:
+        raise HTTPException(404, "garment not found")
+    name = (req.name if req.name is not None else g.name).strip()
+    if not name:
+        raise HTTPException(400, "name required")
+    category = (req.category if req.category is not None else g.category).strip().lower()
+    if category not in WARDROBE_CATEGORIES:
+        raise HTTPException(
+            400, f"category must be one of: {', '.join(sorted(WARDROBE_CATEGORIES))}"
+        )
+    color = (
+        req.color if req.color is not None else (g.color_tags or "").split(",")[0]
+    ).strip().lower()
+    color_hex = COLOR_HEX.get(color, "#8a8f98")
+    _wardrobe.update(
+        user["id"], garment_id,
+        name=name, category=category, color_hex=color_hex, color_tags=color,
+    )
+    return _garment_dict(user["id"], _wardrobe.get(user["id"], garment_id))
 
 
 @app.delete("/api/wardrobe/{garment_id}")
