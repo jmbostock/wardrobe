@@ -149,8 +149,12 @@ document.querySelectorAll('input[name=psrc]').forEach((r) => r.addEventListener(
     showSavedImagePreview();
   } else {
     $('savedimg-preview').hidden = true;
-    if (!lastResultUrl) hideCompare();
   }
+  // Don't leak the previous mode's image/output into the newly-selected mode:
+  // each radial only shows the controls (and images) that belong to it.
+  lastResultUrl = null;
+  $('result').innerHTML = '';
+  hideCompare();
   checkPersonImage();
 }));
 $('saved-photo').addEventListener('change', checkPersonImage);
