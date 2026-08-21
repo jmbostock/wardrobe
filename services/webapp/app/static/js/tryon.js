@@ -315,10 +315,8 @@ async function runTryon(ids, baseResult, prompt) {
     // refine). A plain try-on shows just the new render — never the original.
     if (baseResult) showCompare(baseUrl, url);
     else hideCompare();
-    // show + re-enable the chat bar so the user can refine the image
+    // show the "coming soon" edit teaser under the result
     $('chat-bar').hidden = false;
-    $('chat-input').disabled = false;
-    $('chat-note').textContent = prompt ? 're-rendered with: “' + prompt + '”' : '';
     toast(baseResult ? 'updated — check the result' : 'try-on ready');
   } catch (e) { $('result').innerHTML = `<p class="muted">error: ${e}</p>`; }
   finally { clearInterval(tryonInt); tryonInt = null; }
@@ -335,58 +333,9 @@ $('tryon-btn').addEventListener('click', async () => {
   finally { btn.disabled = false; btn.textContent = 'Try on'; }
 });
 
-// ---------- chat feedback (Enter edits the last image via the editor) ----------
-async function runEdit(baseUrl, prompt) {
-  const fd = new FormData();
-  fd.append('base_result', baseUrl);
-  fd.append('prompt', prompt);
-  const box = document.createElement('div'); box.className = 'progress';
-  const spinner = document.createElement('div'); spinner.className = 'spinner';
-  const txt = document.createElement('div');
-  const stage = document.createElement('div'); stage.className = 'status';
-  stage.textContent = 'Editing image…';
-  const hint = document.createElement('div'); hint.className = 'hint';
-  hint.textContent = 'applying your note with InstructPix2Pix — usually just a few seconds';
-  const timer = document.createElement('div'); timer.className = 'timer'; timer.textContent = '0s';
-  txt.appendChild(stage); txt.appendChild(hint);
-  box.appendChild(spinner); box.appendChild(txt); box.appendChild(timer);
-  $('result').innerHTML = ''; $('result').appendChild(box);
-  const started = Date.now();
-  clearInterval(tryonInt);
-  tryonInt = setInterval(() => { timer.textContent = Math.round((Date.now() - started) / 1000) + 's'; }, 1000);
-  try {
-    const res = await api('/api/tryon/edit', { method: 'POST', body: fd });
-    if (!res.ok) { $('result').innerHTML = `<p class="muted">edit failed: ${await errMsg(res)}</p>`; return; }
-    const data = await res.json();
-    lastResultUrl = data.result_url;
-    const url = await authImageUrl(data.result_url);
-    $('result').innerHTML = '';             // drop the progress panel
-    $('savedimg-preview').hidden = true;    // compare is now the 2 side-by-side images
-    showCompare(baseUrl, url);              // original | latest
-    $('chat-bar').hidden = false;
-    $('chat-input').disabled = false;
-    $('chat-note').textContent = 'edited with: “' + prompt + '”';
-    toast('edited — check the result');
-  } catch (e) { $('result').innerHTML = `<p class="muted">error: ${e}</p>`; }
-  finally { clearInterval(tryonInt); tryonInt = null; }
-}
-
-async function sendChat() {
-  const input = $('chat-input');
-  const text = input.value.trim();
-  if (!text) return;
-  const src = document.querySelector('input[name=psrc]:checked')?.value || 'saved';
-  const base = lastResultUrl || (src === 'savedimg' && selectedSaved ? selectedSaved.result_url : '');
-  if (!base) { toast('generate a try-on first, or pick a saved outfit image'); return; }
-  input.disabled = true;
-  try { await runEdit(base, text); }
-  catch (e) { /* runEdit already shows errors */ }
-  finally { input.value = ''; input.disabled = false; }
-}
-$('chat-send').addEventListener('click', sendChat);
-$('chat-input').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') { e.preventDefault(); sendChat(); }
-});
+// AI image editing is not ready yet — the chat edit feature is removed from the
+// UI and shown as "coming soon". The backend (editor.py / /api/tryon/edit)
+// stays in place for the future swap-in editor (EDITOR_ENGINE=fluxkontext).
 
 // ---------- webcam ----------
 let stream = null;
