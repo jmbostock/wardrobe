@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS garments (
     fit         TEXT DEFAULT 'regular',
     last_worn   TEXT,
     wear_count  INTEGER NOT NULL DEFAULT 0,
+    rating      INTEGER NOT NULL DEFAULT 0,  -- user rating 0..10 (0 = unrated)
     image_path  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_garments_user ON garments(user_id);
@@ -69,6 +70,7 @@ CREATE TABLE IF NOT EXISTS outfits (
     name        TEXT NOT NULL,
     garment_ids TEXT NOT NULL DEFAULT '[]',  -- JSON array of garment ids
     result_url  TEXT NOT NULL DEFAULT '',    -- saved try-on render, if any
+    rating      INTEGER NOT NULL DEFAULT 0,  -- user rating 0..10 (0 = unrated)
     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_outfits_user ON outfits(user_id);
@@ -111,6 +113,13 @@ def _migrate(conn: sqlite3.Connection) -> None:
     ocols = {r[1] for r in conn.execute("PRAGMA table_info(outfits)").fetchall()}
     if "result_url" not in ocols:
         conn.execute("ALTER TABLE outfits ADD COLUMN result_url TEXT NOT NULL DEFAULT ''")
+    # rating columns (added 2026-08-21) for garments + outfits
+    gcols = {r[1] for r in conn.execute("PRAGMA table_info(garments)").fetchall()}
+    if "rating" not in gcols:
+        conn.execute("ALTER TABLE garments ADD COLUMN rating INTEGER NOT NULL DEFAULT 0")
+    ocols = {r[1] for r in conn.execute("PRAGMA table_info(outfits)").fetchall()}
+    if "rating" not in ocols:
+        conn.execute("ALTER TABLE outfits ADD COLUMN rating INTEGER NOT NULL DEFAULT 0")
 
 
 def lock() -> threading.Lock:

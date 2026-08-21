@@ -26,10 +26,31 @@ def test_create_list_delete():
     o = store.create(uid, "My look", [t.id, b.id], result_url="/api/uploads/x.png")
     assert o["name"] == "My look" and o["garment_ids"] == [t.id, b.id]
     assert o["result_url"] == "/api/uploads/x.png"
+    assert o["rating"] == 0
     items = store.list(uid)
     assert len(items) == 1 and items[0]["id"] == o["id"]
     assert store.delete(uid, o["id"]) is True
     assert store.list(uid) == []
+
+
+def test_update():
+    ua = auth.create_user("oU@example.com", "password123")
+    uid = ua["id"]
+    g = w.create(uid, "Tee", "top")
+    o = store.create(uid, "My look", [g.id])
+    assert o["rating"] == 0
+    assert store.update(uid, o["id"], name="Better look", rating=9) is True
+    o2 = store.get(uid, o["id"])
+    assert o2 is not None and o2["name"] == "Better look" and o2["rating"] == 9
+    # rating-only update keeps the name
+    assert store.update(uid, o["id"], rating=6) is True
+    assert store.get(uid, o["id"])["name"] == "Better look"
+    assert store.get(uid, o["id"])["rating"] == 6
+    # cross-user isolation + no-op
+    ub = auth.create_user("oU2@example.com", "password123")
+    assert store.update(ub["id"], o["id"], rating=1) is False
+    assert store.get(ub["id"], o["id"]) is None
+    assert store.update(uid, o["id"]) is False
 
 
 def test_cross_user_isolation():
@@ -44,5 +65,6 @@ def test_cross_user_isolation():
 
 if __name__ == "__main__":
     test_create_list_delete()
+    test_update()
     test_cross_user_isolation()
     print("outfits tests OK")

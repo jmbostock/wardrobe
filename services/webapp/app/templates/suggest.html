@@ -1,0 +1,34 @@
+{% extends 'base.html' %}
+{% block title %}{{ page_title }}{% endblock %}
+{% block content %}
+<section id="view-suggest">
+  <div class="card">
+    <h2>Weather</h2>
+    <div id="weather"><span class="muted">loading…</span></div>
+    <div class="muted" id="weather-loc"></div>
+    <div class="row" style="margin-top:12px">
+      <input type="text" id="outfit-loc" placeholder="change location (zip, city…)" class="field" />
+      <button id="outfit-loc-save" class="ghost">Update location</button>
+      <span class="muted" id="outfit-loc-status"></span>
+    </div>
+  </div>
+  <div class="card" style="margin-top:20px">
+    <h2>What's the occasion?</h2>
+    <div class="row">
+      <select id="activity">
+        <option value="casual">Casual / errands</option>
+        <option value="office" selected>Office / work</option>
+        <option value="date">Date / dinner</option>
+        <option value="hiking">Hiking / active</option>
+        <option value="beach">Beach</option>
+        <option value="formal">Wedding / formal</option>
+      </select>
+      <input type="text" id="prompt" placeholder="style hint (e.g. navy, casual, wool…)" class="field" />
+      <button id="recommend-btn">Suggest outfit</button>
+    </div>
+    <div id="outfit" style="margin-top:10px"></div>
+    <ul id="reasons"></ul>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}<script src="/static/js/suggest.js"></script>{% endblock %}

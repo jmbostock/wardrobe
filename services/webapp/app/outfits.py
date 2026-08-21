@@ -47,6 +47,26 @@ class OutfitStore:
             self._conn.commit()
             return cur.rowcount > 0
 
+    def get(self, user_id: int, outfit_id: int) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM outfits WHERE user_id=? AND id=?", (user_id, outfit_id)
+            ).fetchone()
+        return self._row(row) if row else None
+
+    def update(self, user_id: int, outfit_id: int, **fields: Any) -> bool:
+        """Update arbitrary outfit columns (caller validates the values)."""
+        if not fields:
+            return False
+        sets = ", ".join(f"{k}=?" for k in fields)
+        with self._lock:
+            cur = self._conn.execute(
+                f"UPDATE outfits SET {sets} WHERE user_id=? AND id=?",
+                (*fields.values(), user_id, outfit_id),
+            )
+            self._conn.commit()
+            return cur.rowcount > 0
+
     @staticmethod
     def _row(r: Any) -> dict[str, Any]:
         try:
@@ -59,5 +79,6 @@ class OutfitStore:
             "name": r["name"],
             "garment_ids": [int(x) for x in ids],
             "result_url": r["result_url"] if "result_url" in r.keys() else "",
+            "rating": r["rating"] if "rating" in r.keys() else 0,
             "created_at": r["created_at"],
         }

@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+{% block title %}{{ page_title }}{% endblock %}
+{% block content %}
+<section id="view-wardrobe">
+  <div class="card">
+    <h2>Add a garment</h2>
+    <p class="muted">Name it, pick a category + color, and add a photo — upload a file or paste a product image link (e.g. from a store page).</p>
+    <div class="block">
+      <label>Name</label>
+      <input type="text" id="g-name" placeholder="e.g. Navy merino crewneck" class="field" />
+    </div>
+    <div class="block">
+      <label>Category &amp; color</label>
+      <div class="row">
+        <select id="g-category">
+          <option value="top">Top</option>
+          <option value="bottom">Bottom</option>
+          <option value="dress">Dress</option>
+          <option value="outerwear">Outerwear</option>
+          <option value="footwear">Footwear</option>
+          <option value="accessory">Accessory</option>
+        </select>
+        <input type="text" id="g-color" placeholder="color (e.g. navy)" class="field" />
+      </div>
+    </div>
+    <div class="block">
+      <label>Image — upload a file, or paste a product page / image link</label>
+      <input type="file" id="g-file" accept="image/*" />
+      <div class="row">
+        <input type="text" id="g-url" placeholder="https://… product page or image URL" class="field" />
+        <button id="g-fetch" class="ghost">Fetch details</button>
+      </div>
+      <div id="g-preview" hidden></div>
+    </div>
+    <div class="row">
+      <button id="g-add">Add garment</button>
+      <button id="g-clear" class="ghost">Clear</button>
+      <span class="muted" id="g-status"></span>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:20px">
+    <h2>My wardrobe</h2>
+    <p class="muted">Garments with a photo can be used for try-on (they appear in the Try on dropdown). Tap Edit to change the photo / name / category / color or rate it out of 10.</p>
+    <div id="wardrobe" class="photos"></div>
+  </div>
+</section>
+{% endblock %}
+{% block modals %}
+{% with edit_mode='garment' %}{% include 'partials/edit_modal.html' %}{% endwith %}
+{% endblock %}
+{% block scripts %}<script src="/static/js/wardrobe.js"></script>{% endblock %}

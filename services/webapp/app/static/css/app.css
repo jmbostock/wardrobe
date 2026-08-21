@@ -1,0 +1,106 @@
+/* Clueless Closet — shared stylesheet (used by every page via base.html) */
+:root { --bg:#0f1216; --card:#181d24; --line:#262d36; --txt:#e8ecf1; --mut:#9aa7b4; --acc:#4f9cf9; }
+* { box-sizing: border-box; }
+body { margin:0; font-family: system-ui, sans-serif; background:var(--bg); color:var(--txt); }
+header { padding:14px 24px; border-bottom:1px solid var(--line); display:flex; gap:14px; align-items:center; }
+header h1 { font-size:19px; margin:0; }
+header .tag { color:var(--mut); font-size:13px; }
+nav { margin-left:auto; display:flex; gap:8px; align-items:center; }
+nav a { text-decoration:none; padding:8px 12px; border-radius:8px; background:transparent;
+  border:1px solid var(--line); color:var(--txt); font-size:14px; font-weight:600; }
+nav a.active { background:var(--acc); border-color:var(--acc); color:#0f1216; }
+main { max-width:960px; margin:0 auto; padding:24px; display:grid; gap:20px; }
+.card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; }
+.card h2 { margin:0 0 12px; font-size:15px; color:var(--mut); text-transform:uppercase; letter-spacing:.5px; }
+.row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+select, input[type=text], input[type=email], input[type=password], input[type=file], button {
+  padding:10px 12px; border-radius:8px; border:1px solid var(--line); background:#0f1216; color:var(--txt); font-size:14px; }
+button { background:var(--acc); border:none; cursor:pointer; font-weight:600; }
+button:disabled { opacity:.5; cursor:default; }
+button.ghost { background:transparent; border:1px solid var(--line); }
+button.danger { background:#7a2430; }
+#weather { display:flex; gap:18px; flex-wrap:wrap; align-items:baseline; }
+#weather b { font-size:30px; }
+.cond { color:var(--mut); }
+.garment { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px dashed var(--line); }
+.garment:last-child { border-bottom:none; }
+.swatch { width:22px; height:22px; border-radius:6px; border:1px solid var(--line); flex:none; }
+.garment .role { width:90px; color:var(--mut); font-size:12px; text-transform:uppercase; flex:none; }
+.garment .name { flex:1; }
+ul#reasons { color:var(--mut); padding-left:18px; margin:8px 0 0; }
+#result img { max-width:100%; border-radius:10px; border:1px solid var(--line); }
+#webcam { max-width:100%; border-radius:10px; border:1px solid var(--line); background:#000; }
+.muted { color:var(--mut); font-size:13px; }
+.block { display:grid; gap:10px; margin-bottom:14px; }
+.block label { font-size:12px; color:var(--mut); text-transform:uppercase; }
+.photos { display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:14px; }
+.photo { border:1px solid var(--line); border-radius:12px; overflow:hidden; background:#0f1216; }
+.photo img { width:100%; aspect-ratio:3/4; object-fit:contain; display:block; background:#000; cursor:zoom-in; }
+.photo .meta { padding:10px; display:grid; gap:8px; }
+.photo .pdesc { font-size:13px; padding:6px 8px; width:100%; }
+.photo .qachip { font-size:11px; font-weight:700; border-radius:5px; padding:2px 7px; justify-self:start; }
+.photo.bad { border-color:#d9534f; box-shadow:0 0 0 1px #d9534f; }
+.photo .badnote { color:#d9534f; font-size:12px; }
+.photo .meta > button { width:100%; }
+.photo .row { gap:6px; }
+.photo .row button { flex:1 1 0; min-width:0; padding:8px 6px; font-size:12px; }
+#edit-modal { position:fixed; inset:0; background:rgba(0,0,0,.85); display:flex; align-items:flex-start; justify-content:center; overflow-y:auto; z-index:30; padding:20px; }
+#edit-modal[hidden] { display:none; }
+#edit-modal .modal { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; width:100%; max-width:440px; display:grid; gap:14px; margin:auto 0; }
+#edit-modal .modal-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+#edit-modal .modal-head h2 { margin:0; font-size:16px; overflow-wrap:anywhere; }
+#edit-modal img { width:100%; max-height:340px; object-fit:contain; background:#000; border-radius:10px; border:1px solid var(--line); }
+#lightbox { position:fixed; inset:0; background:rgba(0,0,0,.85); display:flex; align-items:center; justify-content:center; z-index:20; cursor:zoom-out; }
+#lightbox[hidden] { display:none; }
+#lightbox img { max-width:92vw; max-height:92vh; border-radius:8px; }
+.badge { font-size:11px; color:#0f1216; background:var(--acc); border-radius:5px; padding:1px 6px; justify-self:start; }
+.toast { position:fixed; bottom:18px; left:50%; transform:translateX(-50%); background:var(--acc);
+  color:#0f1216; padding:10px 16px; border-radius:8px; font-weight:600; display:none; z-index:10; }
+.field { flex:1; min-width:220px; }
+.spinner { width:22px; height:22px; border:3px solid rgba(79,156,249,.25); border-top-color:var(--acc);
+  border-radius:50%; animation:spin .8s linear infinite; flex:none; }
+@keyframes spin { to { transform:rotate(360deg); } }
+.progress { display:flex; align-items:center; gap:12px; padding:14px; border:1px solid var(--line);
+  border-radius:10px; background:#0f1216; }
+.progress .status { font-weight:600; }
+.progress .hint { color:var(--mut); font-size:13px; margin-top:2px; }
+.progress .timer { color:var(--mut); font-size:12px; margin-left:auto; flex:none; }
+.look-row { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+.look-row label { width:70px; flex:none; color:var(--mut); font-size:12px; text-transform:uppercase; }
+.look-row select { flex:1; }
+
+/* ---- rating widget (0–10, tap-friendly dots) ---- */
+.rate { display:flex; gap:5px; flex-wrap:wrap; align-items:center; }
+.rate button { width:30px; height:30px; border-radius:50%; border:1px solid var(--line);
+  background:#0f1216; color:var(--mut); font-size:12px; padding:0; line-height:1;
+  display:flex; align-items:center; justify-content:center; }
+.rate button.on { background:var(--acc); border-color:var(--acc); color:#0f1216; font-weight:700; }
+.rate button.rate-clear { width:auto; height:auto; border-radius:8px; padding:4px 8px;
+  font-size:11px; color:var(--mut); background:transparent; }
+
+/* ---- try-on result + chat feedback bar ---- */
+#result img { max-width:100%; border-radius:10px; border:1px solid var(--line); }
+#chat-bar { margin-top:12px; border-top:1px solid var(--line); padding-top:12px; }
+#chat-bar input { flex:1; min-width:0; }
+
+/* ---- iPhone-first responsive ---- */
+@media (max-width: 640px) {
+  main { padding:14px; }
+  header { padding:10px 14px; flex-wrap:wrap; gap:10px; }
+  header h1 { font-size:17px; }
+  header .tag { display:none; }
+  nav { flex-wrap:wrap; gap:6px; }
+  nav a { padding:8px 10px; font-size:13px; }
+  .card { padding:14px; }
+  .photos { grid-template-columns:repeat(2,1fr); gap:10px; }
+  .photo .row { flex-direction:column; align-items:stretch; }
+  .photo .row button { width:100%; padding:10px 8px; font-size:13px; }
+  .row > .field, .row > select, .row > input[type=text], .row > input[type=email], .row > input[type=password] {
+    flex-basis:100%; min-width:0; }
+  .row > button { flex:1 1 auto; }
+  .field { min-width:0; }
+  .garment { flex-wrap:wrap; }
+  .garment .name { flex:1 1 100%; }
+  .look-hint-row { align-items:stretch; }
+  .look-hint-row .hint { flex:1; min-width:0; }
+}

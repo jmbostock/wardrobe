@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+{% block title %}{{ page_title }}{% endblock %}
+{% block content %}
+<section class="card" id="auth-card" style="max-width:440px;margin:40px auto">
+  <h2>Clueless Closet</h2>
+  <div class="block">
+    <label>Email</label>
+    <input type="email" id="auth-email" placeholder="you@example.com" autocomplete="email" class="field" />
+  </div>
+  <div class="block">
+    <label>Password</label>
+    <input type="password" id="auth-pass" placeholder="password (8+ chars)" autocomplete="current-password" class="field" />
+  </div>
+  <div class="row">
+    <button id="auth-login">Log in</button>
+    <button id="auth-register" class="ghost">Sign up</button>
+    <span class="muted" id="auth-status"></span>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}<script src="/static/js/auth.js"></script>{% endblock %}

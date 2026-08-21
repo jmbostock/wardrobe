@@ -1,0 +1,47 @@
+{% extends 'base.html' %}
+{% block title %}{{ page_title }}{% endblock %}
+{% block content %}
+<section id="view-account">
+  <div class="card">
+    <h2>Account</h2>
+    <div class="block">
+      <label>Email</label>
+      <div id="acct-email" class="muted">—</div>
+    </div>
+    <div class="block">
+      <label>Location (zip, city, or "lat,lon") — default San Mateo, CA 94403</label>
+      <div class="row">
+        <input type="text" id="loc-input" placeholder="94403" class="field" />
+        <button id="loc-save">Save location</button>
+        <span class="muted" id="loc-status"></span>
+      </div>
+    </div>
+    <div class="block">
+      <label>Change password</label>
+      <div class="row">
+        <input type="password" id="pw-current" placeholder="current password" />
+        <input type="password" id="pw-new" placeholder="new password (8+)" />
+        <button id="pw-save">Update password</button>
+        <span class="muted" id="pw-status"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:20px">
+    <h2>My photos</h2>
+    <p class="muted">These are the person photos used for try-on. Mark one as default. Each card shows a suitability chip for use as a base image — red means low quality, skip it for try-on.</p>
+    <div class="row" style="margin-bottom:12px">
+      <input type="file" id="photo-upload" accept="image/*" hidden />
+      <button id="photo-upload-btn">Upload a photo</button>
+    </div>
+    <div id="photos" class="photos"></div>
+  </div>
+
+  <div class="card" style="margin-top:20px">
+    <h2>Session</h2>
+    <p class="muted">Sign out of this device.</p>
+    <button id="signout-btn" class="danger">Sign out</button>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}<script src="/static/js/account.js"></script>{% endblock %}

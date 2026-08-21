@@ -1,0 +1,15 @@
+{% extends 'base.html' %}
+{% block title %}{{ page_title }}{% endblock %}
+{% block content %}
+<section id="view-outfits">
+  <div class="card">
+    <h2>Saved outfits</h2>
+    <p class="muted">Looks you saved from the Try-on tab. Tap Edit to rename, rate out of 10, or delete. Tap the thumbnail to zoom.</p>
+    <div id="saved-outfits" class="photos"></div>
+  </div>
+</section>
+{% endblock %}
+{% block modals %}
+{% with edit_mode='outfit' %}{% include 'partials/edit_modal.html' %}{% endwith %}
+{% endblock %}
+{% block scripts %}<script src="/static/js/outfits.js"></script>{% endblock %}

@@ -1,0 +1,58 @@
+{% extends 'base.html' %}
+{% block title %}{{ page_title }}{% endblock %}
+{% block content %}
+<section id="view-tryon">
+  <div class="card">
+    <h2>Try it on</h2>
+    <p class="muted">Put a garment on a photo of you — use a saved photo, upload one, or capture from webcam. (Requires ComfyUI + CatVTON running.)</p>
+    <div class="block">
+      <label>Person photo source</label>
+      <div class="row">
+        <label><input type="radio" name="psrc" value="saved" checked /> Saved photo</label>
+        <label><input type="radio" name="psrc" value="upload" /> Upload</label>
+        <label><input type="radio" name="psrc" value="webcam" /> Webcam</label>
+      </div>
+      <select id="saved-photo" class="field"></select>
+      <input type="file" id="person-file" accept="image/*" hidden />
+      <div id="webcam-row" hidden>
+        <video id="webcam" hidden playsinline style="max-width:100%;border-radius:10px;background:#000"></video>
+        <div class="row" style="margin-top:8px">
+          <button id="webcam-btn" class="ghost">Start webcam</button>
+          <span class="muted">click the preview to capture</span>
+        </div>
+      </div>
+      <div id="person-qa" hidden></div>
+    </div>
+    <div class="block">
+      <label>Look</label>
+      <p class="muted">Build it from your wardrobe (top / bottom / dress) or pull it from the recommendation. Only garments with a photo are listed.</p>
+      <div class="row" style="margin-bottom:10px">
+        <button id="tryon-use-reco" class="ghost">Use recommendation</button>
+        <button id="tryon-reset" class="ghost">Reset look</button>
+        <input type="text" id="outfit-name" placeholder="outfit name (optional)" class="field" style="max-width:230px" />
+        <button id="tryon-save" class="ghost">Save outfit</button>
+        <span class="muted" id="look-status"></span>
+      </div>
+      <div id="look">
+        <div class="look-row"><label>Top</label><select class="look-select" data-role="top"></select></div>
+        <div class="look-row"><label>Bottom</label><select class="look-select" data-role="bottom"></select></div>
+        <div class="look-row"><label>Dress</label><select class="look-select" data-role="dress"></select></div>
+      </div>
+      <div class="row look-hint-row" style="margin-top:6px">
+        <span class="muted hint" id="look-hint">Pick a top, a bottom, or a dress (one-piece). Choose 2 for a full look — they render one after another.</span>
+        <button id="tryon-btn">Try on</button>
+      </div>
+      <div id="garment-qa" hidden></div>
+    </div>
+    <div id="result" style="margin-top:12px"></div>
+    <div id="chat-bar" hidden>
+      <div class="row">
+        <input type="text" id="chat-input" placeholder="Change it — e.g. “make her skinnier”, “different dress color”. Press Enter to re-render." autocomplete="off" />
+        <button id="chat-send" class="ghost">Send</button>
+      </div>
+      <div class="muted" id="chat-note" style="margin-top:6px"></div>
+    </div>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}<script src="/static/js/tryon.js"></script>{% endblock %}

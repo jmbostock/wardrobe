@@ -63,6 +63,7 @@ class Garment:
     fit: str
     last_worn: str | None = None
     wear_count: int = 0
+    rating: int = 0
     image_path: str = ""
 
     def to_dict(self) -> dict[str, Any]:
@@ -201,5 +202,6 @@ class Wardrobe:
             waterproof=row["waterproof"], formality=row["formality"],
             occasions=row["occasions"] or "", material=row["material"] or "",
             fit=row["fit"] or "regular", last_worn=row["last_worn"],
-            wear_count=row["wear_count"], image_path=row["image_path"] or "",
+            wear_count=row["wear_count"], rating=row["rating"] or 0,
+            image_path=row["image_path"] or "",
         )

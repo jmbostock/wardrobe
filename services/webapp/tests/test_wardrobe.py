@@ -62,6 +62,10 @@ def test_update():
     g2 = w.get(ua["id"], g.id)
     assert g2 is not None and g2.name == "New name" and g2.category == "dress"
     assert g2.color_tags == "black"
+    # rating defaults to 0, and can be updated out of 10
+    assert g2.rating == 0
+    assert w.update(ua["id"], g.id, rating=8) is True
+    assert w.get(ua["id"], g.id).rating == 8
     # cross-user isolation + no-op
     ub = auth.create_user("wU2@example.com", "password123")
     assert w.update(ub["id"], g.id, name="nope") is False

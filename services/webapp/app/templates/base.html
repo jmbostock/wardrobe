@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>{% block title %}Clueless Closet{% endblock %}</title>
+<link rel="stylesheet" href="/static/css/app.css" />
+</head>
+<body data-require-auth="{{ 'true' if active != 'auth' else 'false' }}">
+{% if active != 'auth' %}
+<header>
+  <h1>Clueless Closet</h1><span class="tag">your AI wardrobe stylist</span>
+  <nav>
+    <a href="/suggest" class="{{ 'active' if active == 'suggest' }}">Suggest</a>
+    <a href="/tryon" class="{{ 'active' if active == 'tryon' }}">Try on</a>
+    <a href="/wardrobe" class="{{ 'active' if active == 'wardrobe' }}">Wardrobe</a>
+    <a href="/outfits" class="{{ 'active' if active == 'outfits' }}">Outfits</a>
+    <a href="/account" class="{{ 'active' if active == 'account' }}">Account</a>
+  </nav>
+</header>
+{% endif %}
+<main>
+  {% block content %}{% endblock %}
+</main>
+<div class="toast" id="toast"></div>
+<div id="lightbox" hidden><img id="lightbox-img" alt="" /></div>
+{% block modals %}{% endblock %}
+<script src="/static/js/common.js"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>
