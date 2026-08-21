@@ -124,10 +124,12 @@ altacloset/
 - **Done when:** can run on CPU with `docker compose up webapp` and get sensible outfits.
 
 ### Phase 2 — Try-on: add clothes to a photo (GPU, the wow moment)
-- [ ] Stand up ComfyUI container (`bootstrap-comfyui.sh` installs CatVTON node + weights ~6GB).
-- [ ] Get CatVTON working in ComfyUI manually (person photo + garment image → output).
-- [ ] `services/webapp/app/workflows/catvton.json` — portable workflow.
-- [ ] `POST /api/tryon {person_image, garment_id}` → rendered photo.
+Status 2026-08-21: ComfyUI image **built & running**; workflow wired; **blocked on SCHP inplace_abn compile** (see below + repo memory).
+- [x] Build ComfyUI image (`services/comfyui/Dockerfile`: CUDA 12.8 base + torch cu128 + ComfyUI source + CatVTON release node + detectron2).
+- [x] `services/webapp/app/workflows/catvton.json` — API-format workflow; `tryon.py` wires images + cloth_type (top→upper, bottom→lower, dress→overall).
+- [x] `scripts/tryon-test.sh` smoke script.
+- [ ] **BLOCKER:** patch `model/SCHP/modules/src/inplace_abn_cpu.cpp` `z.type()`→`z.scalar_type()` (2 lines, torch 2.x), rebuild, verify CatVTON nodes via `/object_info`.
+- [ ] First try-on (auto-downloads weights ~4-6GB) → `/api/tryon` returns a rendered photo.
 - [ ] Webcam path: browser `getUserMedia` → downscale to ~768–1024px → same endpoint.
 - [ ] Background removal for garment images: `rembg` or ComfyUI segment-anything.
 - **Done when:** photo of a person in → photo of them "wearing" the recommended top out.

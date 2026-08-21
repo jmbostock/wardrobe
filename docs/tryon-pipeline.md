@@ -73,9 +73,26 @@ const stream = await navigator.mediaDevices.getUserMedia({video: {facingMode: "u
 | rembg background removal | ~1–3s |
 | Total per garment | ~15–25s |
 
+## 8. Deployment reality + current status (2026-08-21)
+
+- ComfyUI is **built from source** (`services/comfyui/Dockerfile`): base
+  `nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04` + torch cu128 (Blackwell sm_120
+  needs cu128+), ComfyUI from `Comfy-Org/ComfyUI`, CatVTON node from the official
+  release zip, detectron2/DensePose compiled CPU-only (`FORCE_CUDA=0`).
+  The `comfyanonymous/comfyui` Docker Hub image does NOT exist — build from source.
+- Running on 202: `altacloset-comfyui` healthy on host port **28190** (internal
+  `comfyui:8188`). CatVTON nodes currently FAIL to load: SCHP `modules`
+  `inplace_abn` extension uses torch 1.x API
+  (`inplace_abn_cpu.cpp:89/107`, `z.type()` → removed `DeprecatedTypeProperties`).
+  Fix: `sed 's/z\.type()/z.scalar_type()/g'` on those 2 lines + rebuild.
+- Build gotchas already fixed in the Dockerfile: re-pin torch/torchvision/torchaudio
+  to cu128 (ComfyUI reqs upgrade to cu13 → `libcudart.so.13` missing); upgrade
+  transformers to `>=4.44,<5` (node's 4.27.3 pin breaks ComfyUI Qwen2 nodes);
+  `python3-dev` for detectron2; `--no-build-isolation` for `pip install -e detectron2`.
+
 ## 7. Phase 4 — full outfit
 
-- Option A: chain (top on person → result → bottom on result). Simple, works, degrades slightly.
-- Option B: multi-garment CatVTON variants / ComfyUI multi-garment workflows.
-- Upgrade path for quality: IDM-VTON (SDXL, uses whole 16GB — run solo) →
-  CatVTON-FLUX / FLUX.1-Kontext (GGUF ~12–16GB, ~30–90s/img).
+Option A: chain (top on person → result → bottom on result). Simple, works, degrades slightly.
+Option B: multi-garment CatVTON variants / ComfyUI multi-garment workflows.
+Upgrade path for quality: IDM-VTON (SDXL, uses whole 16GB — run solo) →
+CatVTON-FLUX / FLUX.1-Kontext (GGUF ~12–16GB, ~30–90s/img).
