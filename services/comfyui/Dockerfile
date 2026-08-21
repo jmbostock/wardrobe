@@ -57,3 +57,7 @@ RUN pip install --no-cache-dir torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.
       --index-url https://download.pytorch.org/whl/cu128
 ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:${LD_LIBRARY_PATH:-}
 
+# The node pins an old transformers (4.27.3) that breaks ComfyUI's Qwen2 nodes.
+# Late 4.x has both Qwen2Tokenizer (ComfyUI) and top-level CLIPTextModel (node).
+RUN pip install --no-cache-dir "transformers>=4.44,<5"
+
