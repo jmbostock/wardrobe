@@ -17,9 +17,12 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
+from urllib.parse import urljoin
 
 import httpx
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
+
+from .imglink import detect_ext, extract_image_url_from_html, extract_product_page, is_image_bytes
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -62,31 +65,14 @@ def _garment_image_path(user_id: int, garment_id: int) -> Path | None:
     return None
 
 
-def _detect_ext(data: bytes) -> str:
-    if data[:8] == b"\x89PNG\r\n\x1a\n":
-        return "png"
-    if data[:3] == b"\xff\xd8\xff":
-        return "jpg"
-    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
-        return "webp"
-    if data[:6] in (b"GIF87a", b"GIF89a"):
-        return "gif"
-    return "png"
-
-
 def _validate_image(data: bytes) -> str:
     if not data:
         raise HTTPException(400, "empty image")
     if len(data) > MAX_IMAGE_BYTES:
         raise HTTPException(400, "image too large (>10MB)")
-    if not (
-        data[:8] == b"\x89PNG\r\n\x1a\n"
-        or data[:3] == b"\xff\xd8\xff"
-        or data[:6] in (b"GIF87a", b"GIF89a")
-        or (data[:4] == b"RIFF" and data[8:12] == b"WEBP")
-    ):
+    if not is_image_bytes(data):
         raise HTTPException(400, "not a recognizable image (PNG/JPG/GIF/WebP)")
-    return _detect_ext(data)
+    return detect_ext(data)
 
 
 def _save_garment_image(user_id: int, garment_id: int, data: bytes, ext: str) -> Path:
@@ -103,16 +89,37 @@ def _save_garment_image(user_id: int, garment_id: int, data: bytes, ext: str) ->
     return path
 
 
-def _fetch_image_url(url: str) -> bytes:
+def _fetch_url_bytes(url: str) -> bytes:
     if not url.startswith(("http://", "https://")):
         raise HTTPException(400, "URL must start with http:// or https://")
     try:
-        r = httpx.get(url, timeout=15, follow_redirects=True)
+        r = httpx.get(url, timeout=20, follow_redirects=True)
     except Exception as ex:  # noqa: BLE001 — surface fetch failures clearly
-        raise HTTPException(400, f"could not fetch image: {ex}") from ex
+        raise HTTPException(400, f"could not fetch URL: {ex}") from ex
     if r.status_code != 200:
-        raise HTTPException(400, f"image URL returned HTTP {r.status_code}")
+        raise HTTPException(400, f"URL returned HTTP {r.status_code}")
+    if not r.content:
+        raise HTTPException(400, "URL returned an empty body")
+    if len(r.content) > MAX_IMAGE_BYTES:
+        raise HTTPException(400, "image too large (>10MB)")
     return r.content
+
+
+def _fetch_product_image(url: str) -> bytes:
+    """Fetch an image from a direct image URL OR a store product page (HTML).
+    For HTML pages we extract the product image (og:image → JSON-LD → largest
+    product <img>) and fetch that. Protocol-relative / relative image URLs are
+    resolved against the page URL."""
+    data = _fetch_url_bytes(url)
+    if is_image_bytes(data):
+        return data
+    img_url = extract_image_url_from_html(data.decode("utf-8", errors="ignore"))
+    if not img_url:
+        raise HTTPException(
+            400,
+            "no product image found on that page — try a direct image URL or upload the file",
+        )
+    return _fetch_url_bytes(urljoin(url, img_url))
 
 
 def _garment_dict(user_id: int, g) -> dict:
@@ -177,6 +184,10 @@ class WardrobeCreate(BaseModel):
 
 
 class ImageUrlRequest(BaseModel):
+    url: str = Field(..., max_length=500)
+
+
+class ParseLinkRequest(BaseModel):
     url: str = Field(..., max_length=500)
 
 
@@ -297,10 +308,30 @@ def create_garment(req: WardrobeCreate, user: dict = Depends(get_current_user)) 
         user["id"], name, category, color_hex=color_hex, color_tags=color
     )
     if req.image_url:
-        data = _fetch_image_url(req.image_url)
+        data = _fetch_product_image(req.image_url)
         ext = _validate_image(data)
         _save_garment_image(user["id"], g.id, data, ext)
     return _garment_dict(user["id"], g)
+
+
+@app.post("/api/wardrobe/parse-link")
+def parse_garment_link(
+    req: ParseLinkRequest, user: dict = Depends(get_current_user)
+) -> dict:
+    """Inspect a store page (or direct image URL) and return the product name/
+    color/category plus a gallery of candidate images for the UI to pick one."""
+    data = _fetch_url_bytes(req.url)
+    if is_image_bytes(data):
+        return {"name": "", "description": "", "color": "", "category": None, "images": [req.url]}
+    info = extract_product_page(data.decode("utf-8", errors="ignore"))
+    if not info["images"]:
+        raise HTTPException(
+            400,
+            "no product images found on that page — try a direct image URL or upload the file",
+        )
+    # resolve protocol-relative / relative image URLs against the page URL
+    info["images"] = [urljoin(req.url, u) for u in info["images"]]
+    return info
 
 
 @app.post("/api/wardrobe/{garment_id}/image")
@@ -325,7 +356,7 @@ def garment_image_from_url(
     g = _wardrobe.get(user["id"], garment_id)
     if g is None:
         raise HTTPException(404, "garment not found")
-    data = _fetch_image_url(req.url)
+    data = _fetch_product_image(req.url)
     ext = _validate_image(data)
     _save_garment_image(user["id"], garment_id, data, ext)
     return _garment_dict(user["id"], g)

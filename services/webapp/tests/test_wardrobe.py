@@ -12,6 +12,7 @@ os.environ.setdefault("DATA_DIR", tempfile.mkdtemp(prefix="altacloset-wardrobe-t
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app import auth, wardrobe  # noqa: E402
+from app import imglink  # noqa: E402
 from app.tryon import _load_garment_image  # noqa: E402
 
 w = wardrobe.Wardrobe()
@@ -53,7 +54,92 @@ def test_cross_user_isolation():
     assert w.get(ua["id"], g.id) is not None
 
 
+def test_imglink_product_gallery_preferred_over_logo():
+    # og:image is a logo; product-gallery <img> alt pattern should win
+    html = """
+    <html><head><meta property="og:image" content="https://shop.com/logo.png" /></head>
+    <body>
+      <img src="https://shop.com/nav-logo.svg" alt="Shop logo" />
+      <img width="390" src="https://cdn.shop.com/products/pants-front.png?width=737"
+           alt="Image number 1 showing, High-Waisted Pants" />
+      <img width="390" src="https://cdn.shop.com/products/pants-back.png?width=737"
+           alt="Image number 2 showing, High-Waisted Pants" />
+    </body></html>
+    """
+    got = imglink.extract_image_url_from_html(html)
+    assert got == "https://cdn.shop.com/products/pants-front.png?width=737", got
+
+
+def test_imglink_jsonld_product_image():
+    # JSON-LD product image preferred over a logo og:image
+    html = """
+    <html><head>
+      <meta property="og:image" content="https://shop.com/logo.png" />
+      <script type="application/ld+json">
+      {"@context":"https://schema.org","@type":"Product","name":"Tee",
+       "image":["https://cdn.shop.com/p1.jpg","https://cdn.shop.com/p2.jpg"]}
+      </script>
+    </head></html>
+    """
+    got = imglink.extract_image_url_from_html(html)
+    assert got == "https://cdn.shop.com/p1.jpg", got
+
+
+def test_imglink_og_image_last_resort_and_byte_detection():
+    html = '<html><head><meta property="og:image" content="https://x.com/img.jpg" /></head><body><p>hi</p></body></html>'
+    assert imglink.extract_image_url_from_html(html) == "https://x.com/img.jpg"
+    assert imglink.extract_image_url_from_html("<html><body>no images</body></html>") is None
+
+    png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16
+    assert imglink.is_image_bytes(png) is True
+    assert imglink.detect_ext(png) == "png"
+    assert imglink.is_image_bytes(b"<html>not an image</html>") is False
+
+
+def test_extract_product_page():
+    html = """
+    <html><head>
+      <title>High-Waisted Pants | Old Navy</title>
+      <meta property="og:title" content="High-Waisted Pants | Old Navy" />
+      <meta property="og:image" content="https://shop.com/logo.png" />
+      <meta name="description" content="Classic high-waisted blue jeans" />
+      <script type="application/ld+json">
+      {"@context":"https://schema.org","@type":"Product","name":"High-Waisted Pants",
+       "color":"Blue","image":["//cdn.shop.com/pants-front.png","//cdn.shop.com/pants-back.png"]}
+      </script>
+    </head><body>
+      <img src="https://shop.com/nav-logo.svg" alt="logo" />
+      <img src="//cdn.shop.com/alt-1.png" alt="Image number 1 showing, High-Waisted Pants" />
+      <img src="//cdn.shop.com/alt-2.png" alt="Image number 2 showing, High-Waisted Pants" />
+    </body></html>
+    """
+    info = imglink.extract_product_page(html)
+    assert info["name"] == "High-Waisted Pants", info
+    assert info["color"].lower() == "blue", info
+    assert info["category"] == "bottom", info
+    # JSON-LD images first, then gallery alt images, then product-ish; no logo
+    assert "//cdn.shop.com/pants-front.png" in info["images"]
+    assert "//cdn.shop.com/pants-back.png" in info["images"]
+    assert "logo" not in " ".join(info["images"]).lower()
+
+
+def test_extract_product_page_color_from_text():
+    html = """<html><head>
+      <meta property="og:title" content="Navy Oxford Shirt - Gap" />
+      <meta property="og:image" content="https://shop.com/logo.png" />
+    </head><body><img src="https://shop.com/alt.png" alt="Image number 1 showing, Navy Oxford Shirt" /></body></html>"""
+    info = imglink.extract_product_page(html)
+    assert info["name"] == "Navy Oxford Shirt", info
+    assert info["color"] == "navy", info
+    assert info["category"] == "top", info
+
+
 if __name__ == "__main__":
     test_create_upload_serve_delete()
     test_cross_user_isolation()
+    test_imglink_product_gallery_preferred_over_logo()
+    test_imglink_jsonld_product_image()
+    test_imglink_og_image_last_resort_and_byte_detection()
+    test_extract_product_page()
+    test_extract_product_page_color_from_text()
     print("wardrobe tests OK")

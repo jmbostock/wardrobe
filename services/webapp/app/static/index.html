@@ -178,13 +178,16 @@
           </div>
         </div>
         <div class="block">
-          <label>Image — upload a file or paste a link</label>
+          <label>Image — upload a file, or paste a product page / image link</label>
           <input type="file" id="g-file" accept="image/*" />
-          <input type="text" id="g-url" placeholder="https://… product image URL" class="field" />
+          <div class="row">
+            <input type="text" id="g-url" placeholder="https://… product page or image URL" class="field" />
+            <button id="g-fetch" class="ghost">Fetch details</button>
+          </div>
+          <div id="g-preview" hidden></div>
         </div>
         <div class="row">
           <button id="g-add">Add garment</button>
-          <button id="g-add-url" class="ghost">Add from link</button>
           <span class="muted" id="g-status"></span>
         </div>
       </div>
@@ -697,18 +700,68 @@ async function loadWardrobe() {
   }
 }
 
-async function addGarment(fromUrl) {
+let pickedImage = null;
+let previewImages = [];
+
+$('g-fetch').addEventListener('click', async () => {
+  const status = $('g-status');
+  const url = $('g-url').value.trim();
+  if (!url) { status.textContent = 'paste a product page or image URL first'; return; }
+  status.textContent = 'fetching product details…';
+  pickedImage = null; previewImages = [];
+  try {
+    const info = await apiJson('/api/wardrobe/parse-link', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }),
+    });
+    if (info.name && !$('g-name').value.trim()) $('g-name').value = info.name;
+    if (info.color && !$('g-color').value.trim()) $('g-color').value = info.color;
+    if (info.category) $('g-category').value = info.category;
+    previewImages = info.images || [];
+    renderPreview();
+    status.textContent = previewImages.length
+      ? 'found ' + previewImages.length + ' image(s) — pick one, then Add garment'
+      : 'no images found';
+  } catch (e) {
+    status.textContent = e.message;
+    $('g-preview').hidden = true; $('g-preview').innerHTML = '';
+  }
+});
+
+function renderPreview() {
+  const box = $('g-preview');
+  box.innerHTML = ''; box.hidden = false;
+  const label = document.createElement('div'); label.className = 'muted'; label.style.marginBottom = '8px';
+  label.textContent = 'Choose the image to use (one only):';
+  box.appendChild(label);
+  const grid = document.createElement('div'); grid.className = 'photos';
+  previewImages.forEach((u) => {
+    const card = document.createElement('div'); card.className = 'photo';
+    const img = document.createElement('img');
+    img.style.height = '150px'; img.style.objectFit = 'contain';
+    img.src = u; img.alt = 'image option'; img.loading = 'lazy';
+    card.appendChild(img);
+    card.dataset.url = u;
+    card.addEventListener('click', () => selectPreview(card));
+    grid.appendChild(card);
+  });
+  box.appendChild(grid);
+  // default-select the first image immediately (user can click another)
+  const first = grid.querySelector('.photo');
+  if (first) selectPreview(first);
+}
+function selectPreview(card) {
+  pickedImage = card.dataset.url;
+  document.querySelectorAll('#g-preview .photo').forEach((c) => (c.style.outline = ''));
+  card.style.outline = '3px solid var(--acc)';
+}
+
+$('g-add').addEventListener('click', async () => {
   const status = $('g-status');
   const name = $('g-name').value.trim();
   const category = $('g-category').value;
   const color = $('g-color').value.trim();
   if (!name) { status.textContent = 'name required'; return; }
-  let url = $('g-url').value.trim();
-  if (fromUrl && !url) {
-    url = prompt('Product image URL for "' + name + '":');
-    if (!url) return;
-    url = url.trim();
-  }
+  const url = pickedImage || $('g-url').value.trim();
   const body = { name, category, color };
   if (url) body.image_url = url;
   status.textContent = 'adding…';
@@ -723,11 +776,11 @@ async function addGarment(fromUrl) {
     }
     status.textContent = 'added "' + g.name + '"';
     $('g-name').value = ''; $('g-color').value = ''; $('g-url').value = ''; $('g-file').value = '';
+    pickedImage = null; previewImages = [];
+    $('g-preview').hidden = true; $('g-preview').innerHTML = '';
     loadWardrobe(); populateGarments(null);
   } catch (e) { status.textContent = e.message; }
-}
-$('g-add').addEventListener('click', () => addGarment(false));
-$('g-add-url').addEventListener('click', () => addGarment(true));
+});
 
 // ---------- boot ----------
 if (getToken()) enterApp(); else showAuth();
