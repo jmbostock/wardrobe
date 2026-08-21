@@ -126,6 +126,50 @@ class Wardrobe:
             )
             self._conn.commit()
 
+    def create(
+        self,
+        user_id: int,
+        name: str,
+        category: str,
+        color_hex: str = "",
+        color_tags: str = "",
+        material: str = "",
+        fit: str = "regular",
+    ) -> Garment:
+        """Insert a user-added garment with sensible scoring defaults."""
+        with self._lock:
+            cur = self._conn.execute(
+                """INSERT INTO garments
+                   (user_id, name, category, color_hex, color_tags, warmth, waterproof,
+                    formality, occasions, material, fit, image_path)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (user_id, name, category, color_hex or "", color_tags or "",
+                 3, 0, "casual", "casual", material or "", fit or "regular", ""),
+            )
+            self._conn.commit()
+            gid = cur.lastrowid
+            row = self._conn.execute(
+                "SELECT * FROM garments WHERE user_id=? AND id=?", (user_id, gid)
+            ).fetchone()
+        return self._row_to_garment(row)
+
+    def update_image(self, user_id: int, garment_id: int, image_path: str) -> bool:
+        with self._lock:
+            cur = self._conn.execute(
+                "UPDATE garments SET image_path=? WHERE user_id=? AND id=?",
+                (image_path, user_id, garment_id),
+            )
+            self._conn.commit()
+            return cur.rowcount > 0
+
+    def delete(self, user_id: int, garment_id: int) -> bool:
+        with self._lock:
+            cur = self._conn.execute(
+                "DELETE FROM garments WHERE user_id=? AND id=?", (user_id, garment_id)
+            )
+            self._conn.commit()
+            return cur.rowcount > 0
+
     def _row_to_garment(self, row: Any) -> Garment:
         return Garment(
             id=row["id"], user_id=row["user_id"], name=row["name"],

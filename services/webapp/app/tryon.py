@@ -68,13 +68,25 @@ async def run_tryon(person_bytes: bytes, garment: Garment, user_id: int) -> byte
 
 
 def _load_garment_image(g: Garment, user_id: int) -> bytes:
-    path = Path(settings.data_dir) / "wardrobe" / str(user_id) / f"{g.id}.png"
-    if not path.exists():
+    """Resolve the garment image file (any extension) — uses the recorded
+    image_path if present, else globs data/wardrobe/<uid>/<gid>.*."""
+    d = Path(settings.data_dir) / "wardrobe" / str(user_id)
+    candidate: Path | None = None
+    if g.image_path:
+        p = d / g.image_path
+        if p.is_file():
+            candidate = p
+    if candidate is None and d.is_dir():
+        for p in sorted(d.glob(f"{g.id}.*")):
+            if p.is_file():
+                candidate = p
+                break
+    if candidate is None:
         raise ComfyUnavailable(
-            f"garment image missing: {path} — drop a photo at "
-            f"data/wardrobe/{user_id}/{g.id}.png"
+            f"garment image missing for #{g.id} — add one in the Wardrobe tab "
+            f"(upload or paste a product image link)"
         )
-    return path.read_bytes()
+    return candidate.read_bytes()
 
 
 async def _upload(client: httpx.AsyncClient, name: str, data: bytes) -> str:

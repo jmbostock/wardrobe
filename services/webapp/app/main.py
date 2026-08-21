@@ -18,6 +18,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
+import httpx
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -34,6 +35,90 @@ STATIC_DIR = Path(__file__).parent / "static"
 UPLOAD_DIR = Path(settings.data_dir) / "uploads"
 
 _wardrobe = Wardrobe()
+
+WARDROBE_DIR = Path(settings.data_dir) / "wardrobe"
+WARDROBE_CATEGORIES = {"top", "bottom", "dress", "outerwear", "footwear", "accessory"}
+IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+MAX_IMAGE_BYTES = 10 * 1024 * 1024
+COLOR_HEX = {
+    "white": "#f2f2f2", "black": "#1a1a1a", "gray": "#8a8f98", "grey": "#8a8f98",
+    "navy": "#1f2a44", "blue": "#3b5ba8", "red": "#a33333", "green": "#2e4a3a",
+    "beige": "#d9c9a3", "brown": "#6b4a2f", "tan": "#c8b98a", "pink": "#d9b3a0",
+    "burgundy": "#6d2332", "purple": "#5b3a6d", "yellow": "#d9c04a", "orange": "#c96a2e",
+    "teal": "#2c4f46", "cream": "#f2efe6", "khaki": "#c8b98a", "olive": "#6b7a3a",
+}
+
+
+# --------------------------------------------------------------------------- #
+# garment image helpers (files live at data/wardrobe/<uid>/<gid>.<ext>)
+# --------------------------------------------------------------------------- #
+def _garment_image_path(user_id: int, garment_id: int) -> Path | None:
+    d = WARDROBE_DIR / str(user_id)
+    if not d.is_dir():
+        return None
+    for p in sorted(d.glob(f"{garment_id}.*")):
+        if p.is_file() and p.suffix.lower() in IMAGE_EXTS:
+            return p
+    return None
+
+
+def _detect_ext(data: bytes) -> str:
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "png"
+    if data[:3] == b"\xff\xd8\xff":
+        return "jpg"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "webp"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "gif"
+    return "png"
+
+
+def _validate_image(data: bytes) -> str:
+    if not data:
+        raise HTTPException(400, "empty image")
+    if len(data) > MAX_IMAGE_BYTES:
+        raise HTTPException(400, "image too large (>10MB)")
+    if not (
+        data[:8] == b"\x89PNG\r\n\x1a\n"
+        or data[:3] == b"\xff\xd8\xff"
+        or data[:6] in (b"GIF87a", b"GIF89a")
+        or (data[:4] == b"RIFF" and data[8:12] == b"WEBP")
+    ):
+        raise HTTPException(400, "not a recognizable image (PNG/JPG/GIF/WebP)")
+    return _detect_ext(data)
+
+
+def _save_garment_image(user_id: int, garment_id: int, data: bytes, ext: str) -> Path:
+    d = WARDROBE_DIR / str(user_id)
+    d.mkdir(parents=True, exist_ok=True)
+    for old in d.glob(f"{garment_id}.*"):
+        try:
+            old.unlink()
+        except OSError:
+            pass
+    path = d / f"{garment_id}.{ext}"
+    path.write_bytes(data)
+    _wardrobe.update_image(user_id, garment_id, path.name)
+    return path
+
+
+def _fetch_image_url(url: str) -> bytes:
+    if not url.startswith(("http://", "https://")):
+        raise HTTPException(400, "URL must start with http:// or https://")
+    try:
+        r = httpx.get(url, timeout=15, follow_redirects=True)
+    except Exception as ex:  # noqa: BLE001 — surface fetch failures clearly
+        raise HTTPException(400, f"could not fetch image: {ex}") from ex
+    if r.status_code != 200:
+        raise HTTPException(400, f"image URL returned HTTP {r.status_code}")
+    return r.content
+
+
+def _garment_dict(user_id: int, g) -> dict:
+    d = g.to_dict()
+    d["has_image"] = _garment_image_path(user_id, g.id) is not None
+    return d
 
 
 # --------------------------------------------------------------------------- #
@@ -82,6 +167,17 @@ class LocationRequest(BaseModel):
 
 class PhotoDescriptionRequest(BaseModel):
     description: str = Field("", max_length=200)
+
+
+class WardrobeCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    category: str = Field(...)
+    color: str = Field("", max_length=40)
+    image_url: str | None = Field(None, max_length=500)
+
+
+class ImageUrlRequest(BaseModel):
+    url: str = Field(..., max_length=500)
 
 
 # --------------------------------------------------------------------------- #
@@ -182,7 +278,87 @@ def get_weather(user: dict = Depends(get_current_user)) -> dict:
 @app.get("/api/wardrobe")
 def list_wardrobe(user: dict = Depends(get_current_user)) -> list[dict]:
     _wardrobe.seed_for_user(user["id"])
-    return [g.to_dict() for g in _wardrobe.all(user["id"])]
+    return [_garment_dict(user["id"], g) for g in _wardrobe.all(user["id"])]
+
+
+@app.post("/api/wardrobe")
+def create_garment(req: WardrobeCreate, user: dict = Depends(get_current_user)) -> dict:
+    category = req.category.strip().lower()
+    if category not in WARDROBE_CATEGORIES:
+        raise HTTPException(
+            400, f"category must be one of: {', '.join(sorted(WARDROBE_CATEGORIES))}"
+        )
+    name = req.name.strip()
+    if not name:
+        raise HTTPException(400, "name required")
+    color = req.color.strip().lower()
+    color_hex = COLOR_HEX.get(color, "#8a8f98")
+    g = _wardrobe.create(
+        user["id"], name, category, color_hex=color_hex, color_tags=color
+    )
+    if req.image_url:
+        data = _fetch_image_url(req.image_url)
+        ext = _validate_image(data)
+        _save_garment_image(user["id"], g.id, data, ext)
+    return _garment_dict(user["id"], g)
+
+
+@app.post("/api/wardrobe/{garment_id}/image")
+async def upload_garment_image(
+    garment_id: int,
+    image: UploadFile = File(...),
+    user: dict = Depends(get_current_user),
+) -> dict:
+    g = _wardrobe.get(user["id"], garment_id)
+    if g is None:
+        raise HTTPException(404, "garment not found")
+    data = await image.read()
+    ext = _validate_image(data)
+    _save_garment_image(user["id"], garment_id, data, ext)
+    return _garment_dict(user["id"], g)
+
+
+@app.post("/api/wardrobe/{garment_id}/image-url")
+def garment_image_from_url(
+    garment_id: int, req: ImageUrlRequest, user: dict = Depends(get_current_user)
+) -> dict:
+    g = _wardrobe.get(user["id"], garment_id)
+    if g is None:
+        raise HTTPException(404, "garment not found")
+    data = _fetch_image_url(req.url)
+    ext = _validate_image(data)
+    _save_garment_image(user["id"], garment_id, data, ext)
+    return _garment_dict(user["id"], g)
+
+
+@app.get("/api/wardrobe/{garment_id}/image")
+def garment_image(garment_id: int, user: dict = Depends(get_current_user)) -> FileResponse:
+    g = _wardrobe.get(user["id"], garment_id)
+    if g is None:
+        raise HTTPException(404, "garment not found")
+    path = _garment_image_path(user["id"], garment_id)
+    if path is None:
+        raise HTTPException(404, "no image for this garment")
+    media = {
+        ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+        ".webp": "image/webp", ".gif": "image/gif",
+    }.get(path.suffix.lower(), "application/octet-stream")
+    return FileResponse(path, media_type=media)
+
+
+@app.delete("/api/wardrobe/{garment_id}")
+def delete_garment(garment_id: int, user: dict = Depends(get_current_user)) -> dict:
+    g = _wardrobe.get(user["id"], garment_id)
+    if g is None:
+        raise HTTPException(404, "garment not found")
+    path = _garment_image_path(user["id"], garment_id)
+    if path:
+        try:
+            path.unlink()
+        except OSError:
+            pass
+    _wardrobe.delete(user["id"], garment_id)
+    return {"ok": True}
 
 
 @app.post("/api/recommend")

@@ -50,6 +50,14 @@
   .toast { position:fixed; bottom:18px; left:50%; transform:translateX(-50%); background:var(--acc);
     color:#0f1216; padding:10px 16px; border-radius:8px; font-weight:600; display:none; z-index:10; }
   .field { flex:1; min-width:220px; }
+  .spinner { width:22px; height:22px; border:3px solid rgba(79,156,249,.25); border-top-color:var(--acc);
+    border-radius:50%; animation:spin .8s linear infinite; flex:none; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .progress { display:flex; align-items:center; gap:12px; padding:14px; border:1px solid var(--line);
+    border-radius:10px; background:#0f1216; }
+  .progress .status { font-weight:600; }
+  .progress .hint { color:var(--mut); font-size:13px; margin-top:2px; }
+  .progress .timer { color:var(--mut); font-size:12px; margin-left:auto; flex:none; }
 </style>
 </head>
 <body>
@@ -58,6 +66,7 @@
   <nav>
     <button id="tab-outfit" class="active">Outfit</button>
     <button id="tab-tryon">Try on</button>
+    <button id="tab-wardrobe">Wardrobe</button>
     <button id="tab-account">Account</button>
     <button id="signout-btn" hidden class="ghost">Sign out</button>
   </nav>
@@ -145,6 +154,48 @@
       </div>
     </section>
 
+    <!-- ============ Wardrobe ============ -->
+    <section id="view-wardrobe" hidden>
+      <div class="card">
+        <h2>Add a garment</h2>
+        <p class="muted">Name it, pick a category + color, and add a photo — upload a file or paste a product image link (e.g. from a store page).</p>
+        <div class="block">
+          <label>Name</label>
+          <input type="text" id="g-name" placeholder="e.g. Navy merino crewneck" class="field" />
+        </div>
+        <div class="block">
+          <label>Category &amp; color</label>
+          <div class="row">
+            <select id="g-category">
+              <option value="top">Top</option>
+              <option value="bottom">Bottom</option>
+              <option value="dress">Dress</option>
+              <option value="outerwear">Outerwear</option>
+              <option value="footwear">Footwear</option>
+              <option value="accessory">Accessory</option>
+            </select>
+            <input type="text" id="g-color" placeholder="color (e.g. navy)" class="field" />
+          </div>
+        </div>
+        <div class="block">
+          <label>Image — upload a file or paste a link</label>
+          <input type="file" id="g-file" accept="image/*" />
+          <input type="text" id="g-url" placeholder="https://… product image URL" class="field" />
+        </div>
+        <div class="row">
+          <button id="g-add">Add garment</button>
+          <button id="g-add-url" class="ghost">Add from link</button>
+          <span class="muted" id="g-status"></span>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:20px">
+        <h2>My wardrobe</h2>
+        <p class="muted">Garments with a photo can be used for try-on (they appear in the Try on dropdown).</p>
+        <div id="wardrobe" class="photos"></div>
+      </div>
+    </section>
+
     <!-- ============ Account ============ -->
     <section id="view-account" hidden>
       <div class="card">
@@ -211,9 +262,20 @@ async function api(path, opts = {}) {
   }
   return res;
 }
+async function errMsg(res) {
+  let msg = 'http ' + res.status;
+  try {
+    const j = await res.json();
+    const d = j.detail;
+    msg = (typeof d === 'string') ? d : JSON.stringify(d ?? j ?? msg);
+  } catch (e) {
+    msg = (await res.text().catch(() => '')) || msg;
+  }
+  return msg;
+}
 async function apiJson(path, opts = {}) {
   const res = await api(path, opts);
-  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || ('http ' + res.status));
+  if (!res.ok) throw new Error(await errMsg(res));
   return res.json();
 }
 async function authImageUrl(path) {
@@ -250,14 +312,16 @@ function enterApp() {
 
 // ---------- tabs ----------
 function showView(name) {
-  ['outfit', 'tryon', 'account'].forEach((v) => {
+  ['outfit', 'tryon', 'wardrobe', 'account'].forEach((v) => {
     $('view-' + v).hidden = (v !== name);
     $('tab-' + v).classList.toggle('active', v === name);
   });
   if (name === 'tryon') { loadSavedPhotos(); populateGarments(null); }
+  if (name === 'wardrobe') { loadWardrobe(); populateGarments(null); }
 }
 $('tab-outfit').addEventListener('click', () => showView('outfit'));
 $('tab-tryon').addEventListener('click', () => showView('tryon'));
+$('tab-wardrobe').addEventListener('click', () => showView('wardrobe'));
 $('tab-account').addEventListener('click', () => showView('account'));
 
 // ---------- weather ----------
@@ -316,13 +380,18 @@ function renderOutfit(outfit) {
 async function populateGarments(outfit) {
   const top = outfit && outfit.top;
   const sel = $('garment-select'); sel.innerHTML = '';
-  if (top) sel.add(new Option(`${top.name} (recommended #${top.id})`, top.id));
-  try {
-    const items = await apiJson('/api/wardrobe');
-    items.filter((g) => g.category === 'top' || g.category === 'dress').forEach((g) => {
-      if (!top || g.id !== top.id) sel.add(new Option(g.name, g.id));
-    });
-  } catch (e) { /* ignore */ }
+  let items = [];
+  try { items = await apiJson('/api/wardrobe'); } catch (e) { /* ignore */ }
+  const topMatch = top && items.find((g) => g.id === top.id);
+  if (topMatch && topMatch.has_image) {
+    sel.add(new Option(`${topMatch.name} (recommended #${topMatch.id})`, topMatch.id));
+  }
+  items.filter((g) => (g.category === 'top' || g.category === 'dress') && g.has_image).forEach((g) => {
+    if (!topMatch || g.id !== topMatch.id) sel.add(new Option(g.name, g.id));
+  });
+  if (!sel.options.length) {
+    sel.add(new Option('no garment with an image — add one in Wardrobe', ''));
+  }
 }
 
 // ---------- account ----------
@@ -455,7 +524,20 @@ document.querySelectorAll('input[name=psrc]').forEach((r) => r.addEventListener(
 }));
 
 // ---------- try on ----------
+const TRYON_STAGES = [
+  ['Uploading photo…', 'sending your photo to the renderer'],
+  ['Detecting body (DensePose)…', 'locating pose & body parts on the GPU'],
+  ['Building mask (SCHP)…', 'parsing clothing regions'],
+  ['Rendering garment (CatVTON)…', 'diffusion step — this takes the longest'],
+  ['Finalizing…', 'writing the result image'],
+];
+let tryonInt = null;
+
 $('tryon-btn').addEventListener('click', async () => {
+  // always ensure a person-photo source is selected (default: saved photo)
+  if (!document.querySelector('input[name=psrc]:checked')) {
+    document.querySelector('input[name=psrc][value=saved]').checked = true;
+  }
   const src = document.querySelector('input[name=psrc]:checked').value;
   const garment_id = $('garment-select').value;
   if (!garment_id) { alert('no garment selected'); return; }
@@ -470,19 +552,55 @@ $('tryon-btn').addEventListener('click', async () => {
     if (!f) { alert('pick a person photo or use a saved one'); return; }
     fd.append('person', f);
   }
-  const btn = $('tryon-btn'); btn.disabled = true;
-  $('result').innerHTML = '<p class="muted">rendering… (Phase 2 needs ComfyUI+CatVTON; can take ~20s)</p>';
+
+  const btn = $('tryon-btn');
+  btn.disabled = true;
+  btn.textContent = 'Rendering…';
+
+  // progress panel: animated spinner + stage message + elapsed timer
+  const box = document.createElement('div'); box.className = 'progress';
+  const spinner = document.createElement('div'); spinner.className = 'spinner';
+  const txt = document.createElement('div');
+  const stage = document.createElement('div'); stage.className = 'status'; stage.textContent = TRYON_STAGES[0][0];
+  const hint = document.createElement('div'); hint.className = 'hint';
+  hint.textContent = 'first run may download ~4-6GB of model weights (can take a few minutes)';
+  const timer = document.createElement('div'); timer.className = 'timer'; timer.textContent = '0s';
+  txt.appendChild(stage); txt.appendChild(hint);
+  box.appendChild(spinner); box.appendChild(txt); box.appendChild(timer);
+  $('result').innerHTML = ''; $('result').appendChild(box);
+
+  const started = Date.now();
+  let stageIdx = 0, lastStageAt = started;
+  clearInterval(tryonInt);
+  tryonInt = setInterval(() => {
+    const now = Date.now();
+    timer.textContent = Math.round((now - started) / 1000) + 's';
+    if (now - lastStageAt > 5000 && stageIdx < TRYON_STAGES.length - 1) {
+      stageIdx++; lastStageAt = now;
+      stage.textContent = TRYON_STAGES[stageIdx][0];
+      hint.textContent = TRYON_STAGES[stageIdx][1];
+    }
+  }, 1000);
+
   try {
     const res = await api('/api/tryon', { method: 'POST', body: fd });
-    if (!res.ok) { $('result').innerHTML = `<p class="muted">try-on failed: ${(await res.json().catch(() => ({}))).detail || await res.text()}</p>`; return; }
+    if (!res.ok) {
+      $('result').innerHTML = `<p class="muted">try-on failed: ${await errMsg(res)}</p>`;
+      return;
+    }
     const data = await res.json();
     const url = await authImageUrl(data.result_url);
     $('result').innerHTML = '';
     const img = document.createElement('img');
     img.src = url;
     $('result').appendChild(img);
+    toast('try-on ready');
   } catch (e) { $('result').innerHTML = `<p class="muted">error: ${e}</p>`; }
-  finally { btn.disabled = false; }
+  finally {
+    clearInterval(tryonInt); tryonInt = null;
+    btn.disabled = false;
+    btn.textContent = 'Try on';
+  }
 });
 
 // ---------- webcam ----------
@@ -515,6 +633,101 @@ $('webcam').addEventListener('click', () => {
     toast('frame captured — pick a garment and try it on');
   }, 'image/jpeg', 0.92);
 });
+
+// ---------- wardrobe ----------
+async function loadWardrobe() {
+  const grid = $('wardrobe');
+  grid.innerHTML = '<p class="muted">loading…</p>';
+  let items;
+  try { items = await apiJson('/api/wardrobe'); }
+  catch (e) { grid.innerHTML = '<p class="muted">failed to load wardrobe</p>'; return; }
+  if (!items.length) { grid.innerHTML = '<p class="muted">no garments yet — add one above</p>'; return; }
+  grid.innerHTML = '';
+  for (const g of items) {
+    const card = document.createElement('div'); card.className = 'photo';
+    const img = document.createElement('img'); img.alt = g.name;
+    if (g.has_image) {
+      const url = await authImageUrl('/api/wardrobe/' + g.id + '/image');
+      img.src = url;
+      img.addEventListener('click', () => openLightbox(url));
+    } else {
+      img.style.background = g.color_hex || '#333';
+      img.title = 'no image yet — set one below';
+    }
+    const meta = document.createElement('div'); meta.className = 'meta';
+    const badge = document.createElement('span'); badge.className = 'badge'; badge.textContent = g.category;
+    const name = document.createElement('div'); name.textContent = g.name; name.style.fontSize = '13px';
+    meta.appendChild(badge); meta.appendChild(name);
+
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file'; fileInput.accept = 'image/*'; fileInput.hidden = true;
+    fileInput.addEventListener('change', async () => {
+      const f = fileInput.files[0]; if (!f) return;
+      const fd = new FormData(); fd.append('image', f);
+      try { await apiJson('/api/wardrobe/' + g.id + '/image', { method: 'POST', body: fd }); toast('image saved'); }
+      catch (e) { alert(e.message); }
+      loadWardrobe(); populateGarments(null);
+    });
+    const setBtn = document.createElement('button'); setBtn.className = 'ghost'; setBtn.textContent = 'Set image';
+    setBtn.addEventListener('click', () => fileInput.click());
+    const urlBtn = document.createElement('button'); urlBtn.className = 'ghost'; urlBtn.textContent = 'From link';
+    urlBtn.addEventListener('click', async () => {
+      const u = prompt('Image URL for "' + g.name + '":');
+      if (!u) return;
+      try {
+        await apiJson('/api/wardrobe/' + g.id + '/image-url', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: u }),
+        });
+        toast('image saved');
+      } catch (e) { alert(e.message); }
+      loadWardrobe(); populateGarments(null);
+    });
+    const delBtn = document.createElement('button'); delBtn.className = 'danger'; delBtn.textContent = 'Delete';
+    delBtn.addEventListener('click', async () => {
+      if (!confirm('delete "' + g.name + '"?')) return;
+      try { await apiJson('/api/wardrobe/' + g.id, { method: 'DELETE' }); toast('deleted'); }
+      catch (e) { alert(e.message); }
+      loadWardrobe(); populateGarments(null);
+    });
+    const row = document.createElement('div'); row.className = 'row';
+    row.appendChild(fileInput); row.appendChild(setBtn); row.appendChild(urlBtn); row.appendChild(delBtn);
+    meta.appendChild(row);
+    card.appendChild(img); card.appendChild(meta);
+    grid.appendChild(card);
+  }
+}
+
+async function addGarment(fromUrl) {
+  const status = $('g-status');
+  const name = $('g-name').value.trim();
+  const category = $('g-category').value;
+  const color = $('g-color').value.trim();
+  if (!name) { status.textContent = 'name required'; return; }
+  let url = $('g-url').value.trim();
+  if (fromUrl && !url) {
+    url = prompt('Product image URL for "' + name + '":');
+    if (!url) return;
+    url = url.trim();
+  }
+  const body = { name, category, color };
+  if (url) body.image_url = url;
+  status.textContent = 'adding…';
+  try {
+    const g = await apiJson('/api/wardrobe', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const f = $('g-file').files[0];
+    if (f && !url) {
+      const fd = new FormData(); fd.append('image', f);
+      await apiJson('/api/wardrobe/' + g.id + '/image', { method: 'POST', body: fd });
+    }
+    status.textContent = 'added "' + g.name + '"';
+    $('g-name').value = ''; $('g-color').value = ''; $('g-url').value = ''; $('g-file').value = '';
+    loadWardrobe(); populateGarments(null);
+  } catch (e) { status.textContent = e.message; }
+}
+$('g-add').addEventListener('click', () => addGarment(false));
+$('g-add-url').addEventListener('click', () => addGarment(true));
 
 // ---------- boot ----------
 if (getToken()) enterApp(); else showAuth();

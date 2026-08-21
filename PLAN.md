@@ -142,7 +142,8 @@ photo (garment 27 on testdata/person.jpg). See `docs/tryon-pipeline.md` §8 + re
 
 ### Phase 4 — Full outfit try-on + polish
 - [ ] Multi-garment try-on (top → result → bottom) or 2-garment CatVTON.
-- [ ] Wardrobe CRUD (add garments by upload + auto-tag).
+- [x] Wardrobe manager: add garments + image upload / product-URL fetch, set/delete images, per-garment serve (2026-08-21).
+- [ ] Wardrobe CRUD auto-tagging (auto color/material from image).
 - [ ] Daily digest (weather + "wear this today") like Alta's daily outfits.
 - [ ] Style calendar / history.
 
@@ -179,7 +180,12 @@ run solo as "quality mode") → CatVTON-FLUX / FLUX.1-Kontext (GGUF quantized, ~
 | `/api/auth/logout` | POST | Bearer token | `{ok: true}` |
 | `/api/auth/me` | GET | Bearer token | `{user}` |
 | `/api/weather` | GET | Bearer token | `{temp_c, feels_like_c, condition, wind_kph, humidity, uv_index}` |
-| `/api/wardrobe` | GET | Bearer token | caller's garments |
+| `/api/wardrobe` | GET | Bearer token | caller's garments (incl. `has_image`) |
+| `/api/wardrobe` | POST | Bearer + `{name, category, color?, image_url?}` | created garment (fetches `image_url` if given) |
+| `/api/wardrobe/{id}/image` | POST | Bearer + multipart `image` | updated garment (`has_image`) |
+| `/api/wardrobe/{id}/image-url` | POST | Bearer + `{url}` | updated garment (fetches image from URL) |
+| `/api/wardrobe/{id}/image` | GET | Bearer token | garment image (owner-only, 404 if none) |
+| `/api/wardrobe/{id}` | DELETE | Bearer token | `{ok: true}` |
 | `/api/recommend` | POST | Bearer + `{activity, prompt?, weather?}` | `{outfit, reasoning, scores, weather_used}` |
 | `/api/tryon` | POST | Bearer + multipart `person`, `garment_id` | `{result_url}` (private, owner-only) |
 | `/api/tryon/outfit` | POST | Bearer + multipart | `[result_url]` (Phase 4) |
