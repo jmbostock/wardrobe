@@ -6,8 +6,10 @@
 > — everything must be portable (Docker-only, env-driven, no host hardcoding).
 
 - Status: **ACTIVE** — Phase 1 & 2 DONE; Phase 4 polish in progress (2026-08-21).
-  Current build is live on `http://10.0.1.202:28085`.
-  See `docs/product.md` for the current-state write-up + prioritized roadmap.
+  Current build is live on `http://10.0.1.202:28085` (clueless-closet 0.8.0).
+  UI is now a **multi-page app** (Jinja2 pages + per-domain routers + shared
+  templates/CSS/JS) with a **PWA manifest + service worker + icons** for the
+  iPhone home-screen. See `docs/product.md` for the current-state write-up + roadmap.
 - Test host: `10.0.1.202` (pop-os)
 - Target host: TBD — "another computer with the same GPU" (RTX 5060 Ti 16GB)
 
@@ -91,12 +93,19 @@ altacloset/
 │   │   ├── Dockerfile
 │   │   ├── requirements.txt
 │   │   └── app/
-│   │       ├── main.py          # routes
+│   │       ├── main.py          # thin entrypoint: router includes + /health
 │   │       ├── config.py        # reads env
+│   │       ├── deps.py          # get_current_user (single auth boundary)
+│   │       ├── store.py         # wardrobe/outfits store singletons
+│   │       ├── media.py         # shared garment-image / product-fetch helpers
 │   │       ├── weather.py       # Open-Meteo + HA override
-│   │       ├── wardrobe.py      # sqlite store + seed
+│   │       ├── wardrobe.py      # sqlite store
 │   │       ├── recommender.py   # rule-based scoring engine (MVP core)
 │   │       ├── tryon.py         # ComfyUI/CatVTON client
+│   │       ├── routes/          # per-domain routers: pages, auth, account,
+│   │       │                    #   photos, wardrobe, outfits, tryon, recommend, image
+│   │       ├── templates/       # Jinja2: base.html + 6 pages + edit-modal partial
+│   │       ├── static/          # css/app.css, js/*.js, PWA (manifest, sw, icons)
 │   │       └── workflows/       # comfyui workflow JSONs
 │   └── comfyui/            ← CatVTON install notes / build glue
 └── scripts/
@@ -147,6 +156,10 @@ photo (garment 27 on testdata/person.jpg). See `docs/tryon-pipeline.md` §8 + re
 - [x] Wardrobe manager: add/edit/delete garments, image upload / product-URL fetch, per-garment serve (2026-08-21).
 - [x] Per-garment **Edit modal** (photo, name/category/color, delete) + add-form **Clear** (2026-08-21).
 - [x] Base-image suitability chips + iPhone-first responsive UI (2026-08-21).
+- [x] Ratings (out of 10) on garments + saved outfits; **Outfits** page with edit modal (2026-08-21).
+- [x] Try-on **chat re-render** (Enter re-renders from the last image) + **Saved-image mode**
+      (pick a saved outfit render, no look needed) (2026-08-21).
+- [x] **PWA**: manifest + service worker + icons + safe-area insets for iPhone standalone (2026-08-21).
 - [ ] Whole-look CatVTON in one pass (vs sequential chain) — see docs/product.md §7.
 - [ ] Wardrobe auto-tagging (auto color/material from image) — docs/product.md §7.
 - [ ] Daily digest (weather + "wear this today") like Alta's daily outfits.
@@ -199,13 +212,14 @@ run solo as "quality mode") → CatVTON-FLUX / FLUX.1-Kontext (GGUF quantized, ~
 | `/api/wardrobe/{id}/image` | POST | Bearer + multipart `image` | updated garment (`has_image`) |
 | `/api/wardrobe/{id}/image-url` | POST | Bearer + `{url}` | updated garment (fetches image from URL) |
 | `/api/wardrobe/{id}/image` | GET | Bearer token | garment image (owner-only, 404 if none) |
-| `/api/wardrobe/{id}` | PATCH | Bearer + `{name?, category?, color?}` | updated garment |
+| `/api/wardrobe/{id}` | PATCH | Bearer + `{name?, category?, color?, rating?}` | updated garment |
 | `/api/wardrobe/{id}` | DELETE | Bearer token | `{ok: true}` |
 | `/api/recommend` | POST | Bearer + `{activity, prompt?, weather?}` | `{outfit, reasoning, scores, weather_used}` |
 | `/api/tryon` | POST | Bearer + multipart `person`, `garment_id` | `{result_url}` (private, owner-only) |
-| `/api/tryon/outfit` | POST | Bearer + multipart `garment_ids` (JSON), `person`/`photo_id` | `{result_url}` (chains top→bottom) |
-| `/api/outfits` | GET | Bearer token | saved outfits (garments expanded + result_url) |
+| `/api/tryon/outfit` | POST | Bearer + multipart `garment_ids` (JSON), `person`/`photo_id`/`base_result?`, `prompt?` | `{result_url, garment_ids, prompt}` (chains top→bottom; empty look + base_result = refine w/o garments) |
+| `/api/outfits` | GET | Bearer token | saved outfits (garments expanded + result_url + rating) |
 | `/api/outfits` | POST | Bearer + `{name, garment_ids, result_url?}` | saved outfit |
+| `/api/outfits/{id}` | PATCH | Bearer + `{name?, rating?}` | updated outfit |
 | `/api/outfits/{id}` | DELETE | Bearer token | `{ok: true}` |
 | `/api/image-quality` | POST | Bearer + multipart `kind`(person\|garment), `image`/`photo_id`/`garment_id` | `{score, grade, issues[], tips[]}` |
 | `/api/chat` | POST | Bearer + `{message, context?}` | `{reply}` (Phase 3) |

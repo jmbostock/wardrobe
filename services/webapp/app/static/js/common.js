@@ -94,3 +94,11 @@ function currentRating() { return _ratingValue; }
 
 // ---------- boot ----------
 if (document.body.dataset.requireAuth === 'true') requireAuth();
+
+// ---------- PWA: register the service worker (secure contexts only) ----------
+if ('serviceWorker' in navigator &&
+    (location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(location.hostname))) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => { /* insecure context or blocked */ });
+  });
+}

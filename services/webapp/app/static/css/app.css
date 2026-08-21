@@ -91,6 +91,13 @@ ul#reasons { color:var(--mut); padding-left:18px; margin:8px 0 0; }
 .compare img { width:100%; border-radius:10px; border:1px solid var(--line); background:#000; }
 .compare figcaption { color:var(--mut); font-size:12px; text-transform:uppercase; letter-spacing:.5px; }
 
+/* ---- Saved-image mode (saved outfit renders) — centered column ---- */
+#savedimg-row { display:flex; flex-direction:column; align-items:center; gap:10px; }
+#savedimg-row select { width:100%; max-width:340px; }
+#savedimg-preview { max-width:260px; width:100%; aspect-ratio:3/4; object-fit:contain;
+  background:#000; border:1px solid var(--line); border-radius:10px; }
+#savedimg-row .muted { text-align:center; max-width:380px; }
+
 /* ---- iPhone-first responsive ---- */
 @media (max-width: 640px) {
   main { padding:14px; }
@@ -112,4 +119,13 @@ ul#reasons { color:var(--mut); padding-left:18px; margin:8px 0 0; }
   .look-hint-row { align-items:stretch; }
   .look-hint-row .hint { flex:1; min-width:0; }
   .compare { grid-template-columns:1fr; }
+  #savedimg-preview { max-width:100%; }
+}
+
+/* ---- PWA standalone (iPhone): clear the notch + home indicator ---- */
+header, main { padding-left:max(24px, env(safe-area-inset-left)); padding-right:max(24px, env(safe-area-inset-right)); }
+main { padding-bottom:max(24px, env(safe-area-inset-bottom)); }
+@media (max-width: 640px) {
+  header, main { padding-left:max(14px, env(safe-area-inset-left)); padding-right:max(14px, env(safe-area-inset-right)); }
+  main { padding-bottom:max(14px, env(safe-area-inset-bottom)); }
 }

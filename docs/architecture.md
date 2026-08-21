@@ -24,6 +24,27 @@
 | 8 | Image-quality = pure-PIL heuristics (no ML) | 2026-08-21 | `POST /api/image-quality` scores person/garment; deterministic, no extra GPU/RAM. Reused by the Account **base-suitability chips** (frontend-only) so bad base photos are obvious before a ~40s GPU render |
 | 9 | iPhone-first responsive UI | 2026-08-21 | Most usage is on iPhone. `@media (max-width:640px)` block; uniform `aspect-ratio:3/4` card grid (2-col mobile); card buttons stack full-width on mobile. Verified no overflow at 390px |
 | 10 | One Edit modal per garment (consolidated actions) | 2026-08-21 | Cards show a single **Edit** button; photo upload/from-link, name/category/color, Save + Delete all live in one modal (per user request). Backed by new `PATCH /api/wardrobe/{id}` + `Wardrobe.update()` |
+| 11 | Multi-page app (Jinja2) over a single-page tabbed UI | 2026-08-21 | `index.html` (1,119 lines) split into per-page Jinja templates extending `base.html`, shared `app.css` + `common.js`; `main.py` (679 lines) split into per-domain routers (`app/routes/`) with shared `deps.py`/`store.py`/`media.py`. Each page is a thin server shell; data stays a JSON API with Bearer-token auth (client guard → `/login` on 401) |
+| 12 | Ratings out of 10 on garments + saved outfits | 2026-08-21 | `rating` column on `garments` + `outfits` (additive migration); shared 10-dot tap widget in `common.js`; `PATCH /api/outfits/{id}` + `rating` on garment PATCH |
+| 13 | Try-on chat re-render + Saved-image mode | 2026-08-21 | After a render, Enter sends a note → `/api/tryon/outfit` with `base_result` re-renders from the last image. **Saved-image mode** picks a saved outfit render (no look needed); empty `garment_ids` + base = refine without re-adding garments (no duplicate files). CatVTON is garment-only, so the actual visual edit awaits a promptable model (Phase 5) |
+| 14 | PWA for iPhone home-screen | 2026-08-21 | `manifest.webmanifest` + `sw.js` (app-shell cache, API network-only, secure-context only) + PIL-generated icons + `viewport-fit=cover`/`env(safe-area-inset-*)` so standalone mode clears the notch + home indicator |
+
+## Frontend code layout (2026-08-21)
+
+```
+app/
+  main.py            thin entrypoint (router includes + /health)
+  deps.py            get_current_user (auth boundary)
+  store.py           wardrobe/outfits singletons
+  media.py           garment-image + product-fetch helpers
+  routes/            pages, auth, account, photos, wardrobe, outfits,
+                     tryon, recommend, image (one router per domain)
+  templates/         base.html + auth/suggest/tryon/wardrobe/outfits/account
+                     + partials/edit_modal.html (garment/outfit modes)
+  static/            css/app.css · js/{common,auth,suggest,tryon,wardrobe,
+                     outfits,account}.js · manifest.webmanifest · sw.js ·
+                     icons/ (PIL-generated)
+```
 
 ## Performance targets (5060 Ti 16GB)
 

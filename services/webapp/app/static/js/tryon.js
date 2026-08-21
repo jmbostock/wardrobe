@@ -10,12 +10,19 @@ let tryonInt = null;
 let lastResultUrl = null;   // last render URL (used as the chat base)
 let lastResultLook = null;  // JSON of the garment ids that produced lastResultUrl
 let lastIds = [];           // garment ids of the last render
-let savedPhotos = [];       // cached /api/photos (saved-photo + saved-image sources)
+let savedPhotos = [];       // cached /api/photos (saved-photo source for look-based try-on)
+let savedOutfits = [];      // cached /api/outfits that have a render (Saved-image source)
+let selectedSaved = null;   // the chosen saved outfit render
 
 async function photoBaseUrl(pid) {
   const p = savedPhotos.find((x) => String(x.id) === String(pid));
   if (!p) return null;
   return authImageUrl(p.url);
+}
+
+function setSelectedSaved() {
+  const id = $('saved-img').value;
+  selectedSaved = savedOutfits.find((o) => String(o.id) === id) || null;
 }
 
 // ---- dynamic before/after: original side shows the base once we have one,
@@ -37,10 +44,10 @@ function hideCompare() {
   $('compare-base').src = '';
   $('compare-new').src = '';
 }
-async function showSavedImagePreview(pid) {
+async function showSavedImagePreview() {
   const img = $('savedimg-preview');
-  if (!pid) { img.hidden = true; img.src = ''; return; }
-  const url = await photoBaseUrl(pid);
+  if (!selectedSaved) { img.hidden = true; img.src = ''; return; }
+  const url = await authImageUrl(selectedSaved.result_url);
   if (url) { img.src = url; img.hidden = false; }
 }
 
@@ -119,6 +126,7 @@ $('tryon-save').addEventListener('click', async () => {
     $('outfit-name').value = '';
     $('look-status').textContent = 'saved "' + name + '"';
     toast('outfit saved — see the Outfits page');
+    loadSavedImages();
   } catch (e) { alert(e.message); }
 });
 
@@ -132,8 +140,8 @@ document.querySelectorAll('input[name=psrc]').forEach((r) => r.addEventListener(
   $('look-builder').hidden = src === 'savedimg';
   $('chat-bar').hidden = (src !== 'savedimg' && !lastResultUrl);
   if (src === 'savedimg') {
-    const pid = $('saved-img').value;
-    if (pid) showSavedImagePreview(pid);
+    setSelectedSaved();
+    showSavedImagePreview();
   } else {
     $('savedimg-preview').hidden = true;
     if (!lastResultUrl) hideCompare();
@@ -142,13 +150,9 @@ document.querySelectorAll('input[name=psrc]').forEach((r) => r.addEventListener(
 }));
 $('saved-photo').addEventListener('change', checkPersonImage);
 $('person-file').addEventListener('change', checkPersonImage);
-$('saved-img').addEventListener('change', async () => {
-  const src = document.querySelector('input[name=psrc]:checked')?.value;
-  if (src === 'savedimg') {
-    const pid = $('saved-img').value;
-    if (pid) showSavedImagePreview(pid);
-    else { $('savedimg-preview').hidden = true; hideCompare(); }
-  }
+$('saved-img').addEventListener('change', () => {
+  setSelectedSaved();
+  showSavedImagePreview();
   checkPersonImage();
 });
 
@@ -169,10 +173,21 @@ async function checkPersonImage() {
   const el = $('person-qa'); if (!el) return;
   const src = document.querySelector('input[name=psrc]:checked')?.value || 'saved';
   let fd;
-  if (src === 'saved' || src === 'savedimg') {
-    const pid = (src === 'savedimg') ? $('saved-img').value : $('saved-photo').value;
+  if (src === 'saved') {
+    const pid = $('saved-photo').value;
     if (!pid) { el.hidden = true; return; }
     fd = new FormData(); fd.append('kind', 'person'); fd.append('photo_id', pid);
+  } else if (src === 'savedimg') {
+    // the base is a saved outfit render — score it by uploading the bytes
+    const base = lastResultUrl || (selectedSaved ? selectedSaved.result_url : '');
+    if (!base) { el.hidden = true; return; }
+    try {
+      const res = await api(base);
+      const blob = await res.blob();
+      fd = new FormData();
+      fd.append('kind', 'person');
+      fd.append('image', new File([blob], 'base.png', { type: 'image/png' }));
+    } catch (err) { el.hidden = true; return; }
   } else {
     const f = $('person-file').files[0];
     if (!f) { el.hidden = true; return; }
@@ -206,30 +221,30 @@ async function loadSavedPhotos() {
 }
 async function loadSavedImages() {
   try {
-    if (!savedPhotos.length) savedPhotos = await apiJson('/api/photos');
+    const items = await apiJson('/api/outfits');
+    savedOutfits = items.filter((o) => o.result_url);
     const sel = $('saved-img'); sel.innerHTML = '';
-    if (!savedPhotos.length) { sel.add(new Option('no saved images — upload in Account', '')); return; }
-    for (const p of savedPhotos) {
-      const label = p.description ? p.description : `photo ${p.id}`;
-      sel.add(new Option(`${p.is_default ? '★ ' : ''}${label}`, p.id));
+    if (!savedOutfits.length) {
+      sel.add(new Option('no saved outfit renders — save one from the Try-on tab', ''));
+      return;
+    }
+    for (const o of savedOutfits) {
+      const label = o.name ? o.name : ('Outfit ' + o.id);
+      sel.add(new Option(label, o.id));
     }
   } catch (e) { /* ignore */ }
 }
 loadSavedPhotos(); loadSavedImages(); populateLook();
 
 // ---------- try on (shared by the Try on button and the chat bar) ----------
-async function runTryon(ids, baseResult, prompt, photoId) {
+async function runTryon(ids, baseResult, prompt) {
   const fd = new FormData();
   fd.append('garment_ids', JSON.stringify(ids));
   let baseUrl = null; // what produced the latest render — shown as "original" in the compare
   if (baseResult) {
-    fd.append('base_result', baseResult);      // use the last render as the base
+    fd.append('base_result', baseResult);      // last render or saved outfit render as the base
     if (prompt) fd.append('prompt', prompt);
     baseUrl = await authImageUrl(baseResult);
-  } else if (photoId) {
-    fd.append('photo_id', photoId);            // saved-image refine: no look needed
-    if (prompt) fd.append('prompt', prompt);
-    baseUrl = await photoBaseUrl(photoId);
   } else {
     const src = document.querySelector('input[name=psrc]:checked')?.value || 'saved';
     if (src === 'saved') {
@@ -318,11 +333,10 @@ async function sendChat() {
   input.disabled = true;
   try {
     if (src === 'savedimg') {
-      // saved-image mode: refine from the base image — no garments re-added
-      const pid = $('saved-img').value;
-      if (lastResultUrl) await runTryon([], lastResultUrl, text, null);
-      else if (pid) await runTryon([], null, text, pid);
-      else toast('pick a saved image first');
+      // saved-image mode: refine from the saved outfit render — no garments re-added
+      const base = lastResultUrl || (selectedSaved ? selectedSaved.result_url : '');
+      if (!base) { toast('pick a saved outfit image first'); return; }
+      await runTryon([], base, text);
     } else if (lastResultUrl && lastIds.length) {
       await runTryon(lastIds, lastResultUrl, text);   // re-run the current look
     } else {
