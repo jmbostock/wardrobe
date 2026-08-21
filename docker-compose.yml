@@ -21,7 +21,7 @@ services:
       - ./data/db:/data/db
       - models:/models
     ports:
-      - "127.0.0.1:${WEBAPP_PORT:-28082}:8000"
+      - "${WEBAPP_BIND:-127.0.0.1}:${WEBAPP_PORT:-28082}:8000"
     networks: [altacloset]
 
   comfyui:
