@@ -78,17 +78,40 @@ const stream = await navigator.mediaDevices.getUserMedia({video: {facingMode: "u
 - ComfyUI is **built from source** (`services/comfyui/Dockerfile`): base
   `nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04` + torch cu128 (Blackwell sm_120
   needs cu128+), ComfyUI from `Comfy-Org/ComfyUI`, CatVTON node from the official
-  release zip, detectron2/DensePose compiled CPU-only (`FORCE_CUDA=0`).
+  release zip. detectron2/DensePose is now **GPU-compiled** (`FORCE_CUDA=1`,
+  sm_120): the original layer built it CPU-only (`FORCE_CUDA=0`, no nvcc back
+  then) and a later layer reinstalls it with CUDA once nvcc is present, so
+  DensePose's ROIAlign/NMS/deform kernels run on the GPU.
   The `comfyanonymous/comfyui` Docker Hub image does NOT exist — build from source.
-- Running on 202: `altacloset-comfyui` healthy on host port **28190** (internal
-  `comfyui:8188`). CatVTON nodes currently FAIL to load: SCHP `modules`
-  `inplace_abn` extension uses torch 1.x API
-  (`inplace_abn_cpu.cpp:89/107`, `z.type()` → removed `DeprecatedTypeProperties`).
-  Fix: `sed 's/z\.type()/z.scalar_type()/g'` on those 2 lines + rebuild.
+- **WORKING end-to-end, GPU-bound.** `altacloset-comfyui` healthy on host port
+  **28190** (internal `comfyui:8188`). All 4 CatVTON nodes load
+  (`LoadCatVTONPipeline/LoadAutoMasker/CatVTON/AutoMasker` in `/object_info`).
+  First `/api/tryon` returned a rendered photo (~1m26s incl. weight download,
+  ~39s warm). **GPU utilization hits 100% during inference** (DensePose + SCHP +
+  CatVTON), peak VRAM ~6.3GB / 16GB. Weights auto-download on first try-on into
+  `./data/comfyui/models`.
+- **SCHP inplace_abn fix (the blocker):** the release node's SCHP network
+  (`networks/AugmentCE2P.py`) uses `InPlaceABNSync`, so the extension's **CUDA**
+  kernels are required at runtime — a CPU-only build is NOT enough. Two issues:
+  1. Base image is the CUDA **runtime** variant → **no nvcc** → `.cu` targets
+     died with `/bin/sh: 1: /usr/local/cuda/bin/nvcc: not found`.
+  2. Extension is torch 1.x code: `AT_DISPATCH_FLOATING_TYPES(z.type(), ...)`
+     in `inplace_abn_cpu.cpp` (2×) **and** `inplace_abn_cuda.cu` (6×) fails in
+     torch 2.x (`cannot convert DeprecatedTypeProperties to ScalarType`).
+  The Dockerfile now (a) installs `cuda-nvcc-12-8` + dev headers (cublas/
+  cusparse/cusolver/cudss — pulled in by torch's `ATen/cuda/CUDAContextLight.h`),
+  (b) patches `z.type()`→`z.scalar_type()` (also `.type().scalarType()` in the
+  wrapper and `.type().is_cuda()` in `checks.h`), (c) sets
+  `ENV TORCH_CUDA_ARCH_LIST=12.0` (Blackwell sm_120, keeps the prebuilt extension
+  cache key stable), (d) prebuilds the extension so the `.so` is baked into the
+  image (node imports in <1s on first boot).
 - Build gotchas already fixed in the Dockerfile: re-pin torch/torchvision/torchaudio
   to cu128 (ComfyUI reqs upgrade to cu13 → `libcudart.so.13` missing); upgrade
   transformers to `>=4.44,<5` (node's 4.27.3 pin breaks ComfyUI Qwen2 nodes);
   `python3-dev` for detectron2; `--no-build-isolation` for `pip install -e detectron2`.
+- Version pins: `libcublas-12-8` is a **held package** in the base image
+  (`--allow-change-held-packages` needed); `cudss.h` ships under
+  `/usr/include/libcudss/12/` → symlinked into `/usr/local/cuda/include`.
 
 ## 7. Phase 4 — full outfit
 

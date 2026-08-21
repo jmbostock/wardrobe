@@ -124,15 +124,16 @@ altacloset/
 - **Done when:** can run on CPU with `docker compose up webapp` and get sensible outfits.
 
 ### Phase 2 — Try-on: add clothes to a photo (GPU, the wow moment)
-Status 2026-08-21: ComfyUI image **built & running**; workflow wired; **blocked on SCHP inplace_abn compile** (see below + repo memory).
+Status 2026-08-21: **WORKING end-to-end.** First `/api/tryon` returned a rendered
+photo (garment 27 on testdata/person.jpg). See `docs/tryon-pipeline.md` §8 + repo memory.
 - [x] Build ComfyUI image (`services/comfyui/Dockerfile`: CUDA 12.8 base + torch cu128 + ComfyUI source + CatVTON release node + detectron2).
 - [x] `services/webapp/app/workflows/catvton.json` — API-format workflow; `tryon.py` wires images + cloth_type (top→upper, bottom→lower, dress→overall).
 - [x] `scripts/tryon-test.sh` smoke script.
-- [ ] **BLOCKER:** patch `model/SCHP/modules/src/inplace_abn_cpu.cpp` `z.type()`→`z.scalar_type()` (2 lines, torch 2.x), rebuild, verify CatVTON nodes via `/object_info`.
-- [ ] First try-on (auto-downloads weights ~4-6GB) → `/api/tryon` returns a rendered photo.
+- [x] **Fix SCHP inplace_abn compile** (torch 2.x): the release node's `AugmentCE2P` uses `InPlaceABNSync`, so the **CUDA** kernels are required — the base `runtime` image has **no nvcc** (`/bin/sh: nvcc: not found`). Dockerfile now installs `cuda-nvcc-12-8` + dev headers (cublas/cusparse/cusolver/cudss), patches `z.type()`→`z.scalar_type()` in `inplace_abn_cpu.cpp` (2×) **and** `inplace_abn_cuda.cu` (6×), `ENV TORCH_CUDA_ARCH_LIST=12.0` (Blackwell sm_120), and prebuilds the extension so the `.so` is baked into the image. Verified: 4 CatVTON nodes in `/object_info`, node imports in <1s.
+- [x] First try-on (auto-downloads weights ~4-6GB) → `/api/tryon` returns a rendered photo. ~1m26s first run, ~39s warm.
 - [ ] Webcam path: browser `getUserMedia` → downscale to ~768–1024px → same endpoint.
 - [ ] Background removal for garment images: `rembg` or ComfyUI segment-anything.
-- **Done when:** photo of a person in → photo of them "wearing" the recommended top out.
+- **Done when:** photo of a person in → photo of them "wearing" the recommended top out. ✅ (verified)
 
 ### Phase 3 — LLM stylist (optional, phase 2 in evaluation doc)
 - [ ] Ollama service with Qwen2.5 3B (or Gemma 3 4B).

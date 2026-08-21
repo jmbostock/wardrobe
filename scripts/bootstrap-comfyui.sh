@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # Bootstrap ComfyUI for altacloset on ANY host (202 or the target machine).
-# Idempotent: safe to re-run. Downloads CatVTON weights into ./data/comfyui/models
-# so the target machine never re-downloads them after scripts/migrate-to-target.sh.
+# Idempotent: safe to re-run. CatVTON weights are fetched AUTOMATICALLY by the
+# ComfyUI node on the first try-on (HF cache at ./data/comfyui/models) — no
+# manual download commands needed. Use scripts/migrate-to-target.sh to carry
+# the cached weights to the target machine instead of re-downloading (~4-6GB).
 #
-# Phase 2 TODO: fill in the exact `huggingface-cli download` / wget commands for the
-# CatVTON weights (SD1.5 inpainting checkpoint + CatVTON LoRA + DensePose/SCHP
-# parsers). See docs/tryon-pipeline.md for the model list.
+# The image already bakes in: ComfyUI source, the CatVTON node, detectron2/
+# DensePose, AND the SCHP inplace_abn CUDA extension fix (nvcc + torch 2.x
+# patch + prebuilt .so) — see services/comfyui/Dockerfile.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -15,10 +17,10 @@ mkdir -p "$MODELS_DIR"
 echo ">> ComfyUI bootstrap"
 echo "   models dir : $MODELS_DIR"
 
-# 1) weights (idempotent)
+# 1) weights — auto-downloaded on first try-on by the CatVTON node
 if [ -z "$(ls -A "$MODELS_DIR" 2>/dev/null)" ]; then
-  echo "   no weights yet — downloading (Phase 2: add commands here)."
-  echo "   e.g.: huggingface-cli download <repo> --local-dir $MODELS_DIR"
+  echo "   no weights yet — they auto-download on the first try-on (~4-6GB)."
+  echo "   (trigger: POST /api/tryon, or run scripts/tryon-test.sh)"
 else
   echo "   weights already present, skipping download."
 fi
