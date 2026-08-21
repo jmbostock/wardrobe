@@ -189,7 +189,10 @@ run solo as "quality mode") → CatVTON-FLUX / FLUX.1-Kontext (GGUF quantized, ~
 | `/api/wardrobe/{id}` | DELETE | Bearer token | `{ok: true}` |
 | `/api/recommend` | POST | Bearer + `{activity, prompt?, weather?}` | `{outfit, reasoning, scores, weather_used}` |
 | `/api/tryon` | POST | Bearer + multipart `person`, `garment_id` | `{result_url}` (private, owner-only) |
-| `/api/tryon/outfit` | POST | Bearer + multipart | `[result_url]` (Phase 4) |
+| `/api/tryon/outfit` | POST | Bearer + multipart `garment_ids` (JSON), `person`/`photo_id` | `{result_url}` (chains top→bottom) |
+| `/api/outfits` | GET | Bearer token | saved outfits (garments expanded) |
+| `/api/outfits` | POST | Bearer + `{name, garment_ids}` | saved outfit |
+| `/api/outfits/{id}` | DELETE | Bearer token | `{ok: true}` |
 | `/api/chat` | POST | Bearer + `{message, context?}` | `{reply}` (Phase 3) |
 
 > All data endpoints require `Authorization: Bearer <token>` from register/login.
