@@ -10,9 +10,10 @@ FROM nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1
 
-# base tools + python
+# base tools + python (python3-dev provides Python.h for C++ extension builds)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      python3 python3-pip python3-venv git curl unzip build-essential ninja-build \
+      python3 python3-pip python3-venv python3-dev \
+      git curl unzip build-essential ninja-build \
       ffmpeg libgl1 libglib2.0-0 ca-certificates \
  && rm -rf /var/lib/apt/lists/* \
  && ln -sf /usr/bin/python3 /usr/local/bin/python \
