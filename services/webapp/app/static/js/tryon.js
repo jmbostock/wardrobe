@@ -326,25 +326,53 @@ $('tryon-btn').addEventListener('click', async () => {
   finally { btn.disabled = false; btn.textContent = 'Try on'; }
 });
 
-// ---------- chat feedback (Enter to re-render from the last image) ----------
+// ---------- chat feedback (Enter edits the last image via the editor) ----------
+async function runEdit(baseUrl, prompt) {
+  const fd = new FormData();
+  fd.append('base_result', baseUrl);
+  fd.append('prompt', prompt);
+  const box = document.createElement('div'); box.className = 'progress';
+  const spinner = document.createElement('div'); spinner.className = 'spinner';
+  const txt = document.createElement('div');
+  const stage = document.createElement('div'); stage.className = 'status';
+  stage.textContent = 'Editing image…';
+  const hint = document.createElement('div'); hint.className = 'hint';
+  hint.textContent = 'applying your note with InstructPix2Pix — usually just a few seconds';
+  const timer = document.createElement('div'); timer.className = 'timer'; timer.textContent = '0s';
+  txt.appendChild(stage); txt.appendChild(hint);
+  box.appendChild(spinner); box.appendChild(txt); box.appendChild(timer);
+  $('result').innerHTML = ''; $('result').appendChild(box);
+  const started = Date.now();
+  clearInterval(tryonInt);
+  tryonInt = setInterval(() => { timer.textContent = Math.round((Date.now() - started) / 1000) + 's'; }, 1000);
+  try {
+    const res = await api('/api/tryon/edit', { method: 'POST', body: fd });
+    if (!res.ok) { $('result').innerHTML = `<p class="muted">edit failed: ${await errMsg(res)}</p>`; return; }
+    const data = await res.json();
+    lastResultUrl = data.result_url;
+    const url = await authImageUrl(data.result_url);
+    $('result').innerHTML = '';
+    const img = document.createElement('img'); img.src = url; $('result').appendChild(img);
+    // before/after: original (base) next to the edited render
+    showCompare(baseUrl, url);
+    $('chat-bar').hidden = false;
+    $('chat-input').disabled = false;
+    $('chat-note').textContent = 'edited with: “' + prompt + '”';
+    toast('edited — check the result');
+  } catch (e) { $('result').innerHTML = `<p class="muted">error: ${e}</p>`; }
+  finally { clearInterval(tryonInt); tryonInt = null; }
+}
+
 async function sendChat() {
   const input = $('chat-input');
   const text = input.value.trim();
   if (!text) return;
   const src = document.querySelector('input[name=psrc]:checked')?.value || 'saved';
+  const base = lastResultUrl || (src === 'savedimg' && selectedSaved ? selectedSaved.result_url : '');
+  if (!base) { toast('generate a try-on first, or pick a saved outfit image'); return; }
   input.disabled = true;
-  try {
-    if (src === 'savedimg') {
-      // saved-image mode: refine from the saved outfit render — no garments re-added
-      const base = lastResultUrl || (selectedSaved ? selectedSaved.result_url : '');
-      if (!base) { toast('pick a saved outfit image first'); return; }
-      await runTryon([], base, text);
-    } else if (lastResultUrl && lastIds.length) {
-      await runTryon(lastIds, lastResultUrl, text);   // re-run the current look
-    } else {
-      toast('generate a try-on first');
-    }
-  } catch (e) { /* runTryon already shows errors */ }
+  try { await runEdit(base, text); }
+  catch (e) { /* runEdit already shows errors */ }
   finally { input.value = ''; input.disabled = false; }
 }
 $('chat-send').addEventListener('click', sendChat);

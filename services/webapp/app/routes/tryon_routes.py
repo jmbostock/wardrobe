@@ -8,7 +8,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
-from .. import photos, tryon
+from .. import editor, photos, tryon
 from ..deps import get_current_user
 from ..media import UPLOAD_DIR
 from ..store import wardrobe
@@ -134,3 +134,40 @@ def get_result(filename: str, user: dict = Depends(get_current_user)) -> FileRes
     if not path.is_file():
         raise HTTPException(404, "not found")
     return FileResponse(path, media_type="image/png")
+
+
+@router.post("/api/tryon/edit")
+async def do_tryon_edit(
+    prompt: str = Form(...),
+    base_result: str | None = Form(None),
+    image: UploadFile | None = File(None),
+    user: dict = Depends(get_current_user),
+) -> dict:
+    """Edit a render via the chat bar (InstructPix2Pix engine).
+
+    `base_result` is an owner-only render to edit (from a prior try-on / saved
+    outfit). Alternatively pass `image` directly. Returns the edited render."""
+    if base_result:
+        safe = Path(base_result).name  # strips any directory components
+        path = UPLOAD_DIR / str(user["id"]) / "out" / safe
+        if not path.is_file():
+            raise HTTPException(404, "base result not found")
+        base_bytes = path.read_bytes()
+    elif image is not None:
+        base_bytes = await image.read()
+    else:
+        raise HTTPException(400, "provide base_result or an image")
+    if not base_bytes:
+        raise HTTPException(400, "empty image")
+    prompt = (prompt or "").strip()[:300]
+    if not prompt:
+        raise HTTPException(400, "prompt required")
+    try:
+        result = await editor.run_edit(base_bytes, prompt)
+    except tryon.ComfyUnavailable as ex:
+        raise HTTPException(503, str(ex)) from ex
+    out_dir = UPLOAD_DIR / str(user["id"]) / "out"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_name = f"edit_{int(time.time())}.png"
+    (out_dir / out_name).write_bytes(result)
+    return {"result_url": f"/api/uploads/{out_name}", "prompt": prompt}
