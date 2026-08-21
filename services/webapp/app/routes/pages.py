@@ -18,8 +18,8 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 router = APIRouter()
 
 
-def _ctx(request: Request, active: str, page_title: str) -> dict:
-    return {"request": request, "active": active, "page_title": page_title}
+def _ctx(active: str, page_title: str) -> dict:
+    return {"active": active, "page_title": page_title}
 
 
 @router.get("/", include_in_schema=False)
@@ -30,40 +30,40 @@ def root() -> RedirectResponse:
 @router.get("/login", include_in_schema=False)
 def login_page(request: Request):
     return templates.TemplateResponse(
-        "auth.html", _ctx(request, "auth", "Log in — Clueless Closet")
+        request, "auth.html", _ctx("auth", "Log in — Clueless Closet")
     )
 
 
 @router.get("/suggest", include_in_schema=False)
 def suggest_page(request: Request):
     return templates.TemplateResponse(
-        "suggest.html", _ctx(request, "suggest", "Suggest — Clueless Closet")
+        request, "suggest.html", _ctx("suggest", "Suggest — Clueless Closet")
     )
 
 
 @router.get("/tryon", include_in_schema=False)
 def tryon_page(request: Request):
     return templates.TemplateResponse(
-        "tryon.html", _ctx(request, "tryon", "Try on — Clueless Closet")
+        request, "tryon.html", _ctx("tryon", "Try on — Clueless Closet")
     )
 
 
 @router.get("/wardrobe", include_in_schema=False)
 def wardrobe_page(request: Request):
     return templates.TemplateResponse(
-        "wardrobe.html", _ctx(request, "wardrobe", "Wardrobe — Clueless Closet")
+        request, "wardrobe.html", _ctx("wardrobe", "Wardrobe — Clueless Closet")
     )
 
 
 @router.get("/outfits", include_in_schema=False)
 def outfits_page(request: Request):
     return templates.TemplateResponse(
-        "outfits.html", _ctx(request, "outfits", "Outfits — Clueless Closet")
+        request, "outfits.html", _ctx("outfits", "Outfits — Clueless Closet")
     )
 
 
 @router.get("/account", include_in_schema=False)
 def account_page(request: Request):
     return templates.TemplateResponse(
-        "account.html", _ctx(request, "account", "Account — Clueless Closet")
+        request, "account.html", _ctx("account", "Account — Clueless Closet")
     )
