@@ -182,6 +182,7 @@ run solo as "quality mode") → CatVTON-FLUX / FLUX.1-Kontext (GGUF quantized, ~
 | `/api/weather` | GET | Bearer token | `{temp_c, feels_like_c, condition, wind_kph, humidity, uv_index}` |
 | `/api/wardrobe` | GET | Bearer token | caller's garments (incl. `has_image`) |
 | `/api/wardrobe` | POST | Bearer + `{name, category, color?, image_url?}` | created garment (fetches `image_url` if given) |
+| `/api/wardrobe/parse-link` | POST | Bearer + `{url}` | `{name, description, color, category, images[]}` from a product page / image link |
 | `/api/wardrobe/{id}/image` | POST | Bearer + multipart `image` | updated garment (`has_image`) |
 | `/api/wardrobe/{id}/image-url` | POST | Bearer + `{url}` | updated garment (fetches image from URL) |
 | `/api/wardrobe/{id}/image` | GET | Bearer token | garment image (owner-only, 404 if none) |
