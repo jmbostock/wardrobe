@@ -1,6 +1,8 @@
-# altacloset
+# Clueless Closet
 
-Self-hosted, Dockerized clone of a daily personal-stylist app (à la Alta Daily).
+Self-hosted, Dockerized personal stylist — recommends outfits from your own
+wardrobe (weather + activity + prompt) and renders them onto a photo of a person
+(stored image or live webcam), à la Alta Daily.
 Recommends outfits from **weather + activity + prompt**, then renders the recommended
 clothes onto a **photo of a person** (stored image or live webcam capture).
 

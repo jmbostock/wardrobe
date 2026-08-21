@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>altacloset — your local stylist</title>
+<title>Clueless Closet — your AI stylist</title>
 <style>
   :root { --bg:#0f1216; --card:#181d24; --line:#262d36; --txt:#e8ecf1; --mut:#9aa7b4; --acc:#4f9cf9; }
   * { box-sizing: border-box; }
@@ -58,11 +58,14 @@
   .progress .status { font-weight:600; }
   .progress .hint { color:var(--mut); font-size:13px; margin-top:2px; }
   .progress .timer { color:var(--mut); font-size:12px; margin-left:auto; flex:none; }
+  .look-row { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+  .look-row label { width:70px; flex:none; color:var(--mut); font-size:12px; text-transform:uppercase; }
+  .look-row select { flex:1; }
 </style>
 </head>
 <body>
 <header>
-  <h1>altacloset</h1><span class="tag">local AI stylist</span>
+  <h1>Clueless Closet</h1><span class="tag">your AI wardrobe stylist</span>
   <nav>
     <button id="tab-outfit" class="active">Outfit</button>
     <button id="tab-tryon">Try on</button>
@@ -146,8 +149,18 @@
           </div>
         </div>
         <div class="block">
-          <label>Garment</label>
-          <select id="garment-select" class="field"></select>
+          <label>Look</label>
+          <p class="muted">Build it from your wardrobe (top / bottom / dress) or pull it from the recommendation. Only garments with a photo are listed.</p>
+          <div class="row" style="margin-bottom:10px">
+            <button id="tryon-use-reco" class="ghost">Use recommendation</button>
+            <span class="muted" id="look-status"></span>
+          </div>
+          <div id="look">
+            <div class="look-row"><label>Top</label><select class="look-select" data-role="top"></select></div>
+            <div class="look-row"><label>Bottom</label><select class="look-select" data-role="bottom"></select></div>
+            <div class="look-row"><label>Dress</label><select class="look-select" data-role="dress"></select></div>
+          </div>
+          <span class="muted" id="look-hint">Pick a top, a bottom, or a dress (one-piece). Choose 2 for a full look — they render one after another.</span>
         </div>
         <button id="tryon-btn">Try on</button>
         <div id="result" style="margin-top:12px"></div>
@@ -310,7 +323,7 @@ function showAuth() {
 function enterApp() {
   $('auth-card').hidden = true; $('app').hidden = false; $('signout-btn').hidden = false;
   showView('outfit');
-  loadWeather(); populateGarments(null); loadAccount(); loadPhotos(); loadSavedPhotos();
+  loadWeather(); populateLook(); loadAccount(); loadPhotos(); loadSavedPhotos();
 }
 
 // ---------- tabs ----------
@@ -319,8 +332,8 @@ function showView(name) {
     $('view-' + v).hidden = (v !== name);
     $('tab-' + v).classList.toggle('active', v === name);
   });
-  if (name === 'tryon') { loadSavedPhotos(); populateGarments(null); }
-  if (name === 'wardrobe') { loadWardrobe(); populateGarments(null); }
+  if (name === 'tryon') { loadSavedPhotos(); populateLook(); }
+  if (name === 'wardrobe') { loadWardrobe(); populateLook(); }
 }
 $('tab-outfit').addEventListener('click', () => showView('outfit'));
 $('tab-tryon').addEventListener('click', () => showView('tryon'));
@@ -358,7 +371,7 @@ $('recommend-btn').addEventListener('click', async () => {
       `<b>${data.weather_used.temp_f}°F</b>` +
       `<span class="cond">feels ${data.weather_used.feels_like_f}°F</span>` +
       `<span class="cond">${data.weather_used.condition}</span>`;
-    populateGarments(data.outfit);
+    populateLook(); applyOutfitToLook(data.outfit);
   } catch (e) { alert('recommend failed: ' + e); }
   finally { btn.disabled = false; }
 });
@@ -380,22 +393,53 @@ function renderOutfit(outfit) {
   $('outfit').innerHTML = html || '<p class="muted">no outfit — wardrobe empty?</p>';
 }
 
-async function populateGarments(outfit) {
-  const top = outfit && outfit.top;
-  const sel = $('garment-select'); sel.innerHTML = '';
+async function populateLook() {
   let items = [];
   try { items = await apiJson('/api/wardrobe'); } catch (e) { /* ignore */ }
-  const topMatch = top && items.find((g) => g.id === top.id);
-  if (topMatch && topMatch.has_image) {
-    sel.add(new Option(`${topMatch.name} (recommended #${topMatch.id})`, topMatch.id));
-  }
-  items.filter((g) => (g.category === 'top' || g.category === 'dress') && g.has_image).forEach((g) => {
-    if (!topMatch || g.id !== topMatch.id) sel.add(new Option(g.name, g.id));
-  });
-  if (!sel.options.length) {
-    sel.add(new Option('no garment with an image — add one in Wardrobe', ''));
+  const withImg = items.filter((g) => g.has_image);
+  for (const role of ['top', 'bottom', 'dress']) {
+    const sel = document.querySelector('.look-select[data-role="' + role + '"]');
+    if (!sel) continue;
+    const prev = sel.value;
+    sel.innerHTML = '<option value="">— none —</option>';
+    withImg.filter((g) => g.category === role).forEach((g) => sel.add(new Option(g.name, g.id)));
+    if (prev && [...sel.options].some((o) => o.value === prev)) sel.value = prev;
   }
 }
+function applyOutfitToLook(outfit) {
+  const status = $('look-status');
+  if (!outfit || !Object.keys(outfit).length) { status.textContent = 'wardrobe empty — add clothes first'; return; }
+  const setRole = (role, g) => {
+    const sel = document.querySelector('.look-select[data-role="' + role + '"]');
+    if (!sel) return;
+    if (g && [...sel.options].some((o) => o.value === String(g.id))) sel.value = g.id;
+    else sel.value = '';
+  };
+  const top = outfit.top || outfit.dress || null;
+  if (top && top.category === 'dress') {
+    setRole('dress', top); setRole('top', null); setRole('bottom', null);
+  } else {
+    setRole('top', top); setRole('bottom', outfit.bottom || null); setRole('dress', null);
+  }
+}
+$('tryon-use-reco').addEventListener('click', () => {
+  const status = $('look-status');
+  status.textContent = '…';
+  (async () => {
+    let outfit = lastOutfit;
+    if (!outfit) {
+      try {
+        const data = await apiJson('/api/recommend', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ activity: $('activity').value, prompt: $('prompt').value || null }),
+        });
+        outfit = data.outfit;
+      } catch (e) { status.textContent = 'recommend failed: ' + e.message; return; }
+    }
+    applyOutfitToLook(outfit);
+    status.textContent = 'look set from recommendation — tweak if you like';
+  })();
+});
 
 // ---------- account ----------
 async function loadAccount() {
@@ -542,10 +586,17 @@ $('tryon-btn').addEventListener('click', async () => {
     document.querySelector('input[name=psrc][value=saved]').checked = true;
   }
   const src = document.querySelector('input[name=psrc]:checked').value;
-  const garment_id = $('garment-select').value;
-  if (!garment_id) { alert('no garment selected'); return; }
+
+  // gather the look (order: top → bottom; dress is a one-piece on its own)
+  const ids = [];
+  for (const role of ['top', 'bottom', 'dress']) {
+    const v = document.querySelector('.look-select[data-role="' + role + '"]').value;
+    if (v) ids.push(Number(v));
+  }
+  if (!ids.length) { alert('pick at least one garment in the look, or click "Use recommendation"'); return; }
+
   const fd = new FormData();
-  fd.append('garment_id', garment_id);
+  fd.append('garment_ids', JSON.stringify(ids));
   if (src === 'saved') {
     const pid = $('saved-photo').value;
     if (!pid) { alert('upload a saved photo first (Account → My photos)'); return; }
@@ -559,14 +610,18 @@ $('tryon-btn').addEventListener('click', async () => {
   const btn = $('tryon-btn');
   btn.disabled = true;
   btn.textContent = 'Rendering…';
+  const multi = ids.length > 1;
 
   // progress panel: animated spinner + stage message + elapsed timer
   const box = document.createElement('div'); box.className = 'progress';
   const spinner = document.createElement('div'); spinner.className = 'spinner';
   const txt = document.createElement('div');
-  const stage = document.createElement('div'); stage.className = 'status'; stage.textContent = TRYON_STAGES[0][0];
+  const stage = document.createElement('div'); stage.className = 'status';
+  stage.textContent = multi ? `Rendering garment 1 of ${ids.length}…` : 'Rendering garment…';
   const hint = document.createElement('div'); hint.className = 'hint';
-  hint.textContent = 'first run may download ~4-6GB of model weights (can take a few minutes)';
+  hint.textContent = multi
+    ? `applying ${ids.length} garments in sequence — this can take a while`
+    : 'first run may download ~4-6GB of model weights (can take a few minutes)';
   const timer = document.createElement('div'); timer.className = 'timer'; timer.textContent = '0s';
   txt.appendChild(stage); txt.appendChild(hint);
   box.appendChild(spinner); box.appendChild(txt); box.appendChild(timer);
@@ -574,11 +629,14 @@ $('tryon-btn').addEventListener('click', async () => {
 
   const started = Date.now();
   let stageIdx = 0, lastStageAt = started;
+  // for multi-garment runs, stop at the rendering stage (don't hint "Finalizing"
+  // until it's actually done — the timer keeps counting so it's clearly working)
+  const maxStage = multi ? TRYON_STAGES.length - 2 : TRYON_STAGES.length - 1;
   clearInterval(tryonInt);
   tryonInt = setInterval(() => {
     const now = Date.now();
     timer.textContent = Math.round((now - started) / 1000) + 's';
-    if (now - lastStageAt > 5000 && stageIdx < TRYON_STAGES.length - 1) {
+    if (now - lastStageAt > 5000 && stageIdx < maxStage) {
       stageIdx++; lastStageAt = now;
       stage.textContent = TRYON_STAGES[stageIdx][0];
       hint.textContent = TRYON_STAGES[stageIdx][1];
@@ -586,7 +644,7 @@ $('tryon-btn').addEventListener('click', async () => {
   }, 1000);
 
   try {
-    const res = await api('/api/tryon', { method: 'POST', body: fd });
+    const res = await api('/api/tryon/outfit', { method: 'POST', body: fd });
     if (!res.ok) {
       $('result').innerHTML = `<p class="muted">try-on failed: ${await errMsg(res)}</p>`;
       return;
@@ -669,7 +727,7 @@ async function loadWardrobe() {
       const fd = new FormData(); fd.append('image', f);
       try { await apiJson('/api/wardrobe/' + g.id + '/image', { method: 'POST', body: fd }); toast('image saved'); }
       catch (e) { alert(e.message); }
-      loadWardrobe(); populateGarments(null);
+      loadWardrobe(); populateLook();
     });
     const setBtn = document.createElement('button'); setBtn.className = 'ghost'; setBtn.textContent = 'Set image';
     setBtn.addEventListener('click', () => fileInput.click());
@@ -683,14 +741,14 @@ async function loadWardrobe() {
         });
         toast('image saved');
       } catch (e) { alert(e.message); }
-      loadWardrobe(); populateGarments(null);
+      loadWardrobe(); populateLook();
     });
     const delBtn = document.createElement('button'); delBtn.className = 'danger'; delBtn.textContent = 'Delete';
     delBtn.addEventListener('click', async () => {
       if (!confirm('delete "' + g.name + '"?')) return;
       try { await apiJson('/api/wardrobe/' + g.id, { method: 'DELETE' }); toast('deleted'); }
       catch (e) { alert(e.message); }
-      loadWardrobe(); populateGarments(null);
+      loadWardrobe(); populateLook();
     });
     const row = document.createElement('div'); row.className = 'row';
     row.appendChild(fileInput); row.appendChild(setBtn); row.appendChild(urlBtn); row.appendChild(delBtn);
@@ -778,7 +836,7 @@ $('g-add').addEventListener('click', async () => {
     $('g-name').value = ''; $('g-color').value = ''; $('g-url').value = ''; $('g-file').value = '';
     pickedImage = null; previewImages = [];
     $('g-preview').hidden = true; $('g-preview').innerHTML = '';
-    loadWardrobe(); populateGarments(null);
+    loadWardrobe(); populateLook();
   } catch (e) { status.textContent = e.message; }
 });
 

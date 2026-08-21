@@ -80,22 +80,26 @@ class Wardrobe:
         self._lock = db.lock()
 
     def seed_for_user(self, user_id: int) -> None:
-        """Idempotent: copy the seed wardrobe for a user on first access."""
+        """No-op. The generic seed wardrobe was removed (2026-08-21): wardrobes
+        start empty and users add their own clothes (upload / product link) in
+        the Wardrobe tab. Kept as a method so callers don't break; does nothing.
+        """
+        return
+
+    def remove_seed_garments(self, user_id: int) -> int:
+        """Delete the generic seed garments for a user (keeps user-added ones).
+        Seed rows are identified by their exact names from SEED_GARMENTS
+        (row[0] = name) — user-added garments have arbitrary names, so they're
+        never matched."""
+        names = [row[0] for row in SEED_GARMENTS]
+        placeholders = ",".join("?" * len(names))
         with self._lock:
-            count = self._conn.execute(
-                "SELECT COUNT(*) FROM garments WHERE user_id=?", (user_id,)
-            ).fetchone()[0]
-            if count:
-                return
-            self._conn.executemany(
-                """INSERT INTO garments
-                   (user_id, name, category, color_hex, color_tags, warmth, waterproof,
-                    formality, occasions, material, fit, image_path)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
-                [(user_id, n, c, hx, tags, w, wp, f, occ, mat, fit, "")
-                 for (n, c, hx, tags, w, wp, f, occ, mat, fit) in SEED_GARMENTS],
+            cur = self._conn.execute(
+                f"DELETE FROM garments WHERE user_id=? AND name IN ({placeholders})",
+                (user_id, *names),
             )
             self._conn.commit()
+            return cur.rowcount
 
     def all(self, user_id: int, category: str | None = None) -> list[Garment]:
         with self._lock:
@@ -133,10 +137,14 @@ class Wardrobe:
         category: str,
         color_hex: str = "",
         color_tags: str = "",
+        warmth: int = 3,
+        waterproof: int = 0,
+        formality: str = "casual",
+        occasions: str = "casual",
         material: str = "",
         fit: str = "regular",
     ) -> Garment:
-        """Insert a user-added garment with sensible scoring defaults."""
+        """Insert a user-added garment (sensible scoring defaults unless given)."""
         with self._lock:
             cur = self._conn.execute(
                 """INSERT INTO garments
@@ -144,7 +152,8 @@ class Wardrobe:
                     formality, occasions, material, fit, image_path)
                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (user_id, name, category, color_hex or "", color_tags or "",
-                 3, 0, "casual", "casual", material or "", fit or "regular", ""),
+                 warmth, waterproof, formality or "casual", occasions or "casual",
+                 material or "", fit or "regular", ""),
             )
             self._conn.commit()
             gid = cur.lastrowid

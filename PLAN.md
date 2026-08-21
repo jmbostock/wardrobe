@@ -1,4 +1,4 @@
-# altacloset — Local "Alta Daily" Clone — Project Plan
+# Clueless Closet — Local "Alta Daily" Clone — Project Plan
 
 > Self-hosted, Dockerized, AI personal stylist. Recommend outfits from weather/activity,
 > then render the recommended clothes onto a photo (stored or live webcam).

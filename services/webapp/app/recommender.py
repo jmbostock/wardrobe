@@ -207,12 +207,23 @@ def recommend(
     user_id: int = 1,
 ) -> dict:
     wardrobe = wardrobe or Wardrobe()
-    wardrobe.seed_for_user(user_id)  # ensure the user has a (seed) wardrobe
+    items = wardrobe.all(user_id)
     formality, occasion_tags = ACTIVITY_MAP.get(
         activity.lower(), ACTIVITY_MAP["casual"]
     )
     target = target_warmth(w)
     precipitating = w.precipitating
+
+    if not items:
+        return {
+            "outfit": {},
+            "reasoning": [
+                "Your wardrobe is empty — add some clothes in the Wardrobe tab first.",
+            ],
+            "weather_used": w.to_dict(),
+            "activity": activity,
+            "note": "empty_wardrobe",
+        }
 
     # `_top` is set after the first picks but referenced inside `best()`/`score()`
     # for color harmony — initialize it so those early calls see None.

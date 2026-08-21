@@ -77,9 +77,11 @@ def test_users_have_isolated_wardrobes():
     ua = auth.create_user("bob@example.com", "password123")
     ub = auth.create_user("carol@example.com", "password123")
     w = Wardrobe()
-    ga, gb = w.all(ua["id"]), w.all(ub["id"])
-    assert len(ga) == 25 and len(gb) == 25
-    assert {g.id for g in ga}.isdisjoint({g.id for g in gb})
+    # no generic seed wardrobe anymore — users start empty
+    assert w.all(ua["id"]) == [] and w.all(ub["id"]) == []
+    w.create(ua["id"], "My Tee", "top")
+    assert len(w.all(ua["id"])) == 1 and w.all(ub["id"]) == []
+    assert {g.id for g in w.all(ua["id"])}.isdisjoint({g.id for g in w.all(ub["id"])})
     res = recommend(
         Weather(temp_c=13, feels_like_c=12, condition="rain"),
         "office",
@@ -92,6 +94,9 @@ def test_users_have_isolated_wardrobes():
         if isinstance(val, list):
             for g in val:
                 assert g["user_id"] == ua["id"], g["name"]
+    # empty wardrobe → helpful note, not a crash
+    res_b = recommend(Weather(temp_c=13, feels_like_c=12), "casual", wardrobe=w, user_id=ub["id"])
+    assert res_b["note"] == "empty_wardrobe"
 
 
 def _run_all():

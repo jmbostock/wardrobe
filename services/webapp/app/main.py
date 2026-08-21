@@ -1,4 +1,4 @@
-"""altacloset — FastAPI entrypoint (multi-user).
+"""Clueless Closet — FastAPI entrypoint (multi-user).
 
 Public:
   GET  /health · GET  /
@@ -15,6 +15,7 @@ Authenticated (Bearer token):
 """
 from __future__ import annotations
 
+import json
 import time
 from pathlib import Path
 from urllib.parse import urljoin
@@ -196,7 +197,7 @@ class ParseLinkRequest(BaseModel):
 # --------------------------------------------------------------------------- #
 @app.get("/health")
 def health() -> dict:
-    return {"ok": True, "service": "altacloset", "version": "0.3.0"}
+    return {"ok": True, "service": "clueless-closet", "version": "0.6.0"}
 
 
 @app.get("/")
@@ -288,7 +289,6 @@ def get_weather(user: dict = Depends(get_current_user)) -> dict:
 
 @app.get("/api/wardrobe")
 def list_wardrobe(user: dict = Depends(get_current_user)) -> list[dict]:
-    _wardrobe.seed_for_user(user["id"])
     return [_garment_dict(user["id"], g) for g in _wardrobe.all(user["id"])]
 
 
@@ -492,6 +492,48 @@ async def do_tryon(
     out_name = f"tryon_{garment_id}_{int(time.time())}.png"
     (out_dir / out_name).write_bytes(result)
     return {"result_url": f"/api/uploads/{out_name}", "garment_id": garment_id}
+
+
+@app.post("/api/tryon/outfit")
+async def do_tryon_outfit(
+    garment_ids: str = Form(...),
+    person: UploadFile | None = File(None),
+    photo_id: int | None = Form(None),
+    user: dict = Depends(get_current_user),
+) -> dict:
+    """Try on a whole look: apply each garment in order, chaining the result
+    of one onto the next (e.g. top first, then bottom). garment_ids is a JSON
+    array of garment ids in apply order."""
+    try:
+        ids = [int(x) for x in json.loads(garment_ids)]
+    except Exception as ex:  # noqa: BLE001
+        raise HTTPException(400, "garment_ids must be a JSON array of ids") from ex
+    if not ids:
+        raise HTTPException(400, "no garments selected")
+    if photo_id is not None:
+        try:
+            person_bytes = photos.photo_bytes(user["id"], photo_id)
+        except photos.PhotoError as ex:
+            raise HTTPException(404, str(ex)) from ex
+    elif person is not None:
+        person_bytes = await person.read()
+    else:
+        raise HTTPException(400, "provide a person photo or a saved photo_id")
+    if not person_bytes:
+        raise HTTPException(400, "empty person image")
+    try:
+        for gid in ids:
+            garment = _wardrobe.get(user["id"], gid)
+            if garment is None:
+                raise HTTPException(404, f"garment {gid} not found in your wardrobe")
+            person_bytes = await tryon.run_tryon(person_bytes, garment, user["id"])
+    except tryon.ComfyUnavailable as ex:
+        raise HTTPException(503, str(ex)) from ex
+    out_dir = UPLOAD_DIR / str(user["id"]) / "out"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_name = f"tryon_outfit_{int(time.time())}.png"
+    (out_dir / out_name).write_bytes(person_bytes)
+    return {"result_url": f"/api/uploads/{out_name}", "garment_ids": ids}
 
 
 @app.get("/api/uploads/{filename}")

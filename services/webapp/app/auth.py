@@ -73,10 +73,8 @@ def create_user(email: str, password: str) -> dict[str, Any]:
             raise AuthError("email already registered") from e
         conn.commit()
         user_id = cur.lastrowid
-    # every user gets a copy of the seed wardrobe
-    from .wardrobe import Wardrobe
-
-    Wardrobe().seed_for_user(user_id)
+    # NOTE: no seed wardrobe — users start empty and add clothes in the
+    # Wardrobe tab (generic seed was removed 2026-08-21).
     return get_user(user_id)  # type: ignore[return-value]
 
 
