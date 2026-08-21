@@ -302,8 +302,10 @@ async function runTryon(ids, baseResult, prompt) {
     const url = await authImageUrl(data.result_url);
     $('result').innerHTML = '';
     const img = document.createElement('img'); img.src = url; $('result').appendChild(img);
-    // before/after: original (base) next to the latest render
-    showCompare(baseUrl, url);
+    // before/after only makes sense when altering (chat re-render / saved-image
+    // refine). A plain try-on shows just the new render — never the original.
+    if (baseResult) showCompare(baseUrl, url);
+    else hideCompare();
     // show + re-enable the chat bar so the user can refine the image
     $('chat-bar').hidden = false;
     $('chat-input').disabled = false;
