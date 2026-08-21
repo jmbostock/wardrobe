@@ -49,6 +49,11 @@ async function showSavedImagePreview() {
   if (!selectedSaved) { img.hidden = true; img.src = ''; return; }
   const url = await authImageUrl(selectedSaved.result_url);
   if (url) { img.src = url; img.hidden = false; }
+  // Fresh saved-image selection: drop any stale render so the previous image
+  // isn't mistaken for the selected saved image, and the chat bases on THIS one.
+  lastResultUrl = null;
+  $('result').innerHTML = '';
+  hideCompare();
 }
 
 // ---------- look builder ----------
