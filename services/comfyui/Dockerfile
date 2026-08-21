@@ -30,7 +30,7 @@ RUN git clone --depth 1 https://github.com/Comfy-Org/ComfyUI.git /opt/ComfyUI \
 ADD https://github.com/Zheng-Chong/CatVTON/releases/download/ComfyUI/ComfyUI-CatVTON.zip /tmp/ComfyUI-CatVTON.zip
 RUN mkdir -p /opt/ComfyUI/custom_nodes/ComfyUI-CatVTON \
  && cd /tmp && unzip -q ComfyUI-CatVTON.zip \
- && cp -r /tmp/ComfyUI-CatVTON/ComfyUI-CatVTON/. /opt/ComfyUI/custom_nodes/ComfyUI-CatVTON/ \
+ && cp -r /tmp/ComfyUI-CatVTON/. /opt/ComfyUI/custom_nodes/ComfyUI-CatVTON/ \
  && rm -rf /tmp/ComfyUI-CatVTON /tmp/ComfyUI-CatVTON.zip
 
 # CatVTON node python deps (pinned to the versions the node was tested with)
