@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from urllib.parse import urljoin
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
@@ -156,30 +156,26 @@ async def ai_fill(
     data = await image.read()
     validate_image(data)  # 400 if not a real image
     fields = aifill.ai_fill_garment(data)
-    rotate = aifill.ai_rotate(data)
     if fields is None:
-        return {"available": False, "fields": None, "rotate": rotate,
+        return {"available": False, "fields": None,
                 "error": "AI not available (Ollama/vision model down) — fill manually."}
     if fields.get("color"):
         fields["color"] = normalize_color(fields["color"])
-    return {"available": True, "fields": fields, "rotate": rotate, "error": None}
+    return {"available": True, "fields": fields, "error": None}
 
 
 @router.post("/api/wardrobe/{garment_id}/image")
 async def upload_garment_image(
     garment_id: int,
     image: UploadFile = File(...),
-    rotate: int = Form(0),
     user: dict = Depends(get_current_user),
 ) -> dict:
-    """Upload a garment photo. `rotate` (90/180/270, from the AI tag-reader) is
-    applied automatically so the stored image is upright and portrait."""
     g = wardrobe.get(user["id"], garment_id)
     if g is None:
         raise HTTPException(404, "garment not found")
     data = await image.read()
     ext = validate_image(data)
-    save_garment_image(user["id"], garment_id, data, ext, rotate=rotate)
+    save_garment_image(user["id"], garment_id, data, ext)
     # re-fetch so phash is set and near_dup_of reflects the saved image
     return garment_dict(user["id"], wardrobe.get(user["id"], garment_id))
 

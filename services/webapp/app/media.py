@@ -195,7 +195,7 @@ def normalize_orientation(data: bytes, rotate: int = 0) -> tuple[bytes, str]:
     return buf.getvalue(), "jpg"
 
 
-def save_garment_image(user_id: int, garment_id: int, data: bytes, ext: str, rotate: int = 0) -> Path:
+def save_garment_image(user_id: int, garment_id: int, data: bytes, ext: str) -> Path:
     d = WARDROBE_DIR / str(user_id)
     d.mkdir(parents=True, exist_ok=True)
     for old in d.glob(f"{garment_id}.*"):
@@ -206,7 +206,7 @@ def save_garment_image(user_id: int, garment_id: int, data: bytes, ext: str, rot
     if ext == "heic":  # normalize iPhone photos to JPEG on ingest
         data = _heic_to_jpeg(data)
         ext = "jpg"
-    data, norm_ext = normalize_orientation(data, rotate=rotate)  # upright + portrait
+    data, norm_ext = normalize_orientation(data)  # upright + portrait
     if norm_ext:
         ext = norm_ext
     path = d / f"{garment_id}.{ext}"

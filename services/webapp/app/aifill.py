@@ -148,35 +148,6 @@ def parse_ai_fill(text: str) -> dict[str, str] | None:
     return _normalize(data)
 
 
-_ROTATE_PROMPT = (
-    "Is this photo upside down or rotated sideways? Reply with ONLY one number: "
-    "0, 90, 180, or 270 — the degrees to rotate it CLOCKWISE so it is upright "
-    "and readable. 0 if it is already upright. No other text."
-)
-
-
-def ai_rotate(image_bytes: bytes) -> int:
-    """Ask the vision model how many degrees clockwise the photo must be rotated
-    to be upright (0 = already upright). Returns 0 on any failure so callers
-    always degrade to the deterministic EXIF/portrait handling."""
-    model = os.getenv("OLLAMA_VISION_MODEL", DEFAULT_VISION_MODEL).strip()
-    url = f"{settings.ollama_url}/api/generate"
-    payload = {
-        "model": model,
-        "prompt": _ROTATE_PROMPT,
-        "images": [base64.b64encode(image_bytes).decode("ascii")],
-        "stream": False,
-        "options": {"temperature": 0},
-    }
-    try:
-        r = httpx.post(url, json=payload, timeout=AI_FILL_TIMEOUT)
-        text = (r.json() or {}).get("response", "") if r.status_code == 200 else ""
-    except Exception:  # noqa: BLE001
-        return 0
-    m = re.search(r"\b(90|180|270)\b", text or "")
-    return int(m.group(1)) if m else 0
-
-
 def ai_fill_garment(image_bytes: bytes) -> dict[str, str] | None:
     """Read a garment photo with a vision LLM (Ollama) and return metadata.
     Returns None whenever the AI can't help (service down / no model / parse
