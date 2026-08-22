@@ -61,11 +61,6 @@ async function loadWardrobe() {
       r.textContent = '★ ' + g.rating + '/10';
       meta.appendChild(r);
     }
-    if (g.used_count) {
-      const u = document.createElement('div'); u.className = 'muted'; u.style.fontSize = '12px';
-      u.textContent = 'used ' + g.used_count + '×';
-      meta.appendChild(u);
-    }
     // outfits-style: clicking the card opens the detail card (no Edit button)
     card.addEventListener('click', () => openGarmentDetail(g));
     card.style.cursor = 'pointer';
@@ -212,6 +207,9 @@ function openGarmentDetail(g) {
   $('gd-near').textContent = g.near_dup_of
     ? '⚠ looks similar to "' + g.near_dup_of.name + '" — possible duplicate'
     : '';
+  $('gd-used').textContent = g.used_count
+    ? 'used in ' + g.used_count + ' saved outfit' + (g.used_count === 1 ? '' : 's')
+    : '';
   bindRating('gd-rating', g.rating || 0);
   $('garment-detail').hidden = false;
 }
@@ -224,6 +222,16 @@ function refreshDetailImage() {
 $('gd-close').addEventListener('click', closeGarmentDetail);
 $('garment-detail').addEventListener('click', (e) => { if (e.target === $('garment-detail')) closeGarmentDetail(); });
 $('gd-upload').addEventListener('click', () => $('gd-file').click());
+$('gd-rotate').addEventListener('click', async () => {
+  if (!editingItem) return;
+  $('gd-status').textContent = 'rotating…';
+  try {
+    const resp = await apiJson('/api/wardrobe/' + editingItem.id + '/rotate', { method: 'POST' });
+    $('gd-status').textContent = 'rotated';
+    refreshDetailImage(); loadWardrobe();
+    if (resp.near_dup_of) toast('⚠ near-duplicate of "' + resp.near_dup_of.name + '"');
+  } catch (e) { $('gd-status').textContent = e.message; }
+});
 $('gd-file').addEventListener('change', async () => {
   const f = $('gd-file').files[0]; if (!f || !editingItem) return;
   const fd = new FormData(); fd.append('image', f);

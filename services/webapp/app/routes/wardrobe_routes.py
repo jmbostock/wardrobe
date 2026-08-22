@@ -18,6 +18,7 @@ from ..media import (
     garment_dict,
     garment_image_path,
     normalize_color,
+    rotate_garment_image as _rotate_stored_image,
     save_garment_image,
     validate_image,
 )
@@ -144,6 +145,20 @@ def parse_garment_link(req: ParseLinkRequest, user: dict = Depends(get_current_u
     if info.get("color"):
         info["color"] = normalize_color(info["color"])
     return info
+
+
+@router.post("/api/wardrobe/{garment_id}/rotate")
+def rotate_garment(
+    garment_id: int, user: dict = Depends(get_current_user)
+) -> dict:
+    """Rotate a garment's stored photo 90° clockwise (manual orientation fix
+    for photos the auto-orientation got upside down)."""
+    g = wardrobe.get(user["id"], garment_id)
+    if g is None:
+        raise HTTPException(404, "garment not found")
+    if _rotate_stored_image(user["id"], garment_id) is None:
+        raise HTTPException(404, "no image for this garment")
+    return garment_dict(user["id"], wardrobe.get(user["id"], garment_id))
 
 
 @router.post("/api/wardrobe/ai-fill")

@@ -371,6 +371,64 @@ def test_size_schemas():
     assert size_schema("") == size_schema("top")  # unknown falls back to top
 
 
+def test_normalize_orientation():
+    """Garment photos are righted (EXIF) and forced to portrait for a
+    consistent, upright display in the 3:4 grid."""
+    from app.media import normalize_orientation
+    from PIL import Image
+    import io as _io
+
+    def save(img, fmt="PNG", exif=None):
+        buf = _io.BytesIO()
+        img.save(buf, fmt, exif=exif)
+        return buf.getvalue()
+
+    # landscape (1200x800) → portrait (800x1200)
+    data, ext = normalize_orientation(save(Image.new("RGB", (1200, 800), (120, 120, 120))))
+    assert ext == "jpg"
+    w, h = Image.open(_io.BytesIO(data)).size
+    assert h > w, (w, h)
+
+    # already-portrait image is left alone (no re-encode → ext stays '')
+    data2, ext2 = normalize_orientation(save(Image.new("RGB", (800, 1200), (120, 120, 120))))
+    assert ext2 == "", ext2
+
+    # EXIF orientation 6 (stored landscape, meant portrait) is righted
+    exif = Image.Exif()
+    exif[0x0112] = 6
+    data3, ext3 = normalize_orientation(save(Image.new("RGB", (1000, 500), (60, 60, 60)), "JPEG", exif=exif))
+    assert ext3 == "jpg"
+    w3, h3 = Image.open(_io.BytesIO(data3)).size
+    assert h3 > w3
+
+    # unreadable bytes → returned unchanged with ext ''
+    assert normalize_orientation(b"not an image") == (b"not an image", "")
+
+
+def test_rotate_garment_image():
+    """Manual 90° rotate (detail-card Rotate button) flips a portrait to
+    landscape and back, recomputing the fingerprints."""
+    from app import media
+    from PIL import Image
+    import io as _io
+
+    ua = auth.create_user("wRot@example.com", "password123")
+    g = w.create(ua["id"], "Rot me", "top")
+    buf = _io.BytesIO()
+    Image.new("RGB", (300, 200), (100, 100, 100)).save(buf, "PNG")
+    # save auto-orients landscape → portrait (300x200 → 200x300)
+    media.save_garment_image(ua["id"], g.id, buf.getvalue(), "png")
+    p1 = media.garment_image_path(ua["id"], g.id)
+    w1, h1 = Image.open(p1).size
+    assert h1 > w1, (w1, h1)
+    # manual rotate 90° clockwise → 300x200
+    media.rotate_garment_image(ua["id"], g.id)
+    p2 = media.garment_image_path(ua["id"], g.id)
+    w2, h2 = Image.open(p2).size
+    assert (w2, h2) == (h1, w1), (w2, h2)
+    assert w.get(ua["id"], g.id).phash != ""
+
+
 def test_normalize_color():
     """normalize_color maps free-text variants onto the canonical palette so a
     color is only ever stored one way (no 'navy blue' vs 'navy' mismatches)."""
