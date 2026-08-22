@@ -153,7 +153,7 @@ renderSizeInputs('g-sizes-wrap', $('g-category').value, '');
 // Colors are a fixed select (not free text) so 'navy' can never be stored as
 // 'navy blue' / 'dark navy' etc. and silently mismatch in the recommender.
 const COLOR_HEX_FALLBACK = {
-  white:'#f2f2f2', black:'#1a1a1a', gray:'#8a8f98', grey:'#8a8f98', navy:'#1f2a44',
+  white:'#f2f2f2', black:'#1a1a1a', gray:'#8a8f98', navy:'#1f2a44',
   blue:'#3b5ba8', red:'#a33333', green:'#2e4a3a', beige:'#d9c9a3', brown:'#6b4a2f',
   tan:'#c8b98a', pink:'#d9b3a0', burgundy:'#6d2332', purple:'#5b3a6d', yellow:'#d9c04a',
   orange:'#c96a2e', teal:'#2c4f46', cream:'#f2efe6', khaki:'#c8b98a', olive:'#6b7a3a'

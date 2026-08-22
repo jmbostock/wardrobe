@@ -64,7 +64,7 @@ SIZE_SCHEMAS: dict[str, dict] = {
 def size_schema(category: str) -> dict:
     return SIZE_SCHEMAS.get(category or "", SIZE_SCHEMAS["top"])
 COLOR_HEX = {
-    "white": "#f2f2f2", "black": "#1a1a1a", "gray": "#8a8f98", "grey": "#8a8f98",
+    "white": "#f2f2f2", "black": "#1a1a1a", "gray": "#8a8f98",  # 'grey' collapses to gray via COLOR_SYNONYMS
     "navy": "#1f2a44", "blue": "#3b5ba8", "red": "#a33333", "green": "#2e4a3a",
     "beige": "#d9c9a3", "brown": "#6b4a2f", "tan": "#c8b98a", "pink": "#d9b3a0",
     "burgundy": "#6d2332", "purple": "#5b3a6d", "yellow": "#d9c04a", "orange": "#c96a2e",
