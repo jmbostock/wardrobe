@@ -33,6 +33,7 @@ ul#reasons { color:var(--mut); padding-left:18px; margin:8px 0 0; }
 #result img { max-width:100%; border-radius:10px; border:1px solid var(--line); }
 .muted { color:var(--mut); font-size:13px; }
 .block { display:grid; gap:10px; margin-bottom:14px; }
+.block > * { min-width:0; }  /* let grid children shrink below content width */
 .block label { font-size:12px; color:var(--mut); text-transform:uppercase; }
 .photos { display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:14px; }
 .photo { border:1px solid var(--line); border-radius:12px; overflow:hidden; background:#0f1216; }
