@@ -22,6 +22,23 @@ def list_photos(user: dict = Depends(get_current_user)) -> list[dict]:
     return photos.list(user["id"])
 
 
+@router.get("/api/photos/suitability")
+def photo_suitability(
+    category: str | None = None, user: dict = Depends(get_current_user)
+) -> dict:
+    """Rank the user's saved person photos by try-on suitability (best first),
+    with an optional garment-category nudge (top/bottom/dress) so the frontend
+    can auto-pick the best base photo for a look/swap."""
+    ranked = photos.suitability(user["id"], category)
+    best = ranked[0] if ranked else None
+    return {
+        "category": category or "",
+        "best_id": best["id"] if best else None,
+        "best": best,
+        "ranked": ranked,
+    }
+
+
 @router.post("/api/photos")
 async def upload_photo(
     person: UploadFile = File(...), user: dict = Depends(get_current_user)

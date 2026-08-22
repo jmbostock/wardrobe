@@ -205,13 +205,38 @@ def extract_image_url_from_html(html: str) -> str | None:
     return None
 
 
-def _scan_jsonld(soup: Any) -> tuple[str, str, str, list[str]]:
-    """Return (name, color, description, images) from JSON-LD product blocks."""
-    name = color = desc = ""
+def _scan_jsonld(soup: Any) -> tuple[str, str, str, str, list[str], list[str]]:
+    """Return (name, color, description, brand, sizes, images) from JSON-LD."""
+    name = color = desc = brand = ""
+    sizes: list[str] = []
     images: list[str] = []
 
+    def push_size(v: str) -> None:
+        v = v.strip(" :")
+        if v and v.lower() not in (x.lower() for x in sizes) and _looks_like_size(v):
+            sizes.append(v)
+
+    def add_size(s: Any) -> None:
+        if isinstance(s, str):
+            raw = [s]
+        elif isinstance(s, list):
+            raw = [str(x) for x in s if x is not None]
+        else:
+            return
+        for chunk in raw:
+            chunk = chunk.strip()
+            if not chunk:
+                continue
+            # whole-token matches first ("One Size", "28x32", "S")
+            if _looks_like_size(chunk):
+                push_size(chunk)
+                continue
+            # otherwise "29,30,31" / "Size: M" style → split and test each piece
+            for v in re.split(r"[,;\s]+", chunk):
+                push_size(v)
+
     def walk(n: Any) -> None:
-        nonlocal name, color, desc
+        nonlocal name, color, desc, brand
         if isinstance(n, dict):
             t = str(n.get("@type") or "").lower()
             is_product = "product" in t or "offer" in t or "imageobject" in t or not t
@@ -220,6 +245,12 @@ def _scan_jsonld(soup: Any) -> tuple[str, str, str, list[str]]:
                     name = n["name"].strip()
                 if not desc and isinstance(n.get("description"), str) and n["description"].strip():
                     desc = n["description"].strip()
+                if not brand:
+                    b = n.get("brand")
+                    if isinstance(b, str) and b.strip():
+                        brand = b.strip()
+                    elif isinstance(b, dict) and isinstance(b.get("name"), str) and b["name"].strip():
+                        brand = b["name"].strip()
                 if not color:
                     c = n.get("color")
                     if isinstance(c, str) and c.strip():
@@ -228,6 +259,18 @@ def _scan_jsonld(soup: Any) -> tuple[str, str, str, list[str]]:
                         cs = [x for x in c if isinstance(x, str) and x.strip()]
                         if cs:
                             color = cs[0].strip()
+                add_size(n.get("size"))
+                # offers may carry the size per offer (name like "Size: M", sku, or size)
+                offers = n.get("offers")
+                offer_list = offers if isinstance(offers, list) else [offers] if isinstance(offers, dict) else []
+                for o in offer_list:
+                    if not isinstance(o, dict):
+                        continue
+                    add_size(o.get("size"))
+                    for k in ("name", "sku"):
+                        v = o.get(k)
+                        if isinstance(v, str) and v.strip():
+                            add_size(v)
                 img = n.get("image")
                 if isinstance(img, str):
                     images.append(img)
@@ -247,7 +290,7 @@ def _scan_jsonld(soup: Any) -> tuple[str, str, str, list[str]]:
         except Exception:  # noqa: BLE001
             continue
         walk(data)
-    return name, color, desc, images
+    return name, color, desc, brand, sizes, images
 
 
 def _kw_re(word: str) -> re.Pattern:
@@ -272,18 +315,91 @@ def _scan_color(text: str) -> str | None:
     return None
 
 
+def _looks_like_size(s: str) -> bool:
+    """True if a token looks like a clothing size (S/M/L/XL, 0-30, 36-46 EU,
+    28x32 pants, 30W x 32L, 34/32, shoe 8.5). Deliberately conservative so
+    random description numbers don't leak in."""
+    t = s.strip().upper()
+    if not t or len(t) > 12:
+        return False
+    if re.fullmatch(r"(?:XS|S|M|L|XL|XXL|XXXL|2XL|3XL|4XL|5XL)", t):
+        return True
+    # single numeric apparel / EU / shoe size (allow one decimal for half sizes)
+    if re.fullmatch(r"[0-9]{1,2}(?:\.5)?", t):
+        n = float(t)
+        return 0 <= n <= 60
+    # pants: 28x32, 30/32, 28W x 32L, 30W / 32L, 30X32
+    if re.fullmatch(r"[0-9]{1,2}\s*[X/W]\s*[0-9]{1,2}(?:\s*[WL])?", t):
+        return True
+    if re.fullmatch(r"[0-9]{1,2}\s*/\s*[0-9]{1,2}", t):
+        return True
+    # one-size
+    if t in ("ONE SIZE", "ONESIZE", "OS", "OSFM"):
+        return True
+    return False
+
+
+def _scan_html_sizes(soup: Any) -> list[str]:
+    """Collect sizes from HTML size pickers (<select> or buttons whose
+    id/class/aria-label mentions 'size'), plus elements tagged data-size."""
+    out: list[str] = []
+
+    def add(s: str | None) -> None:
+        if not s:
+            return
+        s = s.strip()
+        if s and s.lower() not in (x.lower() for x in out) and _looks_like_size(s):
+            out.append(s)
+
+    def hints(e: Any) -> str:
+        return " ".join(str(x) for x in (
+            e.get("id"), e.get("class"), e.get("aria-label"),
+            e.get("data-testid"), e.parent.get("aria-label") if e.parent else None,
+        )).lower()
+
+    for sel in soup.find_all("select"):
+        if "size" in hints(sel):
+            for opt in sel.find_all("option"):
+                add(opt.get("value") or opt.get_text(strip=True))
+    for el in soup.find_all(["button", "a", "div", "span", "li"]):
+        text = el.get_text(" ", strip=True)
+        if not _looks_like_size(text) or len(text) > 12:
+            continue
+        ctx = hints(el) or (el.parent.get("class") if el.parent else None)
+        hay = " ".join(str(x) for x in ([ctx] if not isinstance(ctx, str) else [ctx]))
+        if "size" in hay or el.get("data-size"):
+            add(text)
+    # data-size / data-value on any element (swatches often drop the text)
+    for el in soup.find_all(attrs={"data-size": True}):
+        add(el.get("data-size"))
+    return out[:20]
+
+
+def _scan_brand(soup: Any) -> str:
+    """Brand from meta tags (og:site_name / twitter:site) when JSON-LD lacks it."""
+    for attrs in ({"property": "og:site_name"}, {"name": "og:site_name"},
+                  {"name": "twitter:site"}, {"property": "twitter:site"}):
+        m = soup.find("meta", attrs=attrs)
+        if m and m.get("content"):
+            b = m["content"].strip().lstrip("@")
+            if b:
+                return b[:120]
+    return ""
+
+
 def extract_product_page(html: str) -> dict:
-    """Parse a product page → {name, description, color, category, images}.
-    images are raw URLs (may be protocol-relative/relative); callers resolve
-    them against the page URL. Deduped, logo-filtered, capped at 8."""
-    out: dict = {"name": "", "description": "", "color": "", "category": None, "images": []}
+    """Parse a product page → {name, description, color, category, brand,
+    sizes, images}. images are raw URLs (may be protocol-relative/relative);
+    callers resolve them against the page URL. Deduped, logo-filtered."""
+    out: dict = {"name": "", "description": "", "color": "", "category": None,
+                 "brand": "", "sizes": "", "images": []}
     try:
         from bs4 import BeautifulSoup  # optional dep; graceful if absent
     except Exception:  # noqa: BLE001
         return out
     soup = BeautifulSoup(html, "html.parser")
 
-    j_name, j_color, j_desc, j_images = _scan_jsonld(soup)
+    j_name, j_color, j_desc, j_brand, j_sizes, j_images = _scan_jsonld(soup)
 
     # --- name ---
     name = j_name
@@ -326,6 +442,19 @@ def extract_product_page(html: str) -> dict:
     # --- category ---
     hay = " ".join([out["name"], out["description"]])
     out["category"] = _guess_category(hay)
+
+    # --- brand (JSON-LD brand → og:site_name) ---
+    brand = j_brand
+    if not brand:
+        brand = _scan_brand(soup)
+    out["brand"] = brand[:120]
+
+    # --- sizes (JSON-LD size/offers → HTML size pickers) ---
+    sizes = list(j_sizes)
+    for s in _scan_html_sizes(soup):
+        if s.lower() not in (x.lower() for x in sizes):
+            sizes.append(s)
+    out["sizes"] = ",".join(sizes[:12])
 
     # --- images (JSON-LD → itemprop → gallery alt pattern → product-ish → og) ---
     seen: list[str] = []

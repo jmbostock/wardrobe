@@ -53,13 +53,6 @@ body.auth-page .app-version { display:none; }  /* login screen is a centered car
 .photo .meta > button { width:100%; }
 .photo .row { gap:6px; }
 .photo .row button { flex:1 1 0; min-width:0; padding:8px 6px; font-size:12px; }
-#edit-modal { position:fixed; inset:0; background:rgba(0,0,0,.85); display:flex; align-items:flex-start; justify-content:center; overflow-y:auto; z-index:30; padding:20px; }
-#edit-modal[hidden] { display:none; }
-#edit-modal .modal { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; width:100%; max-width:440px; display:grid; gap:14px; margin:auto 0; }
-#edit-modal .modal-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
-#edit-modal .modal-head h2 { margin:0; font-size:16px; overflow-wrap:anywhere; }
-#edit-modal img { width:100%; max-height:340px; object-fit:contain; background:#000; border-radius:10px; border:1px solid var(--line); }
-
 /* ---- outfit detail card (click a saved outfit) ---- */
 #outfit-detail { position:fixed; inset:0; background:rgba(0,0,0,.85); display:flex; align-items:flex-start; justify-content:center; overflow-y:auto; z-index:30; padding:20px; }
 #outfit-detail[hidden] { display:none; }
@@ -67,6 +60,12 @@ body.auth-page .app-version { display:none; }  /* login screen is a centered car
 #outfit-detail .modal-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
 #outfit-detail .modal-head h2 { margin:0; font-size:16px; overflow-wrap:anywhere; }
 #outfit-detail img { width:100%; max-height:380px; object-fit:contain; background:#000; border-radius:10px; border:1px solid var(--line); }
+#garment-detail { position:fixed; inset:0; background:rgba(0,0,0,.85); display:flex; align-items:flex-start; justify-content:center; overflow-y:auto; z-index:30; padding:20px; }
+#garment-detail[hidden] { display:none; }
+#garment-detail .modal { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; width:100%; max-width:440px; display:grid; gap:14px; margin:auto 0; }
+#garment-detail .modal-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+#garment-detail .modal-head h2 { margin:0; font-size:16px; overflow-wrap:anywhere; }
+#garment-detail img { width:100%; max-height:380px; object-fit:contain; background:#000; border-radius:10px; border:1px solid var(--line); }
 #outfit-detail #od-clip img { max-height:300px; }
 #od-source label { font-size:12px; color:var(--mut); text-transform:uppercase; }
 .od-src-row { display:flex; align-items:center; gap:10px; margin-top:6px; }
@@ -90,14 +89,11 @@ body.auth-page .app-version { display:none; }  /* login screen is a centered car
 .look-row label { width:70px; flex:none; color:var(--mut); font-size:12px; text-transform:uppercase; }
 .look-row select { flex:1; min-width:0; max-width:100%; min-width:0; max-width:100%; }
 
-/* ---- rating widget (0–10, tap-friendly dots) ---- */
-.rate { display:flex; gap:5px; flex-wrap:wrap; align-items:center; }
-.rate button { width:30px; height:30px; border-radius:50%; border:1px solid var(--line);
-  background:#0f1216; color:var(--mut); font-size:12px; padding:0; line-height:1;
-  display:flex; align-items:center; justify-content:center; }
-.rate button.on { background:var(--acc); border-color:var(--acc); color:#0f1216; font-weight:700; }
-.rate button.rate-clear { width:auto; height:auto; border-radius:8px; padding:4px 8px;
-  font-size:11px; color:var(--mut); background:transparent; }
+/* ---- rating widget (0–10, single-line slider) ---- */
+.rate { display:flex; align-items:center; }
+.rate-row { display:flex; align-items:center; gap:10px; width:100%; }
+.rate-slider { flex:1; min-width:0; accent-color:var(--acc); }
+.rate-row .ghost { flex:none; font-size:11px; padding:4px 8px; border-radius:8px; }
 
 /* ---- try-on result + chat feedback bar ---- */
 #result img { max-width:100%; border-radius:10px; border:1px solid var(--line); }

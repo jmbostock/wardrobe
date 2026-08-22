@@ -54,6 +54,17 @@ def test_cross_user_isolation():
     assert w.get(ua["id"], g.id) is not None
 
 
+def test_create_brand_sizes():
+    ua = auth.create_user("wB2@example.com", "password123")
+    g = w.create(ua["id"], "Old Navy tee", "top", brand="Old Navy", sizes="S,M,L")
+    assert g.brand == "Old Navy" and g.sizes == "S,M,L"
+    g2 = w.get(ua["id"], g.id)
+    assert g2.brand == "Old Navy" and g2.sizes == "S,M,L"
+    # defaults are empty strings
+    g3 = w.create(ua["id"], "Plain tee", "top")
+    assert g3.brand == "" and g3.sizes == ""
+
+
 def test_update():
     ua = auth.create_user("wU@example.com", "password123")
     g = w.create(ua["id"], "Old name", "top", color_hex="#1f2a44", color_tags="navy")
@@ -62,6 +73,10 @@ def test_update():
     g2 = w.get(ua["id"], g.id)
     assert g2 is not None and g2.name == "New name" and g2.category == "dress"
     assert g2.color_tags == "black"
+    # brand + sizes can be set on update
+    assert w.update(ua["id"], g.id, brand="Express", sizes="2,4,6") is True
+    g3 = w.get(ua["id"], g.id)
+    assert g3.brand == "Express" and g3.sizes == "2,4,6"
     # rating defaults to 0, and can be updated out of 10
     assert g2.rating == 0
     assert w.update(ua["id"], g.id, rating=8) is True
@@ -185,7 +200,9 @@ def test_extract_product_page():
       <meta name="description" content="Classic high-waisted blue jeans" />
       <script type="application/ld+json">
       {"@context":"https://schema.org","@type":"Product","name":"High-Waisted Pants",
-       "color":"Blue","image":["//cdn.shop.com/pants-front.png","//cdn.shop.com/pants-back.png"]}
+       "brand":{"@type":"Brand","name":"Old Navy"},
+       "color":"Blue","size":"29,30,31",
+       "image":["//cdn.shop.com/pants-front.png","//cdn.shop.com/pants-back.png"]}
       </script>
     </head><body>
       <img src="https://shop.com/nav-logo.svg" alt="logo" />
@@ -197,10 +214,55 @@ def test_extract_product_page():
     assert info["name"] == "High-Waisted Pants", info
     assert info["color"].lower() == "blue", info
     assert info["category"] == "bottom", info
+    assert info["brand"] == "Old Navy", info
+    assert "29" in info["sizes"] and "30" in info["sizes"] and "31" in info["sizes"], info
     # JSON-LD images first, then gallery alt images, then product-ish; no logo
     assert "//cdn.shop.com/pants-front.png" in info["images"]
     assert "//cdn.shop.com/pants-back.png" in info["images"]
     assert "logo" not in " ".join(info["images"]).lower()
+
+
+def test_extract_product_page_brand_and_sizes_from_html():
+    # no JSON-LD: brand from og:site_name, sizes from a <select> size picker
+    html = """
+    <html><head>
+      <meta property="og:site_name" content="Express" />
+      <meta property="og:title" content="Sheath Dress" />
+    </head><body>
+      <label for="size-select">Size</label>
+      <select id="size-select">
+        <option value="0">0</option><option value="2">2</option><option value="4">4</option>
+      </select>
+      <img src="//cdn.com/dress-front.jpg" alt="Image number 1 showing, Sheath Dress" />
+    </body></html>
+    """
+    info = imglink.extract_product_page(html)
+    assert info["brand"] == "Express", info
+    assert info["sizes"] == "0,2,4", info
+
+
+def test_ai_fill_parse():
+    """parse_ai_fill coerces raw model output into clean fields (no Ollama)."""
+    from app import aifill
+
+    # JSON straight from the model
+    got = aifill.parse_ai_fill('{"name":"Navy Tee","brand":"Old Navy","color":"navy",'
+                               '"category":"shirt","sizes":"S, M, L"}')
+    assert got["name"] == "Navy Tee" and got["brand"] == "Old Navy"
+    assert got["color"] == "navy" and got["category"] == "top"  # shirt → top
+    assert got["sizes"] == "S,M,L", got
+
+    # markdown code fence + extra prose tolerated
+    got = aifill.parse_ai_fill('```json\n{"name":"Jeans","color":"blue",'
+                               '"category":"pants","sizes":["28","30","32"]}\n```')
+    assert got["category"] == "bottom" and got["sizes"] == "28,30,32", got
+
+    # unknown category → dropped; empty dict → None
+    got = aifill.parse_ai_fill('{"name":"X","category":"mystery","sizes":""}')
+    assert got["category"] == "" and got["sizes"] == ""
+    assert aifill.parse_ai_fill("no json here") is None
+    assert aifill.parse_ai_fill("{}") is not None
+    assert aifill.parse_ai_fill("") is None
 
 
 def test_extract_product_page_color_from_text():

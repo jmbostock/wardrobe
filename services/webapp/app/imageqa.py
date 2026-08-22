@@ -158,3 +158,48 @@ def assess_garment(data: bytes) -> dict[str, Any]:
     if not issues:
         tips = ["Looks good — a clean, flat garment image try-ons best."]
     return _finish(score, issues, tips)
+
+
+def suitability(data: bytes, category: str | None = None) -> dict[str, Any]:
+    """Try-on suitability score for a person photo (0-100) — used to auto-pick
+    the best saved base photo for a garment swap.
+
+    Reuses the person-QA heuristics (EXIF-aware aspect-ratio full-body proxy,
+    resolution, brightness, sharpness) then nudges the score for the garment
+    category being tried on:
+
+      * top / outerwear — the face + upper body matter most, so wide crops that
+        would cut the head are penalized harder
+      * bottom / dress  — the whole body head-to-feet matters most, so wide
+        crops that would cut the legs are penalized harder
+
+    Returns {score, grade, reason, size:[w,h], ratio} (ratio < 1 → portrait)."""
+    img = _load(data)
+    if img is None:
+        return {"score": 0, "grade": _grade(0),
+                "reason": "Couldn't read the image file", "size": [0, 0], "ratio": 0.0}
+    w, h = img.size
+    ratio = w / h  # <1 → portrait (taller than wide)
+    base = assess_person(data)
+    score = int(base["score"])
+    reason = base["issues"][0] if base["issues"] else "Good full-body photo"
+    cat = (category or "").lower()
+    if cat in ("top", "outerwear"):
+        if ratio > 0.8:
+            score -= 15
+            reason = "Wide crop — a top try-on needs the face/upper body visible"
+        elif 0.55 <= ratio <= 0.85:
+            score += 5
+            if score >= 70:
+                reason = "Good framing for a top — face and upper body clear"
+    elif cat in ("bottom", "dress"):
+        if ratio > 0.8:
+            score -= 15
+            reason = "Wide crop — a bottom/dress try-on needs the legs/feet visible"
+        elif ratio < 0.75:
+            score += 5
+            if score >= 70:
+                reason = "Good full-body framing for a bottom/dress"
+    score = max(0, min(100, score))
+    return {"score": score, "grade": _grade(score), "reason": reason,
+            "size": [w, h], "ratio": round(ratio, 3)}

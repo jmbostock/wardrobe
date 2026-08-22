@@ -4,10 +4,17 @@
 <section id="view-wardrobe">
   <div class="card">
     <h2>Add a garment</h2>
-    <p class="muted">Name it, pick a category + color, and add a photo — upload a file or paste a product image link (e.g. from a store page).</p>
+    <p class="muted">Add a photo — upload a file or paste a product link. We auto-fill what we can: the link path reads the product page (brand, color, category, sizes); an uploaded photo is scanned with AI for visible tags. Fix anything in the detail card after.</p>
     <div class="block">
       <label>Name</label>
       <input type="text" id="g-name" placeholder="e.g. Navy merino crewneck" class="field" />
+    </div>
+    <div class="block">
+      <label>Brand &amp; sizes <span class="muted">(auto-filled where possible)</span></label>
+      <div class="row">
+        <input type="text" id="g-brand" placeholder="brand (e.g. Old Navy)" class="field" />
+        <input type="text" id="g-sizes" placeholder="sizes (e.g. S,M,L)" class="field" />
+      </div>
     </div>
     <div class="block">
       <label>Category &amp; color</label>
@@ -46,7 +53,7 @@
 
   <div class="card" style="margin-top:20px">
     <h2>My wardrobe</h2>
-    <p class="muted">Garments with a photo can be used for try-on (they appear in the Try on dropdown). Tap Edit to change the photo / name / category / color or rate it out of 10.</p>
+    <p class="muted">Garments with a photo can be used for try-on (they appear in the Try on dropdown). Tap a card to view it full-size and edit the brand / color / category / sizes or rate it.</p>
     <div class="row" style="margin-bottom:12px">
       <select id="wardrobe-filter">
         <option value="all">All items</option>
@@ -64,6 +71,52 @@
 </section>
 {% endblock %}
 {% block modals %}
-{% with edit_mode='garment' %}{% include 'partials/edit_modal.html' %}{% endwith %}
+<div id="garment-detail" hidden>
+  <div class="modal">
+    <div class="modal-head">
+      <h2 id="gd-title">Garment</h2>
+      <button id="gd-close" class="ghost">✕</button>
+    </div>
+    <img id="gd-img" alt="" />
+    <div class="block">
+      <label>Name</label>
+      <input type="text" id="gd-name" class="field" placeholder="garment name" />
+    </div>
+    <div class="row">
+      <div class="block" style="flex:1;min-width:0"><label>Brand</label><input type="text" id="gd-brand" class="field" placeholder="brand (e.g. Old Navy)" /></div>
+      <div class="block" style="flex:1;min-width:0"><label>Sizes</label><input type="text" id="gd-sizes" class="field" placeholder="e.g. S,M,L" /></div>
+    </div>
+    <div class="row">
+      <div class="block" style="flex:1;min-width:0"><label>Category</label><select id="gd-category"></select></div>
+      <div class="block" style="flex:1;min-width:0"><label>Color</label><input type="text" id="gd-color" class="field" placeholder="e.g. navy" /></div>
+    </div>
+    <div class="block">
+      <label>Photo — upload a file or set it from a link</label>
+      <div class="row">
+        <input type="file" id="gd-file" accept="image/*" hidden />
+        <button id="gd-upload" class="ghost">Upload photo</button>
+      </div>
+      <div class="row">
+        <input type="text" id="gd-url" placeholder="https://… image URL" class="field" />
+        <button id="gd-url-btn" class="ghost">Set from link</button>
+      </div>
+    </div>
+    <div class="block">
+      <label>Owned?</label>
+      <label style="display:flex;gap:8px;align-items:center;text-transform:none"><input type="checkbox" id="gd-owned" /> I own this</label>
+      <span class="muted">Untick if it's on your wishlist / to buy.</span>
+    </div>
+    <div class="block">
+      <label>Rating <span class="muted">(out of 10)</span></label>
+      <div class="rate" id="gd-rating"></div>
+      <div class="muted" id="gd-rating-val"></div>
+    </div>
+    <div class="row">
+      <button id="gd-save">Save</button>
+      <button id="gd-delete" class="danger">Delete</button>
+      <span class="muted" id="gd-status"></span>
+    </div>
+  </div>
+</div>
 {% endblock %}
 {% block scripts %}<script src="/static/js/wardrobe.js"></script>{% endblock %}

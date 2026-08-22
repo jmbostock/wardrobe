@@ -3,6 +3,7 @@
 """
 from __future__ import annotations
 
+import io
 import os
 import sys
 import tempfile
@@ -12,6 +13,22 @@ os.environ.setdefault("DATA_DIR", tempfile.mkdtemp(prefix="altacloset-photos-tes
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app import auth, photos  # noqa: E402
+from PIL import Image, ImageDraw  # noqa: E402
+
+
+def _png(img: Image.Image) -> bytes:
+    buf = io.BytesIO()
+    img.save(buf, "PNG")
+    return buf.getvalue()
+
+
+def _bright(w: int, h: int) -> bytes:
+    """Bright, sharp, high-contrast synthetic photo (mini full-body stand-in)."""
+    img = Image.new("RGB", (w, h), (210, 210, 210))
+    d = ImageDraw.Draw(img)
+    for x in range(0, w, 12):
+        d.line([(x, 0), (x, h)], fill=(20, 20, 20), width=4)
+    return _png(img)
 
 
 def test_upload_list_default_and_delete():
@@ -65,6 +82,38 @@ def test_description_roundtrip():
         raise AssertionError("expected PhotoError for cross-user description")
     except photos.PhotoError:
         pass
+
+
+def test_suitability_ranks_best_photo_first():
+    ua = auth.create_user("suit@example.com", "password123")
+    p_good = photos.upload(ua["id"], _bright(768, 1024), ".png")    # portrait near 3:4
+    p_bad = photos.upload(ua["id"], _bright(1200, 700), ".png")     # landscape — person tiny
+    p_tall = photos.upload(ua["id"], _bright(640, 1536), ".png")    # tall — good for dress
+    ranked = photos.suitability(ua["id"], "dress")
+    assert len(ranked) == 3
+    # best-first ordering
+    scores = [r["score"] for r in ranked]
+    assert scores == sorted(scores, reverse=True), scores
+    assert ranked[0]["id"] == p_good["id"], ranked  # 3:4 wins for dress over landscape
+    assert ranked[-1]["id"] == p_bad["id"], ranked  # landscape is worst
+    # every entry carries the scoring fields for the UI
+    for r in ranked:
+        assert "score" in r and "grade" in r and "reason" in r and "size" in r
+    # corrupt files are skipped — never offered as a try-on base
+    photos.upload(ua["id"], b"not-an-image", ".png")
+    ranked2 = photos.suitability(ua["id"])
+    assert len(ranked2) == 3, ranked2
+
+
+def test_suitability_cross_user_isolation():
+    ua = auth.create_user("suitA@example.com", "password123")
+    ub = auth.create_user("suitB@example.com", "password123")
+    pa = photos.upload(ua["id"], _bright(768, 1024), ".png")
+    pb = photos.upload(ub["id"], _bright(1200, 700), ".png")
+    ra = photos.suitability(ua["id"])
+    rb = photos.suitability(ub["id"])
+    assert [r["id"] for r in ra] == [pa["id"]]
+    assert [r["id"] for r in rb] == [pb["id"]]
 
 
 def _run_all():

@@ -14,6 +14,7 @@ let lastOutfitId = null;    // auto-saved outfit id for the last render
 let savedPhotos = [];       // cached /api/photos (saved-photo source for look-based try-on)
 let savedOutfits = [];      // cached /api/outfits that have a render (Saved-image source)
 let selectedSaved = null;   // the chosen saved outfit render
+let manualPhotoPick = false; // user hand-picked the base photo → don't auto-override it
 
 async function photoBaseUrl(pid) {
   const p = savedPhotos.find((x) => String(x.id) === String(pid));
@@ -72,7 +73,7 @@ async function populateLook() {
     if (prev && [...sel.options].some((o) => o.value === prev)) sel.value = prev;
   }
 }
-$('owned-only-look').addEventListener('change', populateLook);
+$('owned-only-look').addEventListener('change', () => { populateLook(); autoPickBestPhoto(); });
 function applyOutfitToLook(outfit) {
   const status = $('look-status');
   if (!outfit || !Object.keys(outfit).length) { status.textContent = 'wardrobe empty — add clothes first'; return; }
@@ -114,12 +115,14 @@ $('tryon-use-reco').addEventListener('click', async () => {
   }
   applyOutfitToLook(outfit);
   status.textContent = 'look set from recommendation — tweak if you like';
+  autoPickBestPhoto();
 });
 $('tryon-reset').addEventListener('click', () => {
   ['top', 'bottom', 'dress'].forEach((role) => {
     document.querySelector('.look-select[data-role="' + role + '"]').value = '';
   });
   $('look-status').textContent = 'look cleared';
+  autoPickBestPhoto();
 });
 
 // ---------- SVD motion clip (async, queued in ComfyUI) ----------
@@ -191,7 +194,11 @@ document.querySelectorAll('input[name=psrc]').forEach((r) => r.addEventListener(
   $('result').innerHTML = '';
   hideCompare();
   checkPersonImage();
-}));$('saved-photo').addEventListener('change', checkPersonImage);
+  if (src === 'saved') autoPickBestPhoto();
+}));$('saved-photo').addEventListener('change', () => {
+  manualPhotoPick = true;  // user chose the base photo by hand — stop auto-overriding
+  checkPersonImage();
+});
 $('person-file').addEventListener('change', checkPersonImage);
 $('saved-img').addEventListener('change', () => {
   setSelectedSaved();
@@ -249,7 +256,54 @@ async function checkGarmentImage() {
   try { renderQa(el, await apiJson('/api/image-quality', { method: 'POST', body: fd })); }
   catch (e) { el.hidden = true; }
 }
-document.querySelectorAll('.look-select').forEach((s) => s.addEventListener('change', checkGarmentImage));
+document.querySelectorAll('.look-select').forEach((s) => s.addEventListener('change', () => {
+  checkGarmentImage();
+  autoPickBestPhoto();
+}));
+
+// ---------- auto-pick the best saved photo for the current look ----------
+// Each saved photo is EXIF-aware scored server-side for the look's garment
+// category; the best one is auto-selected (a manual pick wins), dropdown
+// options show scores, and a hint explains the pick.
+function lookCategory() {
+  const v = (role) => document.querySelector('.look-select[data-role="' + role + '"]')?.value || '';
+  return v('dress') ? 'dress' : v('bottom') ? 'bottom' : v('top') ? 'top' : '';
+}
+async function autoPickBestPhoto() {
+  const sel = $('saved-photo');
+  if (!sel) return;
+  const src = document.querySelector('input[name=psrc]:checked')?.value || 'saved';
+  if (src !== 'saved') return;  // only relevant when the base is a saved photo
+  const category = lookCategory();
+  let ranked = [];
+  try {
+    const q = category ? '?category=' + encodeURIComponent(category) : '';
+    ranked = (await apiJson('/api/photos/suitability' + q)).ranked || [];
+  } catch (e) { ranked = []; }
+  const best = ranked[0] || null;
+  // Re-label every option with its score; mark the best pick.
+  for (const opt of sel.options) {
+    if (!opt.value) continue;  // placeholder ("no saved photos …")
+    const p = ranked.find((r) => String(r.id) === opt.value);
+    if (!p) continue;
+    const star = p.is_default ? '★ ' : '';
+    const label = p.description || ('photo ' + p.id);
+    const bestTag = best && p.id === best.id ? ' ✓best' : '';
+    opt.textContent = `${star}${label} (${p.score})${bestTag}`;
+  }
+  const hint = $('auto-pick-hint');
+  if (best && !manualPhotoPick) {
+    const prev = sel.value;
+    sel.value = String(best.id);
+    if (sel.value !== prev) checkPersonImage();  // programmatic set doesn't fire change
+    hint.hidden = false;
+    hint.textContent = '✨ Auto-picked best saved photo for this look — ' +
+      best.grade + ' (' + best.score + '/100)';
+    if (best.reason) hint.textContent += ' — ' + best.reason;
+  } else {
+    hint.hidden = true;
+  }
+}
 
 async function loadSavedPhotos() {
   try {
@@ -280,7 +334,7 @@ async function loadSavedImages() {
 loadSavedImages(); populateLook();
 // Show the quality score for the pre-selected (default) saved photo right away,
 // without making the user interact with the dropdown first.
-loadSavedPhotos().then(checkPersonImage);
+loadSavedPhotos().then(() => { checkPersonImage(); autoPickBestPhoto(); });
 
 // ---------- try on (shared by the Try on button and the chat bar) ----------
 async function runTryon(ids, baseResult, prompt) {

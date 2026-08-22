@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from . import db
+from . import db, imageqa
 from .config import settings
 
 PHOTOS_DIR = Path(settings.data_dir) / "uploads"
@@ -74,6 +74,30 @@ def list(user_id: int) -> list[dict[str, Any]]:
             (user_id,),
         ).fetchall()
     return [_row_to_dict(r) for r in rows]
+
+
+def suitability(user_id: int, category: str | None = None) -> list[dict[str, Any]]:
+    """Rank the user's saved person photos by try-on suitability (best first).
+
+    Each photo is EXIF-aware scored for the optional garment category (see
+    imageqa.suitability); the result keeps the normal photo fields plus
+    score/grade/reason/size so the frontend can auto-pick the best base for a
+    look. Unreadable/corrupt files are skipped — never offered as a base."""
+    ranked: list[dict[str, Any]] = []
+    for p in list(user_id):
+        try:
+            data = photo_bytes(user_id, p["id"])
+        except PhotoError:
+            continue
+        s = imageqa.suitability(data, category)
+        if not s.get("size") or s["size"] == [0, 0]:
+            continue  # corrupt/undecodable — can't be a try-on base
+        ranked.append(
+            {**p, "score": s["score"], "grade": s["grade"],
+             "reason": s["reason"], "size": s["size"]}
+        )
+    ranked.sort(key=lambda r: r["score"], reverse=True)
+    return ranked
 
 
 def _get(user_id: int, photo_id: int) -> Any | None:

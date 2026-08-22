@@ -1,5 +1,6 @@
-// wardrobe page — add-garment form, grid, and the garment edit modal (with rating).
-let editingItem = null;
+// wardrobe page — add-garment form (URL fetch + AI tag-read), grid, and the
+// garment detail card (outfits-style click-through with inline edit + rating).
+let editingItem = null;   // garment being edited in the detail card
 let wardrobeFilter = 'all';
 let wardrobeSort = 'newest';
 
@@ -29,15 +30,22 @@ async function loadWardrobe() {
     if (g.has_image) {
       const url = await authImageUrl('/api/wardrobe/' + g.id + '/image');
       img.src = url;
-      img.addEventListener('click', () => openLightbox(url));
     } else {
       img.style.background = g.color_hex || '#333';
-      img.title = 'no image yet — add one in Edit';
+      img.title = 'no image yet — add one in the detail card';
     }
     const meta = document.createElement('div'); meta.className = 'meta';
     const badge = document.createElement('span'); badge.className = 'badge'; badge.textContent = g.category;
     const name = document.createElement('div'); name.textContent = g.name; name.style.fontSize = '13px';
     meta.appendChild(badge); meta.appendChild(name);
+    const facts = [];
+    if (g.brand) facts.push(g.brand);
+    if (g.sizes) facts.push('sizes ' + g.sizes);
+    if (facts.length) {
+      const d = document.createElement('div'); d.className = 'muted'; d.style.fontSize = '12px';
+      d.textContent = facts.join(' · ');
+      meta.appendChild(d);
+    }
     if (!g.owned) {
       const want = document.createElement('span'); want.className = 'badge'; want.textContent = 'to buy';
       want.style.background = '#d4a72c';
@@ -53,9 +61,9 @@ async function loadWardrobe() {
       u.textContent = 'used ' + g.used_count + '×';
       meta.appendChild(u);
     }
-    const editBtn = document.createElement('button'); editBtn.className = 'ghost'; editBtn.textContent = 'Edit';
-    editBtn.addEventListener('click', () => openEdit({ kind: 'garment', ...g }));
-    meta.appendChild(editBtn);
+    // outfits-style: clicking the card opens the detail card (no Edit button)
+    card.addEventListener('click', () => openGarmentDetail(g));
+    card.style.cursor = 'pointer';
     card.appendChild(img); card.appendChild(meta);
     grid.appendChild(card);
   }
@@ -63,81 +71,84 @@ async function loadWardrobe() {
 $('wardrobe-filter').addEventListener('change', (e) => { wardrobeFilter = e.target.value; loadWardrobe(); });
 $('wardrobe-sort').addEventListener('change', (e) => { wardrobeSort = e.target.value; loadWardrobe(); });
 
-// ---------- edit modal (garment mode — shared partial) ----------
-function openEdit(g) {
+// ---------- garment detail card (outfits-style click-through) ----------
+function openGarmentDetail(g) {
   editingItem = g;
-  $('edit-title').textContent = 'Edit — ' + g.name;
-  $('edit-name').value = g.name;
-  $('edit-name').placeholder = 'garment name';
-  $('edit-color').value = (g.color_tags || []).join(', ');
-  const cat = $('edit-category'); cat.innerHTML = '';
+  $('gd-title').textContent = g.name;
+  $('gd-name').value = g.name;
+  $('gd-brand').value = g.brand || '';
+  $('gd-sizes').value = g.sizes || '';
+  $('gd-color').value = (g.color_tags || []).join(', ');
+  const cat = $('gd-category'); cat.innerHTML = '';
   Array.from($('g-category').options).forEach((o) => cat.add(new Option(o.text, o.value)));
   cat.value = g.category;
-  $('edit-owned').checked = g.owned !== false && g.owned !== 0;
-  $('edit-url').value = '';
-  $('edit-status').textContent = '';
-  const img = $('edit-img');
+  $('gd-owned').checked = g.owned !== false && g.owned !== 0;
+  $('gd-url').value = '';
+  $('gd-status').textContent = '';
+  const img = $('gd-img');
   img.style.background = g.color_hex || '#333'; img.src = '';
   if (g.has_image) {
     authImageUrl('/api/wardrobe/' + g.id + '/image').then((u) => { img.src = u; }).catch(() => {});
   }
-  bindRating('edit-rating', g.rating || 0);
-  $('edit-modal').hidden = false;
+  bindRating('gd-rating', g.rating || 0);
+  $('garment-detail').hidden = false;
 }
-function closeEdit() { $('edit-modal').hidden = true; editingItem = null; }
-function refreshEditImage() {
-  if (editingItem && editingItem.kind === 'garment' && editingItem.has_image) {
-    authImageUrl('/api/wardrobe/' + editingItem.id + '/image').then((u) => { $('edit-img').src = u; }).catch(() => {});
+function closeGarmentDetail() { $('garment-detail').hidden = true; editingItem = null; }
+function refreshDetailImage() {
+  if (editingItem && editingItem.has_image) {
+    authImageUrl('/api/wardrobe/' + editingItem.id + '/image').then((u) => { $('gd-img').src = u; }).catch(() => {});
   }
 }
-$('edit-close').addEventListener('click', closeEdit);
-$('edit-modal').addEventListener('click', (e) => { if (e.target === $('edit-modal')) closeEdit(); });
-$('edit-upload').addEventListener('click', () => $('edit-file').click());
-$('edit-file').addEventListener('change', async () => {
-  const f = $('edit-file').files[0]; if (!f || !editingItem) return;
+$('gd-close').addEventListener('click', closeGarmentDetail);
+$('garment-detail').addEventListener('click', (e) => { if (e.target === $('garment-detail')) closeGarmentDetail(); });
+$('gd-upload').addEventListener('click', () => $('gd-file').click());
+$('gd-file').addEventListener('change', async () => {
+  const f = $('gd-file').files[0]; if (!f || !editingItem) return;
   const fd = new FormData(); fd.append('image', f);
-  $('edit-status').textContent = 'uploading…';
+  $('gd-status').textContent = 'uploading…';
   try {
     await apiJson('/api/wardrobe/' + editingItem.id + '/image', { method: 'POST', body: fd });
-    $('edit-status').textContent = 'photo saved'; $('edit-file').value = '';
-    refreshEditImage(); loadWardrobe();
+    $('gd-status').textContent = 'photo saved'; $('gd-file').value = '';
+    refreshDetailImage(); loadWardrobe();
   } catch (e) { alert(e.message); }
 });
-$('edit-url-btn').addEventListener('click', async () => {
-  const u = $('edit-url').value.trim(); if (!u || !editingItem) return;
-  $('edit-status').textContent = 'fetching…';
+$('gd-url-btn').addEventListener('click', async () => {
+  const u = $('gd-url').value.trim(); if (!u || !editingItem) return;
+  $('gd-status').textContent = 'fetching…';
   try {
     await apiJson('/api/wardrobe/' + editingItem.id + '/image-url', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: u }),
     });
-    $('edit-status').textContent = 'photo saved'; $('edit-url').value = '';
-    refreshEditImage(); loadWardrobe();
+    $('gd-status').textContent = 'photo saved'; $('gd-url').value = '';
+    refreshDetailImage(); loadWardrobe();
   } catch (e) { alert(e.message); }
 });
-$('edit-save').addEventListener('click', async () => {
+$('gd-save').addEventListener('click', async () => {
   if (!editingItem) return;
-  $('edit-status').textContent = 'saving…';
+  $('gd-status').textContent = 'saving…';
   const body = {
-    name: $('edit-name').value.trim(),
-    category: $('edit-category').value,
-    color: $('edit-color').value.trim(),
+    name: $('gd-name').value.trim(),
+    brand: $('gd-brand').value.trim(),
+    sizes: $('gd-sizes').value.trim(),
+    category: $('gd-category').value,
+    color: $('gd-color').value.trim(),
     rating: currentRating(),
-    owned: $('edit-owned').checked,
+    owned: $('gd-owned').checked,
   };
   try {
     await apiJson('/api/wardrobe/' + editingItem.id, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
     });
-    $('edit-status').textContent = 'saved'; toast('garment updated');
+    $('gd-status').textContent = 'saved'; toast('garment updated');
     loadWardrobe();
-  } catch (e) { $('edit-status').textContent = e.message; }
+  } catch (e) { $('gd-status').textContent = e.message; }
 });
-$('edit-delete').addEventListener('click', async () => {
+$('gd-delete').addEventListener('click', async () => {
   if (!editingItem) return;
   if (!confirm('delete "' + editingItem.name + '"?')) return;
   try { await apiJson('/api/wardrobe/' + editingItem.id, { method: 'DELETE' }); toast('deleted'); }
   catch (e) { alert(e.message); }
-  closeEdit(); loadWardrobe();
+  closeGarmentDetail(); loadWardrobe();
 });
 
 // ---------- add garment form ----------
@@ -157,11 +168,15 @@ $('g-fetch').addEventListener('click', async () => {
     if (info.name && !$('g-name').value.trim()) $('g-name').value = info.name;
     if (info.color && !$('g-color').value.trim()) $('g-color').value = info.color;
     if (info.category) $('g-category').value = info.category;
+    if (info.brand && !$('g-brand').value.trim()) $('g-brand').value = info.brand;
+    if (info.sizes && !$('g-sizes').value.trim()) $('g-sizes').value = info.sizes;
     previewImages = info.images || [];
     renderPreview();
-    status.textContent = previewImages.length
-      ? 'found ' + previewImages.length + ' image(s) — pick one, then Add garment'
-      : 'no images found';
+    const metaBits = [info.brand, info.sizes ? 'sizes ' + info.sizes : ''].filter(Boolean);
+    status.textContent = (metaBits.length ? 'filled ' + metaBits.join(' · ') + ' — ' : '') +
+      (previewImages.length
+        ? 'found ' + previewImages.length + ' image(s) — pick one, then Add garment'
+        : 'no images found');
   } catch (e) {
     status.textContent = e.message;
     $('g-preview').hidden = true; $('g-preview').innerHTML = '';
@@ -198,9 +213,11 @@ $('g-add').addEventListener('click', async () => {
   const name = $('g-name').value.trim().slice(0, 200);
   const category = $('g-category').value;
   const color = $('g-color').value.trim();
+  const brand = $('g-brand').value.trim();
+  const sizes = $('g-sizes').value.trim();
   if (!name) { status.textContent = 'name required'; return; }
   const url = pickedImage || $('g-url').value.trim();
-  const body = { name, category, color, owned: $('g-owned').checked };
+  const body = { name, category, color, brand, sizes, owned: $('g-owned').checked };
   if (url) body.image_url = url;
   status.textContent = 'adding…';
   try {
@@ -213,18 +230,53 @@ $('g-add').addEventListener('click', async () => {
       await apiJson('/api/wardrobe/' + g.id + '/image', { method: 'POST', body: fd });
     }
     status.textContent = 'added "' + g.name + '"';
-    $('g-name').value = ''; $('g-color').value = ''; $('g-url').value = ''; $('g-file').value = '';
+    $('g-name').value = ''; $('g-brand').value = ''; $('g-sizes').value = '';
+    $('g-color').value = ''; $('g-url').value = ''; $('g-file').value = '';
     pickedImage = null; previewImages = [];
     $('g-preview').hidden = true; $('g-preview').innerHTML = '';
     loadWardrobe();
   } catch (e) { status.textContent = e.message; }
 });
 $('g-clear').addEventListener('click', () => {
-  $('g-name').value = ''; $('g-color').value = ''; $('g-url').value = ''; $('g-file').value = '';
+  $('g-name').value = ''; $('g-brand').value = ''; $('g-sizes').value = '';
+  $('g-color').value = ''; $('g-url').value = ''; $('g-file').value = '';
   $('g-category').selectedIndex = 0;
   pickedImage = null; previewImages = [];
   $('g-preview').hidden = true; $('g-preview').innerHTML = '';
   $('g-status').textContent = 'form cleared — paste a new link or add manually';
+});
+
+// ---------- AI tag-reader on file upload ----------
+// When a photo is picked, ask the server to read visible tags (brand / color /
+// category / sizes) with a vision model. Never blocks adding — it fills only
+// fields the user hasn't already typed and degrades gracefully if AI is down.
+$('g-file').addEventListener('change', async () => {
+  const f = $('g-file').files[0];
+  const status = $('g-status');
+  if (!f) return;
+  pickedImage = null;  // a chosen file wins over a previously-picked link image
+  if (!f.type.startsWith('image/')) { status.textContent = 'pick an image file'; return; }
+  status.textContent = 'reading the tag… (AI)';
+  const fd = new FormData(); fd.append('image', f);
+  let res;
+  try {
+    res = await apiJson('/api/wardrobe/ai-fill', { method: 'POST', body: fd });
+  } catch (e) {
+    status.textContent = 'AI unavailable — fill the fields by hand'; return;
+  }
+  if (!res.available) { status.textContent = res.error || 'AI unavailable — fill the fields by hand'; return; }
+  const t = res.fields || {};
+  const bits = [];
+  if (t.name && !$('g-name').value.trim()) { $('g-name').value = t.name; bits.push('name'); }
+  if (t.brand && !$('g-brand').value.trim()) { $('g-brand').value = t.brand; bits.push(t.brand); }
+  if (t.color && !$('g-color').value.trim()) { $('g-color').value = t.color; bits.push(t.color); }
+  if (t.sizes && !$('g-sizes').value.trim()) { $('g-sizes').value = t.sizes; bits.push('size ' + t.sizes); }
+  if (t.category && Array.from($('g-category').options).some((o) => o.value === t.category)) {
+    $('g-category').value = t.category;
+  }
+  status.textContent = bits.length
+    ? 'AI read: ' + bits.join(', ')
+    : 'AI read the photo but found no tag info — fill manually';
 });
 
 loadWardrobe();

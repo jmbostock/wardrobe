@@ -63,32 +63,36 @@ $('lightbox').addEventListener('click', () => {
   $('lightbox-img').src = '';
 });
 
-// ---------- rating widget (0–10, tap-friendly dots) ----------
-// Shared by the wardrobe + outfits edit modals. `bindRating(containerId, value)`
-// re-renders the dots; `currentRating()` returns the tapped value.
+// ---------- rating widget (0–10, single-line slider) ----------
+// Shared by the wardrobe + outfits detail cards. `bindRating(containerId,
+// value)` renders a range slider + clear button; `currentRating()` returns the
+// slider value. A slider keeps the rating on one line (the old 10-dot widget
+// wrapped on narrow screens).
 let _ratingValue = 0;
 function bindRating(containerId, value) {
   _ratingValue = value || 0;
   const c = $(containerId);
   if (!c) return;
   c.innerHTML = '';
-  for (let i = 1; i <= 10; i++) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'rate-dot' + (i <= _ratingValue ? ' on' : '');
-    b.textContent = i;
-    b.title = i + '/10';
-    b.addEventListener('click', () => bindRating(containerId, i));
-    c.appendChild(b);
-  }
+  const row = document.createElement('div'); row.className = 'rate-row';
+  const slider = document.createElement('input');
+  slider.type = 'range'; slider.min = '0'; slider.max = '10'; slider.step = '1';
+  slider.value = String(_ratingValue);
+  slider.className = 'rate-slider';
+  slider.title = _ratingValue ? _ratingValue + '/10' : '0/10 (unrated)';
+  const refresh = () => {
+    _ratingValue = Number(slider.value);
+    const label = $(containerId + '-val');
+    if (label) label.textContent = _ratingValue ? 'rated ' + _ratingValue + '/10' : 'not rated yet';
+    slider.title = _ratingValue ? _ratingValue + '/10' : '0/10 (unrated)';
+  };
+  slider.addEventListener('input', refresh);
   const clr = document.createElement('button');
-  clr.type = 'button';
-  clr.className = 'ghost rate-clear';
-  clr.textContent = 'clear';
-  clr.addEventListener('click', () => bindRating(containerId, 0));
-  c.appendChild(clr);
-  const label = $(containerId + '-val');
-  if (label) label.textContent = _ratingValue ? `rated ${_ratingValue}/10` : 'not rated yet';
+  clr.type = 'button'; clr.className = 'ghost'; clr.textContent = 'clear';
+  clr.addEventListener('click', () => { slider.value = '0'; refresh(); });
+  row.appendChild(slider); row.appendChild(clr);
+  c.appendChild(row);
+  refresh();
 }
 function currentRating() { return _ratingValue; }
 

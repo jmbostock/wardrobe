@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from .. import imglink, render
+from .. import aifill, imglink, render
 from ..deps import get_current_user
 from ..media import (
     COLOR_HEX,
@@ -28,6 +28,8 @@ class WardrobeCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     category: str = Field(...)
     color: str = Field("", max_length=60)
+    brand: str = Field("", max_length=120)
+    sizes: str = Field("", max_length=200)
     owned: bool = True  # False = "to buy" / wishlist item
     image_url: str | None = Field(None, max_length=2000)
 
@@ -36,6 +38,8 @@ class WardrobeUpdate(BaseModel):
     name: str | None = Field(None, min_length=1, max_length=200)
     category: str | None = Field(None)
     color: str | None = Field(None, max_length=40)
+    brand: str | None = Field(None, max_length=120)
+    sizes: str | None = Field(None, max_length=200)
     rating: int | None = Field(None, ge=0, le=10)
     owned: bool | None = Field(None)
 
@@ -75,6 +79,7 @@ def create_garment(req: WardrobeCreate, user: dict = Depends(get_current_user)) 
     color_hex = COLOR_HEX.get(color, "#8a8f98")
     g = wardrobe.create(
         user["id"], name, category, color_hex=color_hex, color_tags=color,
+        brand=req.brand.strip()[:120], sizes=req.sizes.strip()[:200],
         owned=req.owned,
     )
     if req.image_url:
@@ -108,6 +113,21 @@ def parse_garment_link(req: ParseLinkRequest, user: dict = Depends(get_current_u
     # high-res previews and the chosen URL fetches clean.
     info["images"] = [imglink.clean_image_url(urljoin(req.url, u)) for u in info["images"]]
     return info
+
+
+@router.post("/api/wardrobe/ai-fill")
+async def ai_fill(
+    image: UploadFile = File(...), user: dict = Depends(get_current_user)
+) -> dict:
+    """AI tag-reader for uploaded garment photos (file path). Tries a small
+    vision LLM (Ollama) to fill brand/color/category/sizes; never blocks — if
+    the AI is unavailable it returns available=false and the form stays manual."""
+    data = await image.read()
+    validate_image(data)  # 400 if not a real image
+    fields = aifill.ai_fill_garment(data)
+    if fields is None:
+        return {"available": False, "fields": None, "error": "AI not available (Ollama/vision model down) — fill manually."}
+    return {"available": True, "fields": fields, "error": None}
 
 
 @router.post("/api/wardrobe/{garment_id}/image")
@@ -176,6 +196,10 @@ def update_garment(
     fields = {
         "name": name, "category": category, "color_hex": color_hex, "color_tags": color,
     }
+    if req.brand is not None:
+        fields["brand"] = req.brand.strip()[:120]
+    if req.sizes is not None:
+        fields["sizes"] = req.sizes.strip()[:200]
     if req.rating is not None:
         fields["rating"] = req.rating
     if req.owned is not None:
