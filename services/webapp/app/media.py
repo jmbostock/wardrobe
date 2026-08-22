@@ -155,14 +155,20 @@ _ROTATE_CW = {
 }
 
 
-def normalize_orientation(data: bytes, rotate: int = 0) -> tuple[bytes, str]:
+def normalize_orientation(data: bytes, rotate: int = 0,
+                          ai_decided: bool = False) -> tuple[bytes, str]:
     """Right-side-up + portrait (vertical) for consistent display.
 
-    Pipeline (deterministic unless an AI rotation is supplied):
+    Pipeline (deterministic unless the AI looked at the photo):
       1. apply EXIF orientation (fixes sideways / upside-down phone photos)
-      2. if `rotate` (90/180/270 clockwise, from the AI tag-reader) is given,
-         trust it — it tells us which way is up for images with no metadata
+      2. if `rotate` (90/180/270 clockwise, from the AI orientation look) is
+         given, trust it — it tells us which way is up for images with no
+         metadata
       3. otherwise, rotate landscape shots to portrait (counter-clockwise)
+
+    When `ai_decided` is True the AI actually looked and decided the upright
+    rotation (possibly 0 = already upright), so the landscape->portrait guess
+    is skipped — we never fight the AI's answer.
 
     Returns (normalized bytes, new ext) or (data, '') when nothing needed
     changing / the image can't be decoded (caller keeps it)."""
@@ -182,7 +188,7 @@ def normalize_orientation(data: bytes, rotate: int = 0) -> tuple[bytes, str]:
         # AI-determined direction takes precedence over the landscape guess
         img = img.transpose(_ROTATE_CW[rotate])
         changed = True
-    elif img.width > img.height:
+    elif not ai_decided and img.width > img.height:
         img = img.transpose(Image.Transpose.ROTATE_90)  # landscape → portrait
         changed = True
     if not changed:
@@ -199,8 +205,9 @@ def save_garment_image(user_id: int, garment_id: int, data: bytes, ext: str,
                        ai_orient: bool = False) -> Path:
     """Store a garment photo. Orientation is normalized on EVERY save (no
     exceptions): EXIF righting + portrait. When `ai_orient` is set (file
-    uploads), we first run 'rotate-then-read-text' via the vision model to pick
-    the correct way up for photos with a readable tag."""
+    uploads), we first run 'look at it, then rotate' via the vision model to
+    pick the correct way up — the model reports which image edge the garment's
+    top is on and we rotate it upright (works even when no tag is readable)."""
     d = WARDROBE_DIR / str(user_id)
     d.mkdir(parents=True, exist_ok=True)
     for old in d.glob(f"{garment_id}.*"):
@@ -211,8 +218,12 @@ def save_garment_image(user_id: int, garment_id: int, data: bytes, ext: str,
     if ext == "heic":  # normalize iPhone photos to JPEG on ingest
         data = _heic_to_jpeg(data)
         ext = "jpg"
-    rotate = aifill.ai_orientation(data) if ai_orient else 0
-    data, norm_ext = normalize_orientation(data, rotate=rotate)  # upright + portrait
+    ai_rotate = aifill.ai_upright_rotation(data) if ai_orient else None
+    rotate = ai_rotate if ai_rotate is not None else 0
+    # upright (AI) + portrait; ai_decided skips the landscape guess when the AI
+    # answered (even with 0 = already upright)
+    data, norm_ext = normalize_orientation(data, rotate=rotate,
+                                           ai_decided=ai_rotate is not None)
     if norm_ext:
         ext = norm_ext
     path = d / f"{garment_id}.{ext}"

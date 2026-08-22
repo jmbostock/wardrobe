@@ -13,6 +13,7 @@ this — never raise, always degrade.
 from __future__ import annotations
 
 import base64
+import collections
 import json
 import os
 import re
@@ -199,6 +200,70 @@ def ai_orientation(image_bytes: bytes) -> int:
         if t and t.lower() not in ("none", "no text", "n/a", "na"):
             good.append(deg)
     return good[0] if len(good) == 1 else 0
+
+
+# ---------------------------------------------------------------------------
+# "Look at it, then rotate" orientation (the reliable one).
+# ---------------------------------------------------------------------------
+# The tag-reader above is strong when a tag is readable, but useless on folded
+# flat-lay photos with no readable tag (most of the wardrobe). Asking "is it
+# upright?" also fails — a folded garment has no up/down so the model says YES
+# at every rotation. The prompt below — "which edge is the garment's top on?" —
+# proved stable (3/3 agreement) across every existing wardrobe photo, so we
+# rotate to put that edge at the TOP. No readable tag needed.
+
+_TOP_EDGE_PROMPT = (
+    "This is a flat-lay photo of a clothing item on a surface. Look at the item "
+    "as it would be worn upright. Which edge of the IMAGE is closest to the TOP "
+    "of the garment (the neckline, waistband, or shoulder line)? Answer with "
+    "exactly one word: top, bottom, left, right."
+)
+_TOP_EDGES = ("top", "bottom", "left", "right")
+# clockwise degrees to bring a garment top from each edge to the TOP edge
+_EDGE_TO_CW = {"top": 0, "bottom": 180, "left": 90, "right": 270}
+
+
+def _top_edge(image_bytes: bytes) -> str:
+    """Ask the vision model which image edge the garment's top is on. The model
+    is small, so we vote up to 3 times (early-exit once 2 agree) and return the
+    majority edge, or '' when it can't decide."""
+    votes: list[str] = []
+    for _ in range(3):
+        txt = _vlm_read(image_bytes, _TOP_EDGE_PROMPT).strip().lower().strip(".")
+        if txt in _TOP_EDGES:
+            votes.append(txt)
+        elif txt:
+            first = txt.split()[0].rstrip(".")
+            if first in _TOP_EDGES:
+                votes.append(first)
+        if len(votes) == 2 and votes[0] == votes[1]:
+            break
+    if not votes:
+        return ""
+    edge, n = collections.Counter(votes).most_common(1)[0]
+    return edge if n >= 2 else ""
+
+
+def ai_upright_rotation(image_bytes: bytes) -> int | None:
+    """'Rotate it, then look': ask the model which edge the garment's top is on
+    and return the clockwise rotation (0/90/180/270) that makes the garment
+    upright (top at the top edge). Returns None when the model can't tell, so
+    the caller falls back to deterministic EXIF + portrait."""
+    try:
+        import io as _io
+        from PIL import Image, ImageOps
+        img = Image.open(_io.BytesIO(image_bytes)).convert("RGB")
+        img.load()
+        img = ImageOps.exif_transpose(img)
+        img.thumbnail((1280, 1280))
+        buf = _io.BytesIO()
+        img.save(buf, "JPEG", quality=88)
+    except Exception:  # noqa: BLE001 — unreadable → caller falls back
+        return None
+    edge = _top_edge(buf.getvalue())
+    if edge not in _EDGE_TO_CW:
+        return None
+    return _EDGE_TO_CW[edge]
 
 
 def ai_fill_garment(image_bytes: bytes) -> dict[str, str] | None:
