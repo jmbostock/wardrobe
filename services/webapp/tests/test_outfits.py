@@ -58,6 +58,36 @@ def test_cross_user_isolation():
     ub = auth.create_user("oB@example.com", "password123")
     g = w.create(ua["id"], "Mine", "top")
     o = store.create(ua["id"], "A look", [g.id])
+
+
+def test_clips_store():
+    from app.clips import ClipStore
+
+    cs = ClipStore()
+    ua = auth.create_user("oC@example.com", "password123")
+    c = cs.create(ua["id"], "prompt-123", outfit_id=7)
+    assert c["status"] == "queued" and c["prompt_id"] == "prompt-123"
+    assert c["outfit_id"] == 7
+    assert cs.update(ua["id"], c["id"], status="done", result_url="/api/uploads/x.webp") is True
+    c2 = cs.get(ua["id"], c["id"])
+    assert c2 is not None and c2["status"] == "done" and c2["result_url"] == "/api/uploads/x.webp"
+    # cross-user isolation
+    ub = auth.create_user("oC2@example.com", "password123")
+    assert cs.get(ub["id"], c["id"]) is None
+    assert cs.update(ub["id"], c["id"], status="error") is False
+
+
+def test_svd_letterbox():
+    from app.svd import _letterbox
+    from PIL import Image
+    import io as _io
+
+    # a tall portrait still
+    buf = _io.BytesIO()
+    Image.new("RGB", (400, 900), (200, 200, 200)).save(buf, "PNG")
+    out = _letterbox(buf.getvalue())
+    img = Image.open(_io.BytesIO(out))
+    assert img.size == (576, 1024), img.size
     assert store.list(ub["id"]) == []
     assert store.delete(ub["id"], o["id"]) is False
     assert len(store.list(ua["id"])) == 1

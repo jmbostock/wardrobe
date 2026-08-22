@@ -4,12 +4,44 @@
 <section id="view-outfits">
   <div class="card">
     <h2>Saved outfits</h2>
-    <p class="muted">Looks you saved from the Try-on tab. Tap Edit to rename, rate out of 10, or delete. Tap the thumbnail to zoom.</p>
+    <p class="muted">Every look you render is saved here automatically. Click a card to see it full-size plus any motion clip, and to rename / rate / delete it.</p>
+    <div class="row" style="margin-bottom:12px">
+      <select id="outfits-sort">
+        <option value="newest">Newest</option>
+        <option value="rating">Top rated</option>
+      </select>
+    </div>
     <div id="saved-outfits" class="photos"></div>
   </div>
 </section>
-{% endblock %}
-{% block modals %}
-{% with edit_mode='outfit' %}{% include 'partials/edit_modal.html' %}{% endwith %}
+
+<div id="outfit-detail" hidden>
+  <div class="modal">
+    <div class="modal-head">
+      <h2 id="od-title">Outfit</h2>
+      <button id="od-close" class="ghost">✕</button>
+    </div>
+    <img id="od-img" alt="" />
+    <div id="od-clip" style="margin-top:10px"></div>
+    <div class="block">
+      <label>Name</label>
+      <input type="text" id="od-name" class="field" placeholder="outfit name" />
+    </div>
+    <div class="block">
+      <label>Rating <span class="muted">(out of 10)</span></label>
+      <div class="rate" id="od-rating"></div>
+      <div class="muted" id="od-rating-val"></div>
+    </div>
+    <div class="block">
+      <label>Garments</label>
+      <div class="muted" id="od-garments"></div>
+    </div>
+    <div class="row">
+      <button id="od-save">Save</button>
+      <button id="od-delete" class="danger">Delete</button>
+      <span class="muted" id="od-status"></span>
+    </div>
+  </div>
+</div>
 {% endblock %}
 {% block scripts %}<script src="/static/js/outfits.js"></script>{% endblock %}

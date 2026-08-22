@@ -28,7 +28,6 @@
         <button id="tryon-use-reco" class="ghost">Use recommendation</button>
         <button id="tryon-reset" class="ghost">Reset look</button>
         <input type="text" id="outfit-name" placeholder="outfit name (optional)" class="field" style="max-width:230px" />
-        <button id="tryon-save" class="ghost">Save outfit</button>
         <span class="muted" id="look-status"></span>
       </div>
       <div id="look">
@@ -38,12 +37,17 @@
       </div>
       <label style="display:flex;gap:8px;align-items:center;text-transform:none;margin-bottom:8px"><input type="checkbox" id="owned-only-look" /> Owned only</label>
       <div class="row look-hint-row" style="margin-top:6px">
-        <span class="muted hint" id="look-hint">Pick a top, a bottom, or a dress (one-piece). Choose 2 for a full look — they render one after another.</span>
+        <span class="muted hint" id="look-hint">Pick a top, a bottom, or a dress (one-piece). Choose 2 for a full look — they render one after another. Renders auto-save to Outfits.</span>
         <button id="tryon-btn">Try on</button>
       </div>
       <div id="garment-qa" hidden></div>
     </div>
     <div id="result" style="margin-top:12px"></div>
+    <div id="clip-row" hidden style="margin-top:10px">
+      <button id="tryon-clip" class="ghost">✨ Make a 3s clip</button>
+      <span class="muted" id="clip-status"></span>
+      <div id="clip-box" style="margin-top:10px"></div>
+    </div>
     <div id="compare" class="compare" hidden>
       <figure id="compare-base-fig"><img id="compare-base" alt="original" /><figcaption class="muted">original</figcaption></figure>
       <figure id="compare-new-fig" hidden><img id="compare-new" alt="latest" /><figcaption class="muted">latest</figcaption></figure>

@@ -72,10 +72,23 @@ CREATE TABLE IF NOT EXISTS outfits (
     name        TEXT NOT NULL,
     garment_ids TEXT NOT NULL DEFAULT '[]',  -- JSON array of garment ids
     result_url  TEXT NOT NULL DEFAULT '',    -- saved try-on render, if any
+    motion_url  TEXT NOT NULL DEFAULT '',    -- SVD animated clip of the render
     rating      INTEGER NOT NULL DEFAULT 0,  -- user rating 0..10 (0 = unrated)
     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_outfits_user ON outfits(user_id);
+
+CREATE TABLE IF NOT EXISTS clips (
+    id         INTEGER PRIMARY KEY,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    prompt_id  TEXT NOT NULL DEFAULT '',    -- ComfyUI prompt id for the SVD job
+    status     TEXT NOT NULL DEFAULT 'queued',  -- queued|running|done|error
+    result_url TEXT NOT NULL DEFAULT '',    -- /api/uploads/... webp once done
+    error      TEXT NOT NULL DEFAULT '',
+    outfit_id  INTEGER NOT NULL DEFAULT 0,  -- outfit this motion is attached to
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_clips_user ON clips(user_id);
 """
 
 
@@ -129,6 +142,22 @@ def _migrate(conn: sqlite3.Connection) -> None:
     ocols = {r[1] for r in conn.execute("PRAGMA table_info(outfits)").fetchall()}
     if "rating" not in ocols:
         conn.execute("ALTER TABLE outfits ADD COLUMN rating INTEGER NOT NULL DEFAULT 0")
+    if "motion_url" not in ocols:
+        conn.execute("ALTER TABLE outfits ADD COLUMN motion_url TEXT NOT NULL DEFAULT ''")
+    # clips table (added 2026-08-22) for async SVD motion generation
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS clips (
+            id         INTEGER PRIMARY KEY,
+            user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            prompt_id  TEXT NOT NULL DEFAULT '',
+            status     TEXT NOT NULL DEFAULT 'queued',
+            result_url TEXT NOT NULL DEFAULT '',
+            error      TEXT NOT NULL DEFAULT '',
+            outfit_id  INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )"""
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_clips_user ON clips(user_id)")
 
 
 def lock() -> threading.Lock:

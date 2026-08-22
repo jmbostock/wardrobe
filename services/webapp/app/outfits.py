@@ -79,6 +79,7 @@ class OutfitStore:
             "name": r["name"],
             "garment_ids": [int(x) for x in ids],
             "result_url": r["result_url"] if "result_url" in r.keys() else "",
+            "motion_url": r["motion_url"] if "motion_url" in r.keys() else "",
             "rating": r["rating"] if "rating" in r.keys() else 0,
             "created_at": r["created_at"],
         }

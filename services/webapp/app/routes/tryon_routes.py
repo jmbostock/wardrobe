@@ -1,4 +1,4 @@
-"""Try-on endpoints — single garment, chained outfit, and result serving."""
+"""Try-on endpoints — single garment, chained outfit, clip (SVD), result serving."""
 from __future__ import annotations
 
 import json
@@ -8,10 +8,10 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
-from .. import editor, photos, tryon
+from .. import editor, photos, svd, tryon
 from ..deps import get_current_user
 from ..media import UPLOAD_DIR
-from ..store import wardrobe
+from ..store import clips, outfits, wardrobe
 
 router = APIRouter()
 
@@ -55,6 +55,7 @@ async def do_tryon_outfit(
     photo_id: int | None = Form(None),
     base_result: str | None = Form(None),
     prompt: str | None = Form(None),
+    outfit_name: str | None = Form(None),
     user: dict = Depends(get_current_user),
 ) -> dict:
     """Try on a whole look: apply each garment in order, chaining the result
@@ -69,7 +70,11 @@ async def do_tryon_outfit(
     `prompt` is the chat instruction (e.g. "make her skinnier"). CatVTON is
     garment-image-only so it isn't used at render time yet, but it's carried
     through the response and ready for promptable models (IDM-VTON / FLUX-Kontext
-    upgrade path)."""
+    upgrade path).
+
+    Any render produced from a look (non-empty garment_ids) is auto-saved to
+    the Outfits page — if the same look already exists it's updated in place
+    (dedupe) rather than duplicated."""
     try:
         ids = [int(x) for x in json.loads(garment_ids)]
     except Exception as ex:  # noqa: BLE001
@@ -97,6 +102,7 @@ async def do_tryon_outfit(
     # refine mode) the base image passes through untouched — no garments are
     # re-added to an already-rendered image. A promptable model (Phase 5) can
     # later use `prompt` to actually alter the image here.
+    outfit_id: int | None = None
     if ids:
         try:
             for gid in ids:
@@ -111,6 +117,7 @@ async def do_tryon_outfit(
         out_name = f"tryon_outfit_{int(time.time())}.png"
         (out_dir / out_name).write_bytes(person_bytes)
         result_url = f"/api/uploads/{out_name}"
+        outfit_id = _auto_save_outfit(user["id"], ids, result_url, outfit_name or "")
     elif base_result:
         # garment-free refine of an existing render — nothing new to draw, so
         # return the same image without writing a duplicate file.
@@ -123,17 +130,37 @@ async def do_tryon_outfit(
         out_name = f"tryon_refine_{int(time.time())}.png"
         (out_dir / out_name).write_bytes(person_bytes)
         result_url = f"/api/uploads/{out_name}"
-    return {"result_url": result_url, "garment_ids": ids, "prompt": prompt or ""}
+    return {"result_url": result_url, "garment_ids": ids, "prompt": prompt or "", "outfit_id": outfit_id}
+
+
+def _auto_save_outfit(user_id: int, ids: list[int], result_url: str, name: str) -> int:
+    """Save a rendered look to the Outfits page. Dedupes by garment set so
+    re-rendering the same look updates it instead of piling up duplicates."""
+    name = (name or "").strip()[:120]
+    for o in outfits.list(user_id):
+        if sorted(o["garment_ids"]) == sorted(ids):
+            fields = {"result_url": result_url}
+            if name and o["name"] != name:
+                fields["name"] = name
+            outfits.update(user_id, o["id"], **fields)
+            return o["id"]
+    final_name = name or ("Outfit " + time.strftime("%b %d"))
+    return outfits.create(user_id, final_name, ids, result_url=result_url)["id"]
 
 
 @router.get("/api/uploads/{filename}")
 def get_result(filename: str, user: dict = Depends(get_current_user)) -> FileResponse:
-    """Serve a try-on result only to the user who owns it (path-traversal safe)."""
+    """Serve a try-on result (or SVD webp clip) only to the user who owns it
+    (path-traversal safe)."""
     safe = Path(filename).name  # strips any directory components
     path = UPLOAD_DIR / str(user["id"]) / "out" / safe
     if not path.is_file():
         raise HTTPException(404, "not found")
-    return FileResponse(path, media_type="image/png")
+    media = {
+        ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+        ".webp": "image/webp", ".gif": "image/gif",
+    }
+    return FileResponse(path, media_type=media.get(path.suffix.lower(), "application/octet-stream"))
 
 
 @router.post("/api/tryon/edit")
@@ -171,3 +198,56 @@ async def do_tryon_edit(
     out_name = f"edit_{int(time.time())}.png"
     (out_dir / out_name).write_bytes(result)
     return {"result_url": f"/api/uploads/{out_name}", "prompt": prompt}
+
+
+@router.post("/api/tryon/clip")
+async def do_tryon_clip(
+    base_result: str = Form(...),
+    outfit_id: int | None = Form(None),
+    user: dict = Depends(get_current_user),
+) -> dict:
+    """Queue an SVD motion clip for a try-on render. Non-blocking: submits the
+    job to ComfyUI (which queues it) and returns {clip_id} immediately. The
+    frontend polls GET /api/clips/{clip_id} until status == done."""
+    safe = Path(base_result).name  # strips any directory components
+    path = UPLOAD_DIR / str(user["id"]) / "out" / safe
+    if not path.is_file():
+        raise HTTPException(404, "base result not found")
+    image_bytes = path.read_bytes()
+    try:
+        prompt_id = await svd.submit_svd(image_bytes)
+    except tryon.ComfyUnavailable as ex:
+        raise HTTPException(503, str(ex)) from ex
+    clip = clips.create(user["id"], prompt_id, outfit_id=outfit_id or 0)
+    return {"clip_id": clip["id"], "status": clip["status"]}
+
+
+@router.get("/api/clips/{clip_id}")
+async def get_clip_status(clip_id: int, user: dict = Depends(get_current_user)) -> dict:
+    """One-shot status poll for an SVD clip. When ComfyUI finishes, fetches the
+    animated webp, saves it to uploads, and attaches it to the outfit (if any).
+    Returns {status, result_url, error} — callers poll until status == done."""
+    clip = clips.get(user["id"], clip_id)
+    if clip is None:
+        raise HTTPException(404, "clip not found")
+    if clip["status"] in ("done", "error"):
+        return {"clip_id": clip_id, "status": clip["status"],
+                "result_url": clip["result_url"], "error": clip["error"]}
+    try:
+        status, data = await svd.check_svd(clip["prompt_id"])
+    except tryon.ComfyUnavailable as ex:
+        clips.update(user["id"], clip_id, status="error", error=str(ex))
+        return {"clip_id": clip_id, "status": "error", "result_url": "", "error": str(ex)}
+    if status == "done" and data:
+        out_dir = UPLOAD_DIR / str(user["id"]) / "out"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_name = f"clip_{clip_id}_{int(time.time())}.webp"
+        (out_dir / out_name).write_bytes(data)
+        result_url = f"/api/uploads/{out_name}"
+        clips.update(user["id"], clip_id, status="done", result_url=result_url)
+        if clip["outfit_id"]:
+            outfits.update(user["id"], clip["outfit_id"], motion_url=result_url)
+        return {"clip_id": clip_id, "status": "done", "result_url": result_url, "error": ""}
+    if status == "running":
+        clips.update(user["id"], clip_id, status="running")
+    return {"clip_id": clip_id, "status": "running", "result_url": "", "error": ""}

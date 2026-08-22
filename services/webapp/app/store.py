@@ -6,8 +6,10 @@ a single well-known source for the data layer.
 """
 from __future__ import annotations
 
+from .clips import ClipStore
 from .outfits import OutfitStore
 from .wardrobe import Wardrobe
 
 wardrobe = Wardrobe()
 outfits = OutfitStore()
+clips = ClipStore()

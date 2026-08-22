@@ -14,7 +14,8 @@ API (Bearer token; see the per-domain routers under app/routes/):
             POST /api/wardrobe/parse-link · POST /api/wardrobe/{id}/image(-url) ·
             GET /api/wardrobe/{id}/image
   outfits:  GET/POST /api/outfits · PATCH/DELETE /api/outfits/{id}
-  tryon:    POST /api/tryon(,outfit) · GET /api/uploads/{name}
+  tryon:    POST /api/tryon(,outfit) · POST /api/tryon/clip · GET /api/clips/{id} ·
+            GET /api/uploads/{name}
   recommend:GET /api/weather · POST /api/recommend · POST /api/image-quality
 """
 from __future__ import annotations

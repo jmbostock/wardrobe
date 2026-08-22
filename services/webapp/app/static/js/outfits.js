@@ -1,5 +1,8 @@
-// outfits page — saved outfits grid + the outfit edit modal (rename / rate / delete).
+// outfits page — saved outfits grid (auto-saved from Try-on) + detail card.
+// Clicking a card opens the detail modal: full-size image, motion clip (if
+// any), and inline rename / rate / delete. No separate Edit button.
 let editingItem = null;
+let outfitsSort = 'newest';
 
 async function loadSavedOutfits() {
   const box = $('saved-outfits');
@@ -7,7 +10,11 @@ async function loadSavedOutfits() {
   let items;
   try { items = await apiJson('/api/outfits'); }
   catch (e) { box.innerHTML = '<p class="muted">failed to load</p>'; return; }
-  if (!items.length) { box.innerHTML = '<p class="muted">no saved outfits yet — save one from the Try-on tab</p>'; return; }
+  items = [...items].sort((a, b) => {
+    if (outfitsSort === 'rating') return (b.rating || 0) - (a.rating || 0) || b.id - a.id;
+    return (b.created_at || '').localeCompare(a.created_at || '') || b.id - a.id;
+  });
+  if (!items.length) { box.innerHTML = '<p class="muted">no saved outfits yet — render one from the Try-on tab and it appears here automatically</p>'; return; }
   box.innerHTML = '';
   for (const o of items) {
     const card = document.createElement('div'); card.className = 'photo';
@@ -15,11 +22,11 @@ async function loadSavedOutfits() {
     if (o.result_url) {
       const u = await authImageUrl(o.result_url);
       img.src = u;
-      img.addEventListener('click', () => openLightbox(u));
     } else {
       img.style.background = 'linear-gradient(135deg,#2a3340,#1a1f27)';
-      img.title = 'no render saved for this outfit yet';
+      img.title = 'no render for this outfit yet';
     }
+    img.addEventListener('click', () => openDetail(o));
     const meta = document.createElement('div'); meta.className = 'meta';
     const badge = document.createElement('span'); badge.className = 'badge'; badge.textContent = 'outfit';
     const name = document.createElement('div'); name.textContent = o.name; name.style.fontSize = '13px';
@@ -31,45 +38,101 @@ async function loadSavedOutfits() {
       r.textContent = '★ ' + o.rating + '/10';
       meta.appendChild(r);
     }
-    const editBtn = document.createElement('button'); editBtn.className = 'ghost'; editBtn.textContent = 'Edit';
-    editBtn.addEventListener('click', () => openEdit({ kind: 'outfit', ...o }));
-    meta.appendChild(editBtn);
+    if (o.motion_url) {
+      const m = document.createElement('div'); m.className = 'muted'; m.style.fontSize = '12px';
+      m.textContent = '🎬 clip';
+      meta.appendChild(m);
+    }
     card.appendChild(img); card.appendChild(meta);
     box.appendChild(card);
   }
 }
+$('outfits-sort').addEventListener('change', (e) => { outfitsSort = e.target.value; loadSavedOutfits(); });
 
-// ---------- edit modal (outfit mode — shared partial, no garment fields) ----------
-function openEdit(o) {
+// ---------- detail card (image + motion + inline edit) ----------
+async function openDetail(o) {
   editingItem = o;
-  $('edit-title').textContent = 'Edit — ' + o.name;
-  $('edit-name').value = o.name;
-  $('edit-name').placeholder = 'outfit name';
-  $('edit-status').textContent = '';
-  bindRating('edit-rating', o.rating || 0);
-  $('edit-modal').hidden = false;
+  $('od-title').textContent = o.name;
+  $('od-name').value = o.name;
+  $('od-status').textContent = '';
+  $('od-garments').textContent = (o.garments || []).map((g) => g.name).join(' + ') || '—';
+  const img = $('od-img');
+  if (o.result_url) img.src = await authImageUrl(o.result_url);
+  else { img.src = ''; img.style.background = 'linear-gradient(135deg,#2a3340,#1a1f27)'; }
+  // motion clip: show the webp if it exists, plus a make-a-clip action
+  const clipBox = $('od-clip');
+  clipBox.innerHTML = '';
+  if (o.motion_url) {
+    const c = document.createElement('img'); c.src = await authImageUrl(o.motion_url); c.alt = 'motion clip';
+    c.style.width = '100%'; c.style.borderRadius = '10px';
+    clipBox.appendChild(c);
+  }
+  if (o.result_url) {
+    const btn = document.createElement('button'); btn.className = 'ghost'; btn.textContent = o.motion_url ? 'Regenerate clip' : '✨ Make a 3s clip';
+    btn.style.marginTop = '8px';
+    btn.addEventListener('click', () => makeClip(o, btn));
+    clipBox.appendChild(btn);
+    const st = document.createElement('div'); st.className = 'muted'; st.id = 'od-clip-status'; st.style.marginTop = '6px';
+    clipBox.appendChild(st);
+  }
+  bindRating('od-rating', o.rating || 0);
+  $('outfit-detail').hidden = false;
 }
-function closeEdit() { $('edit-modal').hidden = true; editingItem = null; }
-$('edit-close').addEventListener('click', closeEdit);
-$('edit-modal').addEventListener('click', (e) => { if (e.target === $('edit-modal')) closeEdit(); });
-$('edit-save').addEventListener('click', async () => {
+async function makeClip(o, btn) {
+  const st = $('od-clip-status'); st.textContent = 'queuing…'; btn.disabled = true;
+  let clipId = null;
+  try {
+    const fd = new FormData();
+    fd.append('base_result', o.result_url);
+    fd.append('outfit_id', String(o.id));
+    clipId = (await apiJson('/api/tryon/clip', { method: 'POST', body: fd })).clip_id;
+    st.textContent = 'queued — runs in the background';
+  } catch (e) { st.textContent = 'failed: ' + e.message; btn.disabled = false; return; }
+  const started = Date.now();
+  const timer = setInterval(async () => {
+    try {
+      const r = await apiJson('/api/clips/' + clipId);
+      const secs = Math.round((Date.now() - started) / 1000);
+      if (r.status === 'done') {
+        clearInterval(timer); btn.disabled = false;
+        st.textContent = 'clip ready — ' + secs + 's';
+        loadSavedOutfits();
+        // refresh this card's motion
+        const fresh = (await apiJson('/api/outfits')).find((x) => x.id === o.id);
+        if (fresh) openDetail(fresh);
+      } else if (r.status === 'error') {
+        clearInterval(timer); btn.disabled = false;
+        st.textContent = 'clip failed: ' + (r.error || 'unknown');
+      } else {
+        st.textContent = 'rendering clip… ' + secs + 's (runs in the background)';
+      }
+    } catch (e) {
+      clearInterval(timer); btn.disabled = false;
+      st.textContent = 'error: ' + e.message;
+    }
+  }, 3000);
+}
+function closeDetail() { $('outfit-detail').hidden = true; editingItem = null; }
+$('od-close').addEventListener('click', closeDetail);
+$('outfit-detail').addEventListener('click', (e) => { if (e.target === $('outfit-detail')) closeDetail(); });
+$('od-save').addEventListener('click', async () => {
   if (!editingItem) return;
-  $('edit-status').textContent = 'saving…';
-  const body = { name: $('edit-name').value.trim(), rating: currentRating() };
+  $('od-status').textContent = 'saving…';
   try {
     await apiJson('/api/outfits/' + editingItem.id, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: $('od-name').value.trim(), rating: currentRating() }),
     });
-    $('edit-status').textContent = 'saved'; toast('outfit updated');
+    $('od-status').textContent = 'saved'; toast('outfit updated');
     loadSavedOutfits();
-  } catch (e) { $('edit-status').textContent = e.message; }
+  } catch (e) { $('od-status').textContent = e.message; }
 });
-$('edit-delete').addEventListener('click', async () => {
+$('od-delete').addEventListener('click', async () => {
   if (!editingItem) return;
   if (!confirm('delete "' + editingItem.name + '"?')) return;
   try { await apiJson('/api/outfits/' + editingItem.id, { method: 'DELETE' }); toast('deleted'); }
   catch (e) { alert(e.message); }
-  closeEdit(); loadSavedOutfits();
+  closeDetail(); loadSavedOutfits();
 });
 
 loadSavedOutfits();

@@ -10,6 +10,7 @@ let tryonInt = null;
 let lastResultUrl = null;   // last render URL (used as the chat base)
 let lastResultLook = null;  // JSON of the garment ids that produced lastResultUrl
 let lastIds = [];           // garment ids of the last render
+let lastOutfitId = null;    // auto-saved outfit id for the last render
 let savedPhotos = [];       // cached /api/photos (saved-photo source for look-based try-on)
 let savedOutfits = [];      // cached /api/outfits that have a render (Saved-image source)
 let selectedSaved = null;   // the chosen saved outfit render
@@ -120,22 +121,55 @@ $('tryon-reset').addEventListener('click', () => {
   });
   $('look-status').textContent = 'look cleared';
 });
-$('tryon-save').addEventListener('click', async () => {
-  const ids = currentLookIds();
-  if (!ids.length) { alert('pick at least one garment in the look first'); return; }
-  const name = ($('outfit-name').value || '').trim() || ('Outfit ' + new Date().toLocaleDateString());
-  const result_url = (lastResultLook === JSON.stringify(ids)) ? (lastResultUrl || '') : '';
+
+// ---------- SVD motion clip (async, queued in ComfyUI) ----------
+async function submitClip() {
+  const btn = $('tryon-clip');
+  const status = $('clip-status');
+  if (!lastResultUrl) { toast('render a look first'); return; }
+  if (!lastOutfitId) { toast('no auto-saved outfit to attach the clip to'); return; }
+  btn.disabled = true;
+  status.textContent = 'queuing…';
+  $('clip-box').innerHTML = '';
+  let clipId = null;
   try {
-    await apiJson('/api/outfits', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, garment_ids: ids, result_url }),
-    });
-    $('outfit-name').value = '';
-    $('look-status').textContent = 'saved "' + name + '"';
-    toast('outfit saved — see the Outfits page');
-    loadSavedImages();
-  } catch (e) { alert(e.message); }
-});
+    const fd = new FormData();
+    fd.append('base_result', lastResultUrl);
+    fd.append('outfit_id', String(lastOutfitId));
+    const start = await apiJson('/api/tryon/clip', { method: 'POST', body: fd });
+    clipId = start.clip_id;
+    status.textContent = 'queued — it runs in the background, feel free to keep going';
+  } catch (e) {
+    status.textContent = 'clip failed: ' + e.message; btn.disabled = false; return;
+  }
+  const started = Date.now();
+  const timer = setInterval(async () => {
+    try {
+      const st = await apiJson('/api/clips/' + clipId);
+      const secs = Math.round((Date.now() - started) / 1000);
+      if (st.status === 'done') {
+        clearInterval(timer);
+        btn.disabled = false;
+        status.textContent = 'clip ready — ' + secs + 's';
+        const url = await authImageUrl(st.result_url);
+        const box = $('clip-box');
+        box.innerHTML = '';
+        const img = document.createElement('img'); img.src = url; img.alt = 'motion clip';
+        box.appendChild(img);
+        loadSavedImages();
+      } else if (st.status === 'error') {
+        clearInterval(timer); btn.disabled = false;
+        status.textContent = 'clip failed: ' + (st.error || 'unknown');
+      } else {
+        status.textContent = 'rendering clip… ' + secs + 's (runs in the background)';
+      }
+    } catch (e) {
+      clearInterval(timer); btn.disabled = false;
+      status.textContent = 'clip error: ' + e.message;
+    }
+  }, 3000);
+}
+$('tryon-clip').addEventListener('click', submitClip);
 
 // ---------- person source ----------
 document.querySelectorAll('input[name=psrc]').forEach((r) => r.addEventListener('change', () => {
@@ -157,8 +191,7 @@ document.querySelectorAll('input[name=psrc]').forEach((r) => r.addEventListener(
   $('result').innerHTML = '';
   hideCompare();
   checkPersonImage();
-}));
-$('saved-photo').addEventListener('change', checkPersonImage);
+}));$('saved-photo').addEventListener('change', checkPersonImage);
 $('person-file').addEventListener('change', checkPersonImage);
 $('saved-img').addEventListener('change', () => {
   setSelectedSaved();
@@ -253,6 +286,8 @@ loadSavedPhotos().then(checkPersonImage);
 async function runTryon(ids, baseResult, prompt) {
   const fd = new FormData();
   fd.append('garment_ids', JSON.stringify(ids));
+  const name = ($('outfit-name') ? $('outfit-name').value : '').trim();
+  if (name) fd.append('outfit_name', name);
   let baseUrl = null; // what produced the latest render — shown as "original" in the compare
   if (baseResult) {
     fd.append('base_result', baseResult);      // last render or saved outfit render as the base
@@ -312,6 +347,7 @@ async function runTryon(ids, baseResult, prompt) {
     lastResultUrl = data.result_url;
     lastResultLook = JSON.stringify(ids);
     lastIds = ids;
+    lastOutfitId = data.outfit_id || null;
     const url = await authImageUrl(data.result_url);
     $('result').innerHTML = '';
     const img = document.createElement('img'); img.src = url; $('result').appendChild(img);
@@ -321,7 +357,16 @@ async function runTryon(ids, baseResult, prompt) {
     else hideCompare();
     // show the "coming soon" edit teaser under the result
     $('chat-bar').hidden = false;
-    toast(baseResult ? 'updated — check the result' : 'try-on ready');
+    // offer an SVD motion clip for look-based renders (auto-saved outfit)
+    if (data.outfit_id && ids.length) {
+      $('clip-row').hidden = false;
+      $('clip-box').innerHTML = '';
+      $('clip-status').textContent = '';
+      $('tryon-clip').disabled = false;
+      $('look-status').textContent = 'saved to Outfits';
+      loadSavedImages();
+    }
+    toast(baseResult ? 'updated — check the result' : 'try-on ready — saved to Outfits');
   } catch (e) { $('result').innerHTML = `<p class="muted">error: ${e}</p>`; }
   finally { clearInterval(tryonInt); tryonInt = null; }
 }
