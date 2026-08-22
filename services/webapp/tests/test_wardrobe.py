@@ -371,6 +371,24 @@ def test_size_schemas():
     assert size_schema("") == size_schema("top")  # unknown falls back to top
 
 
+def test_normalize_color():
+    """normalize_color maps free-text variants onto the canonical palette so a
+    color is only ever stored one way (no 'navy blue' vs 'navy' mismatches)."""
+    from app.media import normalize_color
+
+    assert normalize_color("") == ""
+    assert normalize_color("navy") == "navy"
+    assert normalize_color("Navy Blue") == "navy"
+    assert normalize_color("dark navy") == "navy"
+    assert normalize_color("olive green") == "olive"
+    assert normalize_color("grey") == "gray"
+    assert normalize_color("charcoal") == "gray"
+    assert normalize_color("black&white") == "black"
+    assert normalize_color("black and white") == "black"
+    assert normalize_color("forest green") == "green"
+    assert normalize_color("unknowncolor") == "unknowncolor"  # kept as-is (still an option)
+
+
 def test_color_class():
     """image_color_class buckets dominant color coarsely (drives the dup gate)."""
     from app import phash

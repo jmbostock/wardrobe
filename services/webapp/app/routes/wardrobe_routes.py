@@ -17,6 +17,7 @@ from ..media import (
     fetch_url_bytes,
     garment_dict,
     garment_image_path,
+    normalize_color,
     save_garment_image,
     validate_image,
 )
@@ -76,7 +77,7 @@ def create_garment(req: WardrobeCreate, user: dict = Depends(get_current_user)) 
     name = req.name.strip()[:200]
     if not name:
         raise HTTPException(400, "name required")
-    color = req.color.strip().lower()
+    color = normalize_color(req.color)
     color_hex = COLOR_HEX.get(color, "#8a8f98")
     g = wardrobe.create(
         user["id"], name, category, color_hex=color_hex, color_tags=color,
@@ -97,22 +98,22 @@ def wardrobe_meta(user: dict = Depends(get_current_user)) -> dict:
     Brands/colors come from what's already stored on the user's garments, so
     anything the AI tag-reader (or parse-link) ever found becomes available."""
     brands: list[str] = []
-    colors: list[str] = []
+    colors: set[str] = set()
     for g in wardrobe.all(user["id"]):
         b = (g.brand or "").strip()
         if b and b.lower() not in (x.lower() for x in brands):
             brands.append(b)
         for c in (g.color_tags or "").split(","):
-            c = c.strip().lower()
-            if c and c not in colors:
-                colors.append(c)
-    # always offer the canonical color palette so suggestions exist early
-    for c in sorted(COLOR_HEX):
-        if c not in colors:
-            colors.append(c)
+            c = normalize_color(c)
+            if c:
+                colors.add(c)
+    # canonical palette is always offered; user's colors are normalized onto it
+    colors |= set(COLOR_HEX)
+    color_hex = {c: COLOR_HEX.get(c, "#8a8f98") for c in sorted(colors)}
     return {
         "brands": sorted(brands, key=str.lower),
         "colors": sorted(colors),
+        "color_hex": color_hex,  # for the swatch preview next to the color select
         "schemas": SIZE_SCHEMAS,  # how sizes should be captured per category
     }
 
@@ -140,6 +141,8 @@ def parse_garment_link(req: ParseLinkRequest, user: dict = Depends(get_current_u
     # then clean them (drop tracking params, bump width) so the picker shows
     # high-res previews and the chosen URL fetches clean.
     info["images"] = [imglink.clean_image_url(urljoin(req.url, u)) for u in info["images"]]
+    if info.get("color"):
+        info["color"] = normalize_color(info["color"])
     return info
 
 
@@ -155,6 +158,8 @@ async def ai_fill(
     fields = aifill.ai_fill_garment(data)
     if fields is None:
         return {"available": False, "fields": None, "error": "AI not available (Ollama/vision model down) — fill manually."}
+    if fields.get("color"):
+        fields["color"] = normalize_color(fields["color"])
     return {"available": True, "fields": fields, "error": None}
 
 
@@ -219,9 +224,9 @@ def update_garment(
         raise HTTPException(
             400, f"category must be one of: {', '.join(sorted(WARDROBE_CATEGORIES))}"
         )
-    color = (
+    color = normalize_color(
         req.color if req.color is not None else (g.color_tags or "").split(",")[0]
-    ).strip().lower()
+    )
     color_hex = COLOR_HEX.get(color, "#8a8f98")
     fields = {
         "name": name, "category": category, "color_hex": color_hex, "color_tags": color,

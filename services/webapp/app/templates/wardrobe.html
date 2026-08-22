@@ -29,7 +29,8 @@
           <option value="accessory">Accessory</option>
           <option value="bra">Bra</option>
         </select>
-        <input type="text" id="g-color" placeholder="color (e.g. navy)" class="field" list="color-list" />
+        <select id="g-color" class="field"></select>
+        <span class="swatch" id="g-color-swatch" style="flex:none"></span>
       </div>
     </div>
     <div class="block">
@@ -95,7 +96,9 @@
     </div>
     <div class="row">
       <div class="block" style="flex:1;min-width:0"><label>Category</label><select id="gd-category"></select></div>
-      <div class="block" style="flex:1;min-width:0"><label>Color</label><input type="text" id="gd-color" class="field" placeholder="e.g. navy" list="color-list" /></div>
+      <div class="block" style="flex:1;min-width:0"><label>Color</label>
+        <div style="display:flex;gap:8px;align-items:center;min-width:0"><select id="gd-color" class="field"></select><span class="swatch" id="gd-color-swatch" style="flex:none"></span></div>
+      </div>
     </div>
     <div class="block">
       <label>Photo — upload a file or set it from a link</label>
@@ -127,5 +130,4 @@
 </div>
 {% endblock %}
 <datalist id="brand-list"></datalist>
-<datalist id="color-list"></datalist>
 {% block scripts %}<script src="/static/js/wardrobe.js"></script>{% endblock %}

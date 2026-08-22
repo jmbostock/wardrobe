@@ -71,6 +71,47 @@ COLOR_HEX = {
     "teal": "#2c4f46", "cream": "#f2efe6", "khaki": "#c8b98a", "olive": "#6b7a3a",
 }
 
+# Map common spellings/close variants onto the canonical COLOR_HEX keys so a
+# color is only ever stored one way. Free-text variants ("navy blue", "olive
+# green", "grey") are the #1 cause of mismatching — the recommender and try-on
+# compare these exact strings, so "navy blue" ≠ "navy" silently.
+COLOR_SYNONYMS = {
+    "grey": "gray", "charcoal": "gray", "charcoal gray": "gray", "charcoal grey": "gray",
+    "silver": "gray", "slate": "gray", "heather gray": "gray", "heather grey": "gray",
+    "light gray": "gray", "light grey": "gray", "dark gray": "gray", "dark grey": "gray",
+    "navy blue": "navy", "dark navy": "navy", "midnight": "navy", "midnight blue": "navy",
+    "olive green": "olive", "army green": "olive", "sage": "olive",
+    "forest green": "green", "emerald": "green", "dark green": "green", "lime": "green",
+    "sky blue": "blue", "light blue": "blue", "dark blue": "blue", "royal blue": "blue",
+    "baby blue": "blue", "denim blue": "blue", "ice blue": "blue", "steel blue": "blue",
+    "crimson": "red", "scarlet": "red", "dark red": "burgundy", "maroon": "burgundy",
+    "wine": "burgundy", "bordeaux": "burgundy", "magenta": "pink", "hot pink": "pink",
+    "rose": "pink", "fuchsia": "pink", "blush": "pink", "salmon": "pink",
+    "lavender": "purple", "violet": "purple", "plum": "purple", "lilac": "purple",
+    "mustard": "yellow", "gold": "yellow", "golden": "yellow", "sunflower": "yellow",
+    "rust": "orange", "coral": "orange", "peach": "orange", "apricot": "orange",
+    "turquoise": "teal", "aqua": "teal", "mint": "teal", "seafoam": "teal",
+    "camel": "tan", "ivory": "cream", "off-white": "cream", "ecru": "cream",
+    "khaki": "khaki", "tan": "tan", "olive": "olive",
+}
+
+
+def normalize_color(name: str) -> str:
+    """Map a free-text color to the canonical palette ('' for blank). Compound
+    'a&b' patterns collapse to the dominant color so they can't mismatch."""
+    n = (name or "").strip().lower()
+    if not n:
+        return ""
+    if n in COLOR_HEX:
+        return n
+    if n in COLOR_SYNONYMS:
+        return COLOR_SYNONYMS[n]
+    for sep in ("&", "+", " and ", " / "):
+        parts = [p.strip() for p in n.split(sep) if p.strip()]
+        if len(parts) >= 2 and parts[0] in COLOR_HEX:
+            return parts[0]
+    return n
+
 
 def garment_image_path(user_id: int, garment_id: int) -> Path | None:
     """Find the on-disk image for a garment (any supported extension)."""

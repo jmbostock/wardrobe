@@ -149,6 +149,47 @@ $('g-category').addEventListener('change', (e) => renderSizeInputs('g-sizes-wrap
 $('gd-category').addEventListener('change', (e) => renderSizeInputs('gd-sizes-wrap', e.target.value, ''));
 renderSizeInputs('g-sizes-wrap', $('g-category').value, '');
 
+// ---------- color: strict canonical dropdown (+ swatch preview) ----------
+// Colors are a fixed select (not free text) so 'navy' can never be stored as
+// 'navy blue' / 'dark navy' etc. and silently mismatch in the recommender.
+const COLOR_HEX_FALLBACK = {
+  white:'#f2f2f2', black:'#1a1a1a', gray:'#8a8f98', grey:'#8a8f98', navy:'#1f2a44',
+  blue:'#3b5ba8', red:'#a33333', green:'#2e4a3a', beige:'#d9c9a3', brown:'#6b4a2f',
+  tan:'#c8b98a', pink:'#d9b3a0', burgundy:'#6d2332', purple:'#5b3a6d', yellow:'#d9c04a',
+  orange:'#c96a2e', teal:'#2c4f46', cream:'#f2efe6', khaki:'#c8b98a', olive:'#6b7a3a'
+};
+let COLOR_HEX_MAP = COLOR_HEX_FALLBACK;
+function populateColorSelects(colors, hexMap) {
+  if (hexMap) COLOR_HEX_MAP = hexMap;
+  ['g-color', 'gd-color'].forEach((id) => {
+    const sel = $(id); if (!sel) return;
+    sel.innerHTML = '';
+    const ph = document.createElement('option'); ph.value = ''; ph.textContent = '— color —'; sel.appendChild(ph);
+    (colors || Object.keys(COLOR_HEX_FALLBACK)).forEach((c) => {
+      const o = document.createElement('option'); o.value = c; o.textContent = c; sel.appendChild(o);
+    });
+  });
+}
+function setSwatch(selId, swatchId) {
+  const sw = $(swatchId); if (!sw) return;
+  const sel = $(selId);
+  sw.style.background = COLOR_HEX_MAP[sel ? sel.value : ''] || '#333';
+}
+function setColorValue(selId, value, swatchId) {
+  const sel = $(selId); if (!sel) return;
+  const v = (value || '').trim();
+  if (v && ![...sel.options].some((o) => o.value === v)) {
+    const o = document.createElement('option'); o.value = v; o.textContent = v; sel.appendChild(o);
+  }
+  sel.value = v;
+  setSwatch(selId, swatchId);
+}
+['g-color', 'gd-color'].forEach((id) => {
+  const sel = $(id);
+  if (sel) sel.addEventListener('change', () => setSwatch(id, id.replace('-color', '-color-swatch')));
+});
+populateColorSelects(Object.keys(COLOR_HEX_FALLBACK), COLOR_HEX_FALLBACK);
+
 // ---------- garment detail card (outfits-style click-through) ----------
 function openGarmentDetail(g) {
   editingItem = g;
@@ -156,7 +197,7 @@ function openGarmentDetail(g) {
   $('gd-name').value = g.name;
   $('gd-brand').value = g.brand || '';
   renderSizeInputs('gd-sizes-wrap', g.category, g.sizes || '');
-  $('gd-color').value = (g.color_tags || []).join(', ');
+  setColorValue('gd-color', (g.color_tags || [])[0] || '', 'gd-color-swatch');
   const cat = $('gd-category'); cat.innerHTML = '';
   Array.from($('g-category').options).forEach((o) => cat.add(new Option(o.text, o.value)));
   cat.value = g.category;
@@ -249,7 +290,7 @@ $('g-fetch').addEventListener('click', async () => {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }),
     });
     if (info.name && !$('g-name').value.trim()) $('g-name').value = info.name;
-    if (info.color && !$('g-color').value.trim()) $('g-color').value = info.color;
+    if (info.color && !$('g-color').value.trim()) setColorValue('g-color', info.color, 'g-color-swatch');
     if (info.category) $('g-category').value = info.category;
     if (info.brand && !$('g-brand').value.trim()) $('g-brand').value = info.brand;
     if (info.sizes && !collectSizes('g-sizes-wrap', $('g-category').value)) {
@@ -320,7 +361,8 @@ $('g-add').addEventListener('click', async () => {
     status.textContent = 'added "' + g.name + '"';
     $('g-name').value = ''; $('g-brand').value = '';
     renderSizeInputs('g-sizes-wrap', $('g-category').value, '');
-    $('g-color').value = ''; $('g-url').value = ''; $('g-file').value = '';
+    $('g-color').value = ''; setSwatch('g-color', 'g-color-swatch');
+    $('g-url').value = ''; $('g-file').value = '';
     pickedImage = null; previewImages = [];
     $('g-preview').hidden = true; $('g-preview').innerHTML = '';
     loadWardrobe();
@@ -329,7 +371,8 @@ $('g-add').addEventListener('click', async () => {
 $('g-clear').addEventListener('click', () => {
   $('g-name').value = ''; $('g-brand').value = '';
   renderSizeInputs('g-sizes-wrap', $('g-category').value, '');
-  $('g-color').value = ''; $('g-url').value = ''; $('g-file').value = '';
+  $('g-color').value = ''; setSwatch('g-color', 'g-color-swatch');
+  $('g-url').value = ''; $('g-file').value = '';
   $('g-category').selectedIndex = 0;
   renderSizeInputs('g-sizes-wrap', $('g-category').value, '');
   pickedImage = null; previewImages = [];
@@ -360,7 +403,7 @@ $('g-file').addEventListener('change', async () => {
   const bits = [];
   if (t.name && !$('g-name').value.trim()) { $('g-name').value = t.name; bits.push('name'); }
   if (t.brand && !$('g-brand').value.trim()) { $('g-brand').value = t.brand; bits.push(t.brand); }
-  if (t.color && !$('g-color').value.trim()) { $('g-color').value = t.color; bits.push(t.color); }
+  if (t.color && !$('g-color').value.trim()) { setColorValue('g-color', t.color, 'g-color-swatch'); bits.push(t.color); }
   if (t.sizes && !collectSizes('g-sizes-wrap', $('g-category').value)) {
     renderSizeInputs('g-sizes-wrap', $('g-category').value, t.sizes);
     bits.push('size ' + t.sizes);
@@ -385,7 +428,7 @@ async function loadMeta() {
     (items || []).forEach((v) => { const o = document.createElement('option'); o.value = v; dl.appendChild(o); });
   };
   fill('brand-list', meta.brands);
-  fill('color-list', meta.colors);
+  populateColorSelects(meta.colors, meta.color_hex);
   // re-render the add-form size field with the server's schemas
   renderSizeInputs('g-sizes-wrap', $('g-category').value, '');
 }
