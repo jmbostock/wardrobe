@@ -20,7 +20,8 @@ router = APIRouter()
 
 
 def _ctx(active: str, page_title: str) -> dict:
-    return {"active": active, "page_title": page_title}
+    from ..version import __version__
+    return {"active": active, "page_title": page_title, "version": __version__}
 
 
 @router.get("/", include_in_schema=False)

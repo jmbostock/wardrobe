@@ -28,6 +28,7 @@ class WardrobeCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     category: str = Field(...)
     color: str = Field("", max_length=60)
+    owned: bool = True  # False = "to buy" / wishlist item
     image_url: str | None = Field(None, max_length=2000)
 
 
@@ -36,6 +37,7 @@ class WardrobeUpdate(BaseModel):
     category: str | None = Field(None)
     color: str | None = Field(None, max_length=40)
     rating: int | None = Field(None, ge=0, le=10)
+    owned: bool | None = Field(None)
 
 
 class ImageUrlRequest(BaseModel):
@@ -63,7 +65,10 @@ def create_garment(req: WardrobeCreate, user: dict = Depends(get_current_user)) 
         raise HTTPException(400, "name required")
     color = req.color.strip().lower()
     color_hex = COLOR_HEX.get(color, "#8a8f98")
-    g = wardrobe.create(user["id"], name, category, color_hex=color_hex, color_tags=color)
+    g = wardrobe.create(
+        user["id"], name, category, color_hex=color_hex, color_tags=color,
+        owned=req.owned,
+    )
     if req.image_url:
         data = fetch_product_image(req.image_url)
         ext = validate_image(data)
@@ -165,6 +170,8 @@ def update_garment(
     }
     if req.rating is not None:
         fields["rating"] = req.rating
+    if req.owned is not None:
+        fields["owned"] = 1 if req.owned else 0
     wardrobe.update(user["id"], garment_id, **fields)
     return garment_dict(user["id"], wardrobe.get(user["id"], garment_id))
 

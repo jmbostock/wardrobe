@@ -64,6 +64,7 @@ class Garment:
     last_worn: str | None = None
     wear_count: int = 0
     rating: int = 0
+    owned: int = 1  # 1 = own it, 0 = to buy / wishlist
     image_path: str = ""
 
     def to_dict(self) -> dict[str, Any]:
@@ -144,17 +145,18 @@ class Wardrobe:
         occasions: str = "casual",
         material: str = "",
         fit: str = "regular",
+        owned: int = 1,
     ) -> Garment:
         """Insert a user-added garment (sensible scoring defaults unless given)."""
         with self._lock:
             cur = self._conn.execute(
                 """INSERT INTO garments
                    (user_id, name, category, color_hex, color_tags, warmth, waterproof,
-                    formality, occasions, material, fit, image_path)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    formality, occasions, material, fit, owned, image_path)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (user_id, name, category, color_hex or "", color_tags or "",
                  warmth, waterproof, formality or "casual", occasions or "casual",
-                 material or "", fit or "regular", ""),
+                 material or "", fit or "regular", 1 if owned else 0, ""),
             )
             self._conn.commit()
             gid = cur.lastrowid
@@ -203,5 +205,6 @@ class Wardrobe:
             occasions=row["occasions"] or "", material=row["material"] or "",
             fit=row["fit"] or "regular", last_worn=row["last_worn"],
             wear_count=row["wear_count"], rating=row["rating"] or 0,
+            owned=row["owned"] if "owned" in row.keys() else 1,
             image_path=row["image_path"] or "",
         )

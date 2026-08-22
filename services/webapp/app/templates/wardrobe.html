@@ -24,6 +24,11 @@
       </div>
     </div>
     <div class="block">
+      <label>Owned?</label>
+      <label style="display:flex;gap:8px;align-items:center;text-transform:none"><input type="checkbox" id="g-owned" checked /> I own this</label>
+      <span class="muted">Untick if it's something you want to buy (adds it to your wishlist / to-buy).</span>
+    </div>
+    <div class="block">
       <label>Image — upload a file, or paste a product page / image link</label>
       <input type="file" id="g-file" accept="image/*" />
       <div class="row">
@@ -42,6 +47,13 @@
   <div class="card" style="margin-top:20px">
     <h2>My wardrobe</h2>
     <p class="muted">Garments with a photo can be used for try-on (they appear in the Try on dropdown). Tap Edit to change the photo / name / category / color or rate it out of 10.</p>
+    <div class="row" style="margin-bottom:12px">
+      <select id="wardrobe-filter">
+        <option value="all">All items</option>
+        <option value="owned">Owned</option>
+        <option value="want">To buy / wishlist</option>
+      </select>
+    </div>
     <div id="wardrobe" class="photos"></div>
   </div>
 </section>

@@ -242,7 +242,10 @@ async function loadSavedImages() {
     }
   } catch (e) { /* ignore */ }
 }
-loadSavedPhotos(); loadSavedImages(); populateLook();
+loadSavedImages(); populateLook();
+// Show the quality score for the pre-selected (default) saved photo right away,
+// without making the user interact with the dropdown first.
+loadSavedPhotos().then(checkPersonImage);
 
 // ---------- try on (shared by the Try on button and the chat bar) ----------
 async function runTryon(ids, baseResult, prompt) {

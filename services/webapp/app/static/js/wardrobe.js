@@ -1,5 +1,6 @@
 // wardrobe page — add-garment form, grid, and the garment edit modal (with rating).
 let editingItem = null;
+let wardrobeFilter = 'all';
 
 // ---------- grid ----------
 async function loadWardrobe() {
@@ -8,7 +9,12 @@ async function loadWardrobe() {
   let items;
   try { items = await apiJson('/api/wardrobe'); }
   catch (e) { grid.innerHTML = '<p class="muted">failed to load wardrobe</p>'; return; }
-  if (!items.length) { grid.innerHTML = '<p class="muted">no garments yet — add one above</p>'; return; }
+  if (wardrobeFilter === 'owned') items = items.filter((g) => g.owned);
+  else if (wardrobeFilter === 'want') items = items.filter((g) => !g.owned);
+  if (!items.length) {
+    grid.innerHTML = '<p class="muted">no garments' + (wardrobeFilter === 'all' ? '' : ' in this filter') + ' — add one above</p>';
+    return;
+  }
   grid.innerHTML = '';
   for (const g of items) {
     const card = document.createElement('div'); card.className = 'photo';
@@ -25,6 +31,11 @@ async function loadWardrobe() {
     const badge = document.createElement('span'); badge.className = 'badge'; badge.textContent = g.category;
     const name = document.createElement('div'); name.textContent = g.name; name.style.fontSize = '13px';
     meta.appendChild(badge); meta.appendChild(name);
+    if (!g.owned) {
+      const want = document.createElement('span'); want.className = 'badge'; want.textContent = 'to buy';
+      want.style.background = '#d4a72c';
+      meta.appendChild(want);
+    }
     if (g.rating) {
       const r = document.createElement('div'); r.className = 'muted'; r.style.fontSize = '12px';
       r.textContent = '★ ' + g.rating + '/10';
@@ -37,6 +48,7 @@ async function loadWardrobe() {
     grid.appendChild(card);
   }
 }
+$('wardrobe-filter').addEventListener('change', (e) => { wardrobeFilter = e.target.value; loadWardrobe(); });
 
 // ---------- edit modal (garment mode — shared partial) ----------
 function openEdit(g) {
@@ -48,6 +60,7 @@ function openEdit(g) {
   const cat = $('edit-category'); cat.innerHTML = '';
   Array.from($('g-category').options).forEach((o) => cat.add(new Option(o.text, o.value)));
   cat.value = g.category;
+  $('edit-owned').checked = g.owned !== false && g.owned !== 0;
   $('edit-url').value = '';
   $('edit-status').textContent = '';
   const img = $('edit-img');
@@ -96,6 +109,7 @@ $('edit-save').addEventListener('click', async () => {
     category: $('edit-category').value,
     color: $('edit-color').value.trim(),
     rating: currentRating(),
+    owned: $('edit-owned').checked,
   };
   try {
     await apiJson('/api/wardrobe/' + editingItem.id, {
@@ -173,7 +187,7 @@ $('g-add').addEventListener('click', async () => {
   const color = $('g-color').value.trim();
   if (!name) { status.textContent = 'name required'; return; }
   const url = pickedImage || $('g-url').value.trim();
-  const body = { name, category, color };
+  const body = { name, category, color, owned: $('g-owned').checked };
   if (url) body.image_url = url;
   status.textContent = 'adding…';
   try {

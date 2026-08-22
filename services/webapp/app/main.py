@@ -25,15 +25,16 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from . import routes
+from .version import __version__
 
-app = FastAPI(title="altacloset", version="0.8.0")
+app = FastAPI(title="altacloset", version=__version__)
 
 STATIC_DIR = Path(__file__).parent / "static"
 
 
 @app.get("/health")
 def health() -> dict:
-    return {"ok": True, "service": "clueless-closet", "version": "0.8.0"}
+    return {"ok": True, "service": "clueless-closet", "version": __version__}
 
 
 app.include_router(routes.pages.router)

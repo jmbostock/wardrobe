@@ -60,6 +60,7 @@ CREATE TABLE IF NOT EXISTS garments (
     last_worn   TEXT,
     wear_count  INTEGER NOT NULL DEFAULT 0,
     rating      INTEGER NOT NULL DEFAULT 0,  -- user rating 0..10 (0 = unrated)
+    owned       INTEGER NOT NULL DEFAULT 1, -- 1 = own it, 0 = to buy / wishlist
     image_path  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_garments_user ON garments(user_id);
@@ -117,6 +118,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
     gcols = {r[1] for r in conn.execute("PRAGMA table_info(garments)").fetchall()}
     if "rating" not in gcols:
         conn.execute("ALTER TABLE garments ADD COLUMN rating INTEGER NOT NULL DEFAULT 0")
+    if "owned" not in gcols:
+        conn.execute("ALTER TABLE garments ADD COLUMN owned INTEGER NOT NULL DEFAULT 1")
     ocols = {r[1] for r in conn.execute("PRAGMA table_info(outfits)").fetchall()}
     if "rating" not in ocols:
         conn.execute("ALTER TABLE outfits ADD COLUMN rating INTEGER NOT NULL DEFAULT 0")

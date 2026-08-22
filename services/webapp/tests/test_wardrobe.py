@@ -72,6 +72,21 @@ def test_update():
     assert w.update(ua["id"], g.id) is False
 
 
+def test_owned_flag():
+    ua = auth.create_user("wOwn@example.com", "password123")
+    # defaults to owned
+    g = w.create(ua["id"], "My jacket", "outerwear")
+    assert g.owned == 1
+    # can create as a to-buy / wishlist item
+    g2 = w.create(ua["id"], "Dream coat", "outerwear", owned=0)
+    assert g2.owned == 0
+    # can flip ownership on update
+    assert w.update(ua["id"], g.id, owned=0) is True
+    assert w.get(ua["id"], g.id).owned == 0
+    assert w.update(ua["id"], g.id, owned=1) is True
+    assert w.get(ua["id"], g.id).owned == 1
+
+
 def test_imglink_product_gallery_preferred_over_logo():
     # og:image is a logo; product-gallery <img> alt pattern should win
     html = """
