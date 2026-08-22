@@ -1,6 +1,7 @@
 # Clueless Closet — Wardrobe v0.12 (garment metadata, AI tag-read, dedup, import)
 
-Session work from 2026-08-22. App version at `/health` is now **0.12.0**.
+Session work from 2026-08-22. App version at `/health` is now **0.12.0** for the
+metadata work below; the **orientation** addendum shipped later at v0.14.0 — see **§12**.
 
 ## 1. Garment metadata — auto-fill on BOTH add paths
 
@@ -130,3 +131,25 @@ saving the image** or `near_dup_of` is always null.
 - Ollama service runs with `--profile gpu`; model pulled: `qwen2.5vl:3b`.
 - Browser was left on the login screen — sign in as `bostock@gmail.com` to see the
   wardrobe (the agent does not have that account's password).
+
+## 12. Garment orientation — "look, then rotate" (2026-08-22, v0.14.0)
+
+Addendum shipped after v0.12 — full write-up in **`docs/handoff-2026-08-22.md` §6**.
+Short version:
+
+- Orientation approaches that **failed** on these photos: tag-read
+  ("rotate-then-read-text", `7cd9b79`) only worked when a tag was readable;
+  "is it upright?" YES/NO is unreliable on folded flat-lays (model says YES at every
+  rotation); a manual rotate button was removed per user request.
+- **Current approach** (`aifill.ai_upright_rotation()` + `_top_edge()`): ask the model
+  *"which edge is the garment's top on? (top/bottom/left/right)"* — stable 3/3
+  agreement on all 20 photos — and rotate so that edge is the **TOP** edge. Works for
+  textless folded garments. `save_garment_image(ai_orient=True)` runs it on **every**
+  upload (no exceptions); `normalize_orientation(..., ai_decided=True)` trusts the AI's
+  answer even when it's 0 (already upright).
+- **Backfill:** `scripts/backfill_orientation.py` re-processed all stored photos.
+  Result: 17/20 were already upright; **#119 (olive joggers), #122, #124** (top on
+  left) were rotated upright — all 20 now read "top" and the wardrobe is consistent.
+- The user asked to "rotate so it's horizontal"; since 17/20 were already upright, the
+  3 sideways ones were rotated to match (upright). If horizontal is actually wanted,
+  flip the mapping in `aifill._EDGE_TO_CW` (one line) and re-backfill.

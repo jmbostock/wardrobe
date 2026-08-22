@@ -12,20 +12,25 @@ onto a **photo of a person** (stored image, upload, or live webcam), à la Alta 
 
 - ✅ Phase 1 (email accounts, weather, rule-based recommender, wardrobe)
 - ✅ Phase 2 (CatVTON try-on via ComfyUI, GPU) — working end-to-end
-- ✅ Phase 4 polish: wardrobe **detail/edit card**, add-form **Clear**, saved
-  outfits, **image-quality / base-suitability chips**, **SVD motion clips**
-  (async 3s animated webp), **auto-saved outfits** (every render → new card),
+- ✅ Phase 4 polish: wardrobe **detail card**, saved outfits, **image-quality /
+  base-suitability chips**, **SVD motion clips**, **auto-saved outfits**,
   uniform spacing + **iPhone-first** UI
-- ✅ **Auto-pick the best saved photo per garment** (v0.13.0): the photo that
-  generates a try-on is chosen by outfit match with the garment being tried on
-  (Ollama vision, `qwen2.5vl:3b`), with a pure-PIL fallback
-- ✅ Garment **AI tag-read** (brand/color/category/sizes from an uploaded photo)
-  + **auto-orient** (EXIF-righted, portrait-normalized) on upload
+- ✅ **Auto-pick the best saved photo per garment** (v0.13.0): the try-on base
+  photo is chosen by outfit match with the garment being tried on (Ollama vision
+  `qwen2.5vl:3b`, pure-PIL fallback)
+- ✅ **Garment metadata auto-fill** (v0.12): AI tag-read (brand/color/category/
+  sizes) on upload + product-link parse; **brand & color dropdowns** backed by the
+  DB; **type-aware sizes** (pants waist×length, bra band×cup); near-duplicate
+  detection (dHash + color + category); HEIC → JPEG
+- ✅ **Garment orientation "look, then rotate"** (v0.14.0): on every upload the
+  vision model reports which edge the garment's top is on and the photo is rotated
+  so the top is up — consistent upright photos even for folded flat-lays with no
+  readable tag
 - ⬜ Phase 3 (LLM stylist) and Phase 5 (migration) — not started
 
 **What's next:** `docs/product.md §7` (prioritized roadmap). **Full plan:** `PLAN.md`.
 **Fresh-session handoff (tests, deploy, open questions):** `docs/handoff-2026-08-22.md`.
-**Garment-metadata work:** `docs/wardrobe-v0.12.md`.
+**Garment-metadata + orientation work:** `docs/wardrobe-v0.12.md`.
 
 ## Quickstart (webapp + recommender)
 

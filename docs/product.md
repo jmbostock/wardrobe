@@ -1,6 +1,6 @@
 # Clueless Closet — Product Status & Roadmap
 
-> Single source of truth for **current behavior** and **what's next** (2026-08-21).
+> Single source of truth for **current behavior** and **what's next** (2026-08-22).
 > If this contradicts an older commit message or a loose "v0.x" note, this file wins.
 > Full plan/API contract: `PLAN.md` · architecture/decisions: `docs/architecture.md`.
 
@@ -25,7 +25,8 @@ Clueless Closet (repo name `altacloset`) is a **self-hosted, Dockerized AI perso
 |---|---|---|
 | 1 | Accounts (email), weather, rule-based recommender, wardrobe | ✅ DONE |
 | 2 | CatVTON try-on (ComfyUI, GPU) | ✅ DONE & working (~40s warm / 1m26s cold) |
-| 4 | Wardrobe manager, saved outfits, image-quality, uniform + iPhone-first UI | ✅ DONE (this session) |
+| 4 | Wardrobe manager, saved outfits, image-quality, uniform + iPhone-first UI | ✅ DONE |
+| 4b | Wardrobe metadata (brand/color/sizes, AI tag-read, dedup) + orientation | ✅ DONE (2026-08-22) |
 | 3 | LLM stylist (Ollama) | ⬜ not started |
 | 5 | Migrate to target GPU box | ⬜ not started |
 
@@ -48,11 +49,32 @@ Clueless Closet (repo name `altacloset`) is a **self-hosted, Dockerized AI perso
 - **Chained multi-garment try-on** (`/api/tryon/outfit`): top → bottom in sequence.
 
 ### Wardrobe
-- **Add a garment**: name/category/color + upload **or** a product-page link
-  (`Fetch details` auto-fills name/color/category and shows an image picker).
-- Each card: image + category badge + name + a single **Edit** button.
-- **Edit modal**: replace photo (Upload photo / Set from link — inline URL field),
-  edit name / category / color, **Save**, **Delete**. Everything in one place.
+- **Add a garment**: name/brand/color/category/sizes + upload **or** a product-page
+  link (`Fetch details` → `POST /api/wardrobe/parse-link` auto-fills name/brand/
+  color/category/sizes and shows an image picker).
+- **AI tag-read on upload**: picking a photo calls `POST /api/wardrobe/ai-fill`
+  (Ollama `qwen2.5vl:3b`) which reads brand/color/category/sizes off visible tags
+  and pre-fills the form. Never blocks — if the AI is down it degrades gracefully.
+- **Brand & Color dropdowns**: `GET /api/wardrobe/meta` returns the brands already
+  in the wardrobe + the canonical color palette (with swatches); type-ahead
+  `<datalist>` in both the add form and the detail card. Any brand/color the AI or
+  parse-link finds is stored in the DB and becomes available automatically.
+- **Type-aware sizes** (`media.SIZE_SCHEMAS`): top/dress/outerwear = S,M,L;
+  **bottom = Waist×Length** (`30W x 32L`); **bra = Band×Cup** (`34C`);
+  footwear = numeric; accessory = One size.
+- Each card: image + category badge + name + a **⚠ similar to X** flag when the
+  photo is a near-duplicate.
+- **Detail card** (tap the card): full-size image, editable name/brand/size/
+  category/color (with swatch), photo upload / set-from-link, owned checkbox,
+  **rating 0–10 step-1 slider**, near-dup note, used-in-N-outfits, and Delete.
+  The old per-card **Edit** button was removed.
+- **Near-duplicate detection**: 64-bit dHash + dominant color from the center crop
+  + same category gate (dHash ≤ 12 bits) → `⚠ similar to X`. This killed the
+  false positives like "olive joggers ≈ black swimsuit".
+- **Orientation (automatic, no exceptions)**: every upload is EXIF-righted, then the
+  vision model reports which edge the garment's top is on and the photo is rotated
+  so the top is up — consistent upright photos even for folded flat-lays with no
+  readable tag. (No manual rotate button.)
 - **Clear** button on the add form resets it when a link fetch fails or picks the
   wrong thing.
 
@@ -96,6 +118,30 @@ Clueless Closet (repo name `altacloset`) is a **self-hosted, Dockerized AI perso
 - New backend: `PATCH /api/wardrobe/{id}` (`WardrobeUpdate`) + `Wardrobe.update()`
   (validated column set). Covered by `tests/test_wardrobe.py::test_update`.
 
+### Wardrobe metadata, dedup, dropdowns, sizes & orientation (2026-08-22)
+Full write-up: **`docs/wardrobe-v0.12.md`** (metadata / dedup / dropdowns / sizes) and
+**`docs/handoff-2026-08-22.md` §6** (orientation). Highlights:
+- **Metadata auto-fill on BOTH add paths** — the URL path (`parse-link`) extracts
+  brand + sizes from JSON-LD/on-page pickers; the upload path uses an Ollama vision
+  model (`qwen2.5vl:3b`) to read tags. moondream was tried and is too weak (ignores
+  the prompt, hallucinates size lists) — rejected.
+- **Brand & Color dropdowns backed by the DB** — `GET /api/wardrobe/meta`;
+  `normalize_color()` maps free-text variants onto a canonical palette (navy blue→
+  navy, grey→gray, olive green→olive…).
+- **Type-aware sizes** — pants waist×length, bra band×cup, per-category schemas
+  (see Wardrobe feature tour above).
+- **Near-duplicate detection** — dHash + center-crop color class + same category
+  gate; surfaced as `⚠ similar to X`.
+- **HEIC support** — pillow-heif converts iPhone photos to JPEG on save.
+- **Account fix** — all imported photos moved to `bostock@gmail.com` (user 3); the
+  test account `me@example.com` (user 2) was **deleted**. Rule: do **not** create
+  users or use demo/test accounts without permission.
+- **Orientation "look, then rotate"** (v0.14.0, replaces the tag-read approach):
+  the vision model answers "which edge is the garment's top on?" (stable 3/3
+  agreement on every existing photo) and the photo is rotated so that edge is the
+  top. Works for folded flat-lays with no readable tag; runs on every upload. All
+  20 existing photos were backfilled → all upright and consistent.
+
 ---
 
 ## 5. UX / design decisions
@@ -103,8 +149,8 @@ Clueless Closet (repo name `altacloset`) is a **self-hosted, Dockerized AI perso
 - **iPhone-first** — most usage is on a phone; designs are tested on desktop and must
   hold at 390px. All future UI should follow the `@media (max-width:640px)` block.
 - **Uniform grids** — fixed 3:4 image boxes make a mixed-aspect wardrobe look tidy.
-- **One action per garment** — a single Edit button → modal keeps cards clean and
-  mobile-friendly.
+- **Tap-through detail card** — one tap on a wardrobe/outfit card opens a detail
+  card (image, metadata, rating, delete); no per-card Edit button cluttering the grid.
 - **Suitability chips** — surface bad base photos *before* a ~40s GPU render is wasted.
 - **Deterministic over clever** — recommender is rule-based and explainable; image
   quality is pure-PIL heuristics; LLM is only a Phase-3 garnish.
@@ -178,12 +224,15 @@ Clueless Closet (repo name `altacloset`) is a **self-hosted, Dockerized AI perso
 | POST `/api/auth/register` · `/login` · `/logout`, GET `/api/auth/me` | email + password accounts, bearer sessions |
 | GET `/api/account`, POST `/api/account/password`, POST `/api/account/location` | account details / password / location |
 | GET `/api/weather` | live weather (°F + °C), per-user location |
-| GET `/api/wardrobe`, POST `/api/wardrobe` | list / add garment |
-| POST `/api/wardrobe/parse-link` | extract name/color/category/images from a product page |
-| POST `/api/wardrobe/{id}/image` · `/image-url` · GET `/api/wardrobe/{id}/image` | set (upload/link) / serve garment image |
-| **PATCH `/api/wardrobe/{id}`** | **edit name/category/color** (this session) |
+| GET `/api/wardrobe`, POST `/api/wardrobe` | list / add garment (name/brand/color/category/sizes) |
+| POST `/api/wardrobe/parse-link` | extract name/brand/color/category/sizes/images from a product page |
+| POST `/api/wardrobe/ai-fill` | Ollama vision tag-read of an uploaded garment photo (brand/color/category/sizes) |
+| GET `/api/wardrobe/meta` | `{brands, colors, color_hex, schemas}` for the dropdowns / size inputs |
+| POST `/api/wardrobe/{id}/image` · `/image-url` · GET `/api/wardrobe/{id}/image` | set (upload/link) / serve garment image (upload auto-orients) |
+| **PATCH `/api/wardrobe/{id}`** | **edit name/brand/color/category/sizes/rating** |
 | DELETE `/api/wardrobe/{id}` | delete garment |
 | GET/POST `/api/photos`, PATCH `/api/photos/{id}`, POST `/api/photos/{id}/default`, GET `/api/photos/{id}/image`, DELETE `/api/photos/{id}` | person photos (try-on bases) |
+| GET `/api/photos/best-for-garment/{garment_id}` | pick the best saved photo for a garment by outfit match (Ollama vision; heuristic fallback) |
 | POST `/api/image-quality` | score person/garment image (`kind=person\|garment`) |
 | POST `/api/recommend` | rule-based outfit recommendation |
 | POST `/api/tryon`, POST `/api/tryon/outfit` | single / chained try-on render |

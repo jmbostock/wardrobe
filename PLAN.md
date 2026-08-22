@@ -206,14 +206,17 @@ run solo as "quality mode") → CatVTON-FLUX / FLUX.1-Kontext (GGUF quantized, ~
 | `/api/photos/{id}/default` | POST | Bearer token | `{ok: true}` |
 | `/api/photos/{id}/image` | GET | Bearer token | photo image (owner-only) |
 | `/api/photos/{id}` | DELETE | Bearer token | `{ok: true}` |
-| `/api/wardrobe` | GET | Bearer token | caller's garments (incl. `has_image`) |
-| `/api/wardrobe` | POST | Bearer + `{name, category, color?, image_url?}` | created garment (fetches `image_url` if given) |
-| `/api/wardrobe/parse-link` | POST | Bearer + `{url}` | `{name, description, color, category, images[]}` from a product page / image link |
-| `/api/wardrobe/{id}/image` | POST | Bearer + multipart `image` | updated garment (`has_image`) |
+| `/api/wardrobe` | GET | Bearer token | caller's garments (incl. `has_image`, `brand`, `sizes`, near-dup flags) |
+| `/api/wardrobe` | POST | Bearer + `{name, category, color?, brand?, sizes?, image_url?}` | created garment (fetches `image_url` if given) |
+| `/api/wardrobe/parse-link` | POST | Bearer + `{url}` | `{name, description, color, category, brand?, sizes?, images[]}` from a product page / image link |
+| `/api/wardrobe/ai-fill` | POST | Bearer + multipart `image` | `{name?, brand?, color?, category?, sizes?}` from an Ollama vision tag-read |
+| `/api/wardrobe/meta` | GET | Bearer token | `{brands, colors, color_hex, schemas}` (dropdowns + size inputs) |
+| `/api/wardrobe/{id}/image` | POST | Bearer + multipart `image` | updated garment (`has_image`); upload auto-orients ("look, then rotate") |
 | `/api/wardrobe/{id}/image-url` | POST | Bearer + `{url}` | updated garment (fetches image from URL) |
 | `/api/wardrobe/{id}/image` | GET | Bearer token | garment image (owner-only, 404 if none) |
-| `/api/wardrobe/{id}` | PATCH | Bearer + `{name?, category?, color?, rating?}` | updated garment |
+| `/api/wardrobe/{id}` | PATCH | Bearer + `{name?, category?, color?, brand?, sizes?, rating?}` | updated garment |
 | `/api/wardrobe/{id}` | DELETE | Bearer token | `{ok: true}` |
+| `/api/photos/best-for-garment/{garment_id}` | GET | Bearer token | `{garment_id, method, best_id, best, ranked[]}` — best saved photo for the garment (Ollama vision; heuristic fallback) |
 | `/api/recommend` | POST | Bearer + `{activity, prompt?, weather?}` | `{outfit, reasoning, scores, weather_used}` |
 | `/api/tryon` | POST | Bearer + multipart `person`, `garment_id` | `{result_url}` (private, owner-only) |
 | `/api/tryon/outfit` | POST | Bearer + multipart `garment_ids` (JSON), `person`/`photo_id`/`base_result?`, `prompt?` | `{result_url, garment_ids, prompt}` (chains top→bottom; empty look + base_result = refine w/o garments) |
