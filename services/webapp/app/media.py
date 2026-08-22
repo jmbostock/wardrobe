@@ -35,9 +35,34 @@ except Exception:  # noqa: BLE001 — optional dep; HEIC just won't be readable
 WARDROBE_DIR = Path(settings.data_dir) / "wardrobe"
 UPLOAD_DIR = Path(settings.data_dir) / "uploads"
 
-WARDROBE_CATEGORIES = {"top", "bottom", "dress", "outerwear", "footwear", "accessory"}
+WARDROBE_CATEGORIES = {"top", "bottom", "dress", "outerwear", "footwear", "accessory", "bra"}
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".heic"}
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
+
+# How sizes should be captured/displayed per garment type. `mode` is:
+#   list    -> one input, comma list of sizes (datalist suggestions in `options`)
+#   wxl     -> pants: Waist (W) x Length (L)  -> stored like "30W x 32L"
+#   bandcup -> bra: Band x Cup                 -> stored like "34C"
+SIZE_SCHEMAS: dict[str, dict] = {
+    "top":       {"mode": "list", "label": "Sizes", "placeholder": "e.g. S, M, L",
+                   "options": ["XS", "S", "M", "L", "XL", "XXL", "3XL"]},
+    "bottom":    {"mode": "wxl", "label": "Waist × Length",
+                   "ph1": "Waist (e.g. 30)", "ph2": "Length (e.g. 32)"},
+    "bra":       {"mode": "bandcup", "label": "Band × Cup",
+                   "ph1": "Band (e.g. 34)", "ph2": "Cup (e.g. C)"},
+    "dress":     {"mode": "list", "label": "Sizes", "placeholder": "e.g. 0,2,4,6 or S,M,L",
+                   "options": ["XS", "S", "M", "L", "XL", "0", "2", "4", "6", "8", "10", "12", "14"]},
+    "outerwear": {"mode": "list", "label": "Sizes", "placeholder": "e.g. S, M, L",
+                   "options": ["XS", "S", "M", "L", "XL", "XXL", "3XL"]},
+    "footwear":  {"mode": "list", "label": "Shoe size", "placeholder": "e.g. 8, 8.5, 9",
+                   "options": ["5", "5.5", "6", "6.5", "7", "7.5", "8", "8.5", "9", "9.5", "10", "10.5", "11"]},
+    "accessory": {"mode": "list", "label": "Size", "placeholder": "e.g. One size",
+                   "options": ["One size", "OS"]},
+}
+
+
+def size_schema(category: str) -> dict:
+    return SIZE_SCHEMAS.get(category or "", SIZE_SCHEMAS["top"])
 COLOR_HEX = {
     "white": "#f2f2f2", "black": "#1a1a1a", "gray": "#8a8f98", "grey": "#8a8f98",
     "navy": "#1f2a44", "blue": "#3b5ba8", "red": "#a33333", "green": "#2e4a3a",

@@ -10,11 +10,12 @@
       <input type="text" id="g-name" placeholder="e.g. Navy merino crewneck" class="field" />
     </div>
     <div class="block">
-      <label>Brand &amp; sizes <span class="muted">(auto-filled where possible)</span></label>
-      <div class="row">
-        <input type="text" id="g-brand" placeholder="brand (e.g. Old Navy)" class="field" list="brand-list" />
-        <input type="text" id="g-sizes" placeholder="sizes (e.g. S,M,L)" class="field" />
-      </div>
+      <label>Brand</label>
+      <input type="text" id="g-brand" placeholder="brand (e.g. Old Navy)" class="field" list="brand-list" />
+    </div>
+    <div class="block">
+      <label>Size <span class="muted" id="g-size-hint"></span></label>
+      <div id="g-sizes-wrap" class="row" style="gap:12px"></div>
     </div>
     <div class="block">
       <label>Category &amp; color</label>
@@ -26,6 +27,7 @@
           <option value="outerwear">Outerwear</option>
           <option value="footwear">Footwear</option>
           <option value="accessory">Accessory</option>
+          <option value="bra">Bra</option>
         </select>
         <input type="text" id="g-color" placeholder="color (e.g. navy)" class="field" list="color-list" />
       </div>
@@ -83,9 +85,13 @@
       <label>Name</label>
       <input type="text" id="gd-name" class="field" placeholder="garment name" />
     </div>
-    <div class="row">
-      <div class="block" style="flex:1;min-width:0"><label>Brand</label><input type="text" id="gd-brand" class="field" placeholder="brand (e.g. Old Navy)" list="brand-list" /></div>
-      <div class="block" style="flex:1;min-width:0"><label>Sizes</label><input type="text" id="gd-sizes" class="field" placeholder="e.g. S,M,L" /></div>
+    <div class="block">
+      <label>Brand</label>
+      <input type="text" id="gd-brand" class="field" placeholder="brand (e.g. Old Navy)" list="brand-list" />
+    </div>
+    <div class="block">
+      <label>Size <span class="muted" id="gd-size-hint"></span></label>
+      <div id="gd-sizes-wrap" class="row" style="gap:12px"></div>
     </div>
     <div class="row">
       <div class="block" style="flex:1;min-width:0"><label>Category</label><select id="gd-category"></select></div>

@@ -76,13 +76,86 @@ async function loadWardrobe() {
 $('wardrobe-filter').addEventListener('change', (e) => { wardrobeFilter = e.target.value; loadWardrobe(); });
 $('wardrobe-sort').addEventListener('change', (e) => { wardrobeSort = e.target.value; loadWardrobe(); });
 
+// ---------- category-aware size fields ----------
+// Mirrors backend SIZE_SCHEMAS (refreshed from /api/wardrobe/meta). The size
+// input adapts to the garment type: pants = waist × length, bra = band × cup,
+// shirts/dresses/footwear = size list with plausible suggestions.
+let SIZE_SCHEMAS = {
+  top:       { mode: 'list', placeholder: 'e.g. S, M, L', options: ['XS','S','M','L','XL','XXL','3XL'] },
+  bottom:    { mode: 'wxl', label: 'Waist × Length', ph1: 'Waist (e.g. 30)', ph2: 'Length (e.g. 32)' },
+  bra:       { mode: 'bandcup', label: 'Band × Cup', ph1: 'Band (e.g. 34)', ph2: 'Cup (e.g. C)' },
+  dress:     { mode: 'list', placeholder: 'e.g. 0,2,4,6 or S,M,L', options: ['XS','S','M','L','XL','0','2','4','6','8','10','12','14'] },
+  outerwear: { mode: 'list', placeholder: 'e.g. S, M, L', options: ['XS','S','M','L','XL','XXL','3XL'] },
+  footwear:  { mode: 'list', placeholder: 'e.g. 8, 8.5, 9', options: ['5','5.5','6','6.5','7','7.5','8','8.5','9','9.5','10','10.5','11'] },
+  accessory: { mode: 'list', placeholder: 'e.g. One size', options: ['One size','OS'] }
+};
+function sizeSchema(cat) { return SIZE_SCHEMAS[cat] || SIZE_SCHEMAS.top; }
+
+// split a stored sizes string into per-field values for a schema mode
+function parseSizeFields(cat, value) {
+  const s = sizeSchema(cat); const v = (value || '').trim();
+  if (s.mode === 'wxl') {  // "30W x 32L" | "30x32" | "30/32" | "30,32"
+    const nums = (v.match(/\d+(?:\.\d+)?/g) || []).map((x) => x);
+    return { a: nums[0] || '', b: nums[1] || '' };
+  }
+  if (s.mode === 'bandcup') {  // "34C" | "34" | "C"
+    const m = v.match(/^(\d{1,3})\s*([A-Za-z]{1,2})?$/);
+    return m ? { a: m[1], b: m[2] || '' } : { a: '', b: '' };
+  }
+  return { a: v, b: null };
+}
+
+// render the size input(s) for a category into the wrapper element
+function renderSizeInputs(wrapId, cat, value) {
+  const wrap = $(wrapId); if (!wrap) return;
+  const s = sizeSchema(cat);
+  const f = parseSizeFields(cat, value);
+  const hint = $(wrapId.replace('sizes-wrap', 'size-hint'));
+  if (hint) hint.textContent = (s.mode !== 'list' && s.label) ? '· ' + s.label : '';
+  wrap.innerHTML = '';
+  if (s.mode === 'list') {
+    const dl = document.createElement('datalist'); dl.id = wrapId + '-dl';
+    (s.options || []).forEach((o) => { const x = document.createElement('option'); x.value = o; dl.appendChild(x); });
+    const inp = document.createElement('input');
+    inp.type = 'text'; inp.id = wrapId + '-inp'; inp.className = 'field'; inp.placeholder = s.placeholder; inp.list = dl.id; inp.value = f.a;
+    wrap.appendChild(dl); wrap.appendChild(inp);
+  } else {
+    const mk = (id, ph, val) => {
+      const i = document.createElement('input');
+      i.type = 'text'; i.id = id; i.className = 'field'; i.placeholder = ph; i.value = val || '';
+      return i;
+    };
+    wrap.appendChild(mk(wrapId + '-a', s.ph1, f.a));
+    if (f.b !== null) wrap.appendChild(mk(wrapId + '-b', s.ph2, f.b));
+  }
+}
+
+// read the rendered size input(s) back into a stored sizes string
+function collectSizes(wrapId, cat) {
+  const s = sizeSchema(cat); const wrap = $(wrapId); if (!wrap) return '';
+  if (s.mode === 'list') { const i = $(wrapId + '-inp'); return i ? i.value.trim() : ''; }
+  const a = ($(wrapId + '-a') || { value: '' }).value.trim();
+  const b = ($(wrapId + '-b') || { value: '' }).value.trim();
+  if (s.mode === 'wxl') {
+    const parts = [];
+    if (a) parts.push(a.toUpperCase().replace(/[WL]$/, '') + 'W');
+    if (b) parts.push(b.toUpperCase().replace(/[WL]$/, '') + 'L');
+    return parts.join(' x ');
+  }
+  if (s.mode === 'bandcup') return (a + (b ? b.toUpperCase() : '')).trim();
+  return '';
+}
+$('g-category').addEventListener('change', (e) => renderSizeInputs('g-sizes-wrap', e.target.value, ''));
+$('gd-category').addEventListener('change', (e) => renderSizeInputs('gd-sizes-wrap', e.target.value, ''));
+renderSizeInputs('g-sizes-wrap', $('g-category').value, '');
+
 // ---------- garment detail card (outfits-style click-through) ----------
 function openGarmentDetail(g) {
   editingItem = g;
   $('gd-title').textContent = g.name;
   $('gd-name').value = g.name;
   $('gd-brand').value = g.brand || '';
-  $('gd-sizes').value = g.sizes || '';
+  renderSizeInputs('gd-sizes-wrap', g.category, g.sizes || '');
   $('gd-color').value = (g.color_tags || []).join(', ');
   const cat = $('gd-category'); cat.innerHTML = '';
   Array.from($('g-category').options).forEach((o) => cat.add(new Option(o.text, o.value)));
@@ -139,7 +212,7 @@ $('gd-save').addEventListener('click', async () => {
   const body = {
     name: $('gd-name').value.trim(),
     brand: $('gd-brand').value.trim(),
-    sizes: $('gd-sizes').value.trim(),
+    sizes: collectSizes('gd-sizes-wrap', $('gd-category').value),
     category: $('gd-category').value,
     color: $('gd-color').value.trim(),
     rating: currentRating(),
@@ -179,7 +252,9 @@ $('g-fetch').addEventListener('click', async () => {
     if (info.color && !$('g-color').value.trim()) $('g-color').value = info.color;
     if (info.category) $('g-category').value = info.category;
     if (info.brand && !$('g-brand').value.trim()) $('g-brand').value = info.brand;
-    if (info.sizes && !$('g-sizes').value.trim()) $('g-sizes').value = info.sizes;
+    if (info.sizes && !collectSizes('g-sizes-wrap', $('g-category').value)) {
+      renderSizeInputs('g-sizes-wrap', $('g-category').value, info.sizes);
+    }
     previewImages = info.images || [];
     renderPreview();
     const metaBits = [info.brand, info.sizes ? 'sizes ' + info.sizes : ''].filter(Boolean);
@@ -224,7 +299,7 @@ $('g-add').addEventListener('click', async () => {
   const category = $('g-category').value;
   const color = $('g-color').value.trim();
   const brand = $('g-brand').value.trim();
-  const sizes = $('g-sizes').value.trim();
+  const sizes = collectSizes('g-sizes-wrap', category);
   if (!name) { status.textContent = 'name required'; return; }
   const url = pickedImage || $('g-url').value.trim();
   const body = { name, category, color, brand, sizes, owned: $('g-owned').checked };
@@ -243,7 +318,8 @@ $('g-add').addEventListener('click', async () => {
       toast('⚠ near-duplicate of "' + g.near_dup_of.name + '"');
     }
     status.textContent = 'added "' + g.name + '"';
-    $('g-name').value = ''; $('g-brand').value = ''; $('g-sizes').value = '';
+    $('g-name').value = ''; $('g-brand').value = '';
+    renderSizeInputs('g-sizes-wrap', $('g-category').value, '');
     $('g-color').value = ''; $('g-url').value = ''; $('g-file').value = '';
     pickedImage = null; previewImages = [];
     $('g-preview').hidden = true; $('g-preview').innerHTML = '';
@@ -251,9 +327,11 @@ $('g-add').addEventListener('click', async () => {
   } catch (e) { status.textContent = e.message; }
 });
 $('g-clear').addEventListener('click', () => {
-  $('g-name').value = ''; $('g-brand').value = ''; $('g-sizes').value = '';
+  $('g-name').value = ''; $('g-brand').value = '';
+  renderSizeInputs('g-sizes-wrap', $('g-category').value, '');
   $('g-color').value = ''; $('g-url').value = ''; $('g-file').value = '';
   $('g-category').selectedIndex = 0;
+  renderSizeInputs('g-sizes-wrap', $('g-category').value, '');
   pickedImage = null; previewImages = [];
   $('g-preview').hidden = true; $('g-preview').innerHTML = '';
   $('g-status').textContent = 'form cleared — paste a new link or add manually';
@@ -283,7 +361,10 @@ $('g-file').addEventListener('change', async () => {
   if (t.name && !$('g-name').value.trim()) { $('g-name').value = t.name; bits.push('name'); }
   if (t.brand && !$('g-brand').value.trim()) { $('g-brand').value = t.brand; bits.push(t.brand); }
   if (t.color && !$('g-color').value.trim()) { $('g-color').value = t.color; bits.push(t.color); }
-  if (t.sizes && !$('g-sizes').value.trim()) { $('g-sizes').value = t.sizes; bits.push('size ' + t.sizes); }
+  if (t.sizes && !collectSizes('g-sizes-wrap', $('g-category').value)) {
+    renderSizeInputs('g-sizes-wrap', $('g-category').value, t.sizes);
+    bits.push('size ' + t.sizes);
+  }
   if (t.category && Array.from($('g-category').options).some((o) => o.value === t.category)) {
     $('g-category').value = t.category;
   }
@@ -292,11 +373,12 @@ $('g-file').addEventListener('change', async () => {
     : 'AI read the photo but found no tag info — fill manually';
 });
 
-// ---------- brand/color suggestions from the DB (datalists) ----------
+// ---------- brand/color/size suggestions from the DB (datalists) ----------
 async function loadMeta() {
   let meta;
   try { meta = await apiJson('/api/wardrobe/meta'); }
   catch (e) { return; }
+  if (meta.schemas) SIZE_SCHEMAS = meta.schemas;
   const fill = (id, items) => {
     const dl = $(id); if (!dl) return;
     dl.innerHTML = '';
@@ -304,6 +386,8 @@ async function loadMeta() {
   };
   fill('brand-list', meta.brands);
   fill('color-list', meta.colors);
+  // re-render the add-form size field with the server's schemas
+  renderSizeInputs('g-sizes-wrap', $('g-category').value, '');
 }
 
 loadWardrobe();

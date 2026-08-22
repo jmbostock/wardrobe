@@ -86,11 +86,20 @@ def _pixel_class(r: int, g: int, b: int) -> str:
     return "pink"
 
 
-def image_color_class(data: bytes) -> str:
-    """Dominant coarse color class of an image ('black', 'blue', 'green', ...).
-    Empty string if the image can't be read. Used as a gate on top of dHash."""
+def image_color_class(data: bytes, crop_frac: float = 0.6) -> str:
+    """Dominant coarse color class of the CENTER of an image ('black', 'blue',
+    'green', ...). Empty string if the image can't be read.
+
+    We classify only the central crop: garment photos (hanger / flat-lay /
+    product shots) have the garment centered, so the whole-image dominant color
+    is usually the BACKGROUND (white sheet / studio backdrop). The center crop
+    captures the garment itself, which is what the near-dup gate needs."""
     try:
         img = Image.open(io.BytesIO(data)).convert("RGB")
+        w, h = img.size
+        cw, ch = max(1, int(w * crop_frac)), max(1, int(h * crop_frac))
+        left, top = (w - cw) // 2, (h - ch) // 2
+        img = img.crop((left, top, left + cw, top + ch))
         img.thumbnail((64, 64))
         counts: dict[str, int] = {}
         for r, g, b in img.getdata():

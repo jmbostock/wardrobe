@@ -358,6 +358,19 @@ def test_near_duplicates():
     assert media.garment_dict(ua["id"], w.get(ua["id"], g2.id))["near_dup_of"] is None
 
 
+def test_size_schemas():
+    """size_schema drives type-aware size capture: pants = waist×length, bras =
+    band×cup, shirts/dresses = size list, footwear = numeric."""
+    from app.media import size_schema
+
+    assert size_schema("bottom")["mode"] == "wxl"
+    assert size_schema("bra")["mode"] == "bandcup"
+    assert size_schema("top")["mode"] == "list"
+    assert "XL" in size_schema("top")["options"]
+    assert "9.5" in size_schema("footwear")["options"]
+    assert size_schema("") == size_schema("top")  # unknown falls back to top
+
+
 def test_color_class():
     """image_color_class buckets dominant color coarsely (drives the dup gate)."""
     from app import phash

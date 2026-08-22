@@ -11,6 +11,7 @@ from .. import aifill, imglink, render
 from ..deps import get_current_user
 from ..media import (
     COLOR_HEX,
+    SIZE_SCHEMAS,
     WARDROBE_CATEGORIES,
     fetch_product_image,
     fetch_url_bytes,
@@ -109,7 +110,11 @@ def wardrobe_meta(user: dict = Depends(get_current_user)) -> dict:
     for c in sorted(COLOR_HEX):
         if c not in colors:
             colors.append(c)
-    return {"brands": sorted(brands, key=str.lower), "colors": sorted(colors)}
+    return {
+        "brands": sorted(brands, key=str.lower),
+        "colors": sorted(colors),
+        "schemas": SIZE_SCHEMAS,  # how sizes should be captured per category
+    }
 
 
 @router.post("/api/wardrobe/parse-link")

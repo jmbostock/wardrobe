@@ -50,6 +50,7 @@ CLOTH_TYPE = {
     "outerwear": "upper",
     "dress": "overall",
     "bottom": "lower",
+    "bra": "upper",
 }
 
 
