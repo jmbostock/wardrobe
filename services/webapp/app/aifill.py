@@ -22,8 +22,11 @@ import httpx
 
 from .config import settings
 
-DEFAULT_VISION_MODEL = "moondream"  # tiny (~1.7GB), reads tags fine, CPU-friendly
-AI_FILL_TIMEOUT = 25  # seconds; tag reads should be fast, don't hang the form
+# qwen2.5vl:3b (~2GB) is the smallest Ollama vision model that reliably follows
+# the labeled-line prompt AND reads tag text. moondream is ~0.3GB smaller but
+# ignores multi-line instructions (hallucinates size lists), so it's not usable.
+DEFAULT_VISION_MODEL = "qwen2.5vl:3b"
+AI_FILL_TIMEOUT = 40  # seconds; tag reads should be fast, don't hang the form
 
 # normalize model output to our fixed category set
 CATEGORY_SYNONYMS: dict[str, str] = {
