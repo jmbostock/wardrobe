@@ -121,8 +121,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE garments ADD COLUMN rating INTEGER NOT NULL DEFAULT 0")
     if "owned" not in gcols:
         conn.execute("ALTER TABLE garments ADD COLUMN owned INTEGER NOT NULL DEFAULT 1")
+    # SQLite's ALTER TABLE only allows constant defaults (datetime('now') works in
+    # CREATE TABLE but not ADD COLUMN) — add with '' then backfill existing rows.
     if "created_at" not in gcols:
-        conn.execute("ALTER TABLE garments ADD COLUMN created_at TEXT NOT NULL DEFAULT (datetime('now'))")
+        conn.execute("ALTER TABLE garments ADD COLUMN created_at TEXT NOT NULL DEFAULT ''")
+        conn.execute("UPDATE garments SET created_at = datetime('now') WHERE created_at = ''")
     ocols = {r[1] for r in conn.execute("PRAGMA table_info(outfits)").fetchall()}
     if "rating" not in ocols:
         conn.execute("ALTER TABLE outfits ADD COLUMN rating INTEGER NOT NULL DEFAULT 0")
