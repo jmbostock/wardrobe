@@ -59,7 +59,9 @@ async function openDetail(o) {
   const img = $('od-img');
   if (o.result_url) img.src = await authImageUrl(o.result_url);
   else { img.src = ''; img.style.background = 'linear-gradient(135deg,#2a3340,#1a1f27)'; }
-  // motion clip: show the webp if it exists, plus a make-a-clip action
+  // motion clip: show the webp if it exists, plus a make-a-clip action.
+  // If a clip is already running for this outfit (e.g. started on the Try-on
+  // tab), resume tracking it instead of starting a duplicate.
   const clipBox = $('od-clip');
   clipBox.innerHTML = '';
   if (o.motion_url) {
@@ -68,15 +70,51 @@ async function openDetail(o) {
     clipBox.appendChild(c);
   }
   if (o.result_url) {
-    const btn = document.createElement('button'); btn.className = 'ghost'; btn.textContent = o.motion_url ? 'Regenerate clip' : '✨ Make a 3s clip';
-    btn.style.marginTop = '8px';
-    btn.addEventListener('click', () => makeClip(o, btn));
-    clipBox.appendChild(btn);
     const st = document.createElement('div'); st.className = 'muted'; st.id = 'od-clip-status'; st.style.marginTop = '6px';
     clipBox.appendChild(st);
+    let active = null;
+    try { active = await apiJson('/api/clips/by-outfit/' + o.id); } catch (e) { /* ignore */ }
+    if (active && active.clip_id && (active.status === 'queued' || active.status === 'running')) {
+      st.textContent = 'clip already rendering — tracking it…';
+      trackClip(o.id, active.clip_id, st);
+    } else {
+      const btn = document.createElement('button'); btn.className = 'ghost';
+      btn.textContent = o.motion_url ? 'Regenerate clip' : '✨ Make a 3s clip';
+      btn.style.marginTop = '8px';
+      btn.addEventListener('click', () => makeClip(o, btn));
+      clipBox.appendChild(btn);
+    }
   }
   bindRating('od-rating', o.rating || 0);
   $('outfit-detail').hidden = false;
+}
+// Poll an existing clip until it's done — used both when starting a new clip
+// and when resuming one that was already running when we opened the card.
+function trackClip(outfitId, clipId, st) {
+  const started = Date.now();
+  const timer = setInterval(async () => {
+    try {
+      const r = await apiJson('/api/clips/' + clipId);
+      const secs = Math.round((Date.now() - started) / 1000);
+      if (r.status === 'done') {
+        clearInterval(timer);
+        st.textContent = 'clip ready — ' + secs + 's';
+        loadSavedOutfits();
+        // refresh this card's motion
+        const fresh = (await apiJson('/api/outfits')).find((x) => x.id === outfitId);
+        if (fresh) openDetail(fresh);
+      } else if (r.status === 'error') {
+        clearInterval(timer);
+        st.textContent = 'clip failed: ' + (r.error || 'unknown');
+        loadSavedOutfits();
+      } else {
+        st.textContent = 'rendering clip… ' + secs + 's (runs in the background)';
+      }
+    } catch (e) {
+      clearInterval(timer);
+      st.textContent = 'error: ' + e.message;
+    }
+  }, 3000);
 }
 async function makeClip(o, btn) {
   const st = $('od-clip-status'); st.textContent = 'queuing…'; btn.disabled = true;
@@ -88,29 +126,8 @@ async function makeClip(o, btn) {
     clipId = (await apiJson('/api/tryon/clip', { method: 'POST', body: fd })).clip_id;
     st.textContent = 'queued — runs in the background';
   } catch (e) { st.textContent = 'failed: ' + e.message; btn.disabled = false; return; }
-  const started = Date.now();
-  const timer = setInterval(async () => {
-    try {
-      const r = await apiJson('/api/clips/' + clipId);
-      const secs = Math.round((Date.now() - started) / 1000);
-      if (r.status === 'done') {
-        clearInterval(timer); btn.disabled = false;
-        st.textContent = 'clip ready — ' + secs + 's';
-        loadSavedOutfits();
-        // refresh this card's motion
-        const fresh = (await apiJson('/api/outfits')).find((x) => x.id === o.id);
-        if (fresh) openDetail(fresh);
-      } else if (r.status === 'error') {
-        clearInterval(timer); btn.disabled = false;
-        st.textContent = 'clip failed: ' + (r.error || 'unknown');
-      } else {
-        st.textContent = 'rendering clip… ' + secs + 's (runs in the background)';
-      }
-    } catch (e) {
-      clearInterval(timer); btn.disabled = false;
-      st.textContent = 'error: ' + e.message;
-    }
-  }, 3000);
+  btn.remove();  // the status line takes over from here
+  trackClip(o.id, clipId, st);
 }
 function closeDetail() { $('outfit-detail').hidden = true; editingItem = null; }
 $('od-close').addEventListener('click', closeDetail);

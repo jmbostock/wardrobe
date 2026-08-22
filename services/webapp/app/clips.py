@@ -37,6 +37,17 @@ class ClipStore:
             ).fetchone()
         return dict(row) if row else None
 
+    def latest_by_outfit(self, user_id: int, outfit_id: int) -> dict[str, Any] | None:
+        """Most recent clip for an outfit (any status) — lets the Outfits page
+        resume tracking a clip started from the Try-on tab."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM clips WHERE user_id=? AND outfit_id=? "
+                "ORDER BY id DESC LIMIT 1",
+                (user_id, outfit_id),
+            ).fetchone()
+        return dict(row) if row else None
+
     def update(
         self, user_id: int, clip_id: int, *, status: str | None = None,
         result_url: str | None = None, error: str | None = None,

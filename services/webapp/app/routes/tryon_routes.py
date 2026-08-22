@@ -222,11 +222,20 @@ async def do_tryon_clip(
     return {"clip_id": clip["id"], "status": clip["status"]}
 
 
+@router.get("/api/clips/by-outfit/{outfit_id}")
+def get_clip_for_outfit(outfit_id: int, user: dict = Depends(get_current_user)) -> dict:
+    """Latest clip attached to an outfit (any status). Lets the Outfits page
+    show/resume an in-progress SVD clip that was started from the Try-on tab
+    (or from the outfit's own detail card)."""
+    clip = clips.latest_by_outfit(user["id"], outfit_id)
+    if clip is None:
+        return {"clip_id": None, "status": "none"}
+    return {"clip_id": clip["id"], "status": clip["status"],
+            "result_url": clip["result_url"], "error": clip["error"]}
+
+
 @router.get("/api/clips/{clip_id}")
 async def get_clip_status(clip_id: int, user: dict = Depends(get_current_user)) -> dict:
-    """One-shot status poll for an SVD clip. When ComfyUI finishes, fetches the
-    animated webp, saves it to uploads, and attaches it to the outfit (if any).
-    Returns {status, result_url, error} — callers poll until status == done."""
     clip = clips.get(user["id"], clip_id)
     if clip is None:
         raise HTTPException(404, "clip not found")

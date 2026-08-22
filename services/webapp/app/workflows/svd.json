@@ -13,12 +13,12 @@
       "clip_vision": ["1", 1],
       "init_image": ["2", 0],
       "vae": ["1", 2],
-      "width": 1024,
-      "height": 576,
+      "width": 576,
+      "height": 1024,
       "video_frames": 25,
-      "motion_bucket_id": 80,
+      "motion_bucket_id": 30,
       "fps": 6,
-      "augmentation_level": 0.02
+      "augmentation_level": 0.0
     }
   },
   "4": {

@@ -77,6 +77,21 @@ def test_clips_store():
     assert cs.update(ub["id"], c["id"], status="error") is False
 
 
+def test_clips_latest_by_outfit():
+    from app.clips import ClipStore
+
+    cs = ClipStore()
+    ua = auth.create_user("oC3@example.com", "password123")
+    c1 = cs.create(ua["id"], "prompt-a", outfit_id=42)
+    c2 = cs.create(ua["id"], "prompt-b", outfit_id=42)
+    latest = cs.latest_by_outfit(ua["id"], 42)
+    assert latest is not None and latest["id"] == c2["id"]
+    assert cs.latest_by_outfit(ua["id"], 999) is None
+    # cross-user isolation
+    ub = auth.create_user("oC4@example.com", "password123")
+    assert cs.latest_by_outfit(ub["id"], 42) is None
+
+
 def test_svd_letterbox():
     from app.svd import _letterbox
     from PIL import Image

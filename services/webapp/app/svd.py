@@ -33,6 +33,12 @@ NODE_IDS = {"image": "2", "sampler": "5"}
 MODEL_W = 576
 MODEL_H = 1024
 
+# Fit the subject inside this fraction of the canvas so SVD has breathing room
+# (it can drift/pan without pushing the head out of frame).
+FIT_SCALE = 0.80
+# Extra headroom at the top (the face sits near the top of a full-body still).
+TOP_MARGIN_FRAC = 0.13
+
 
 async def submit_svd(image_bytes: bytes) -> str:
     """Upload the still and submit the SVD workflow. Returns the prompt id
@@ -65,15 +71,22 @@ async def check_svd(prompt_id: str) -> tuple[str, bytes | None]:
 
 
 def _letterbox(data: bytes) -> bytes:
-    """Center the still on the 576x1024 SVD canvas (aspect-preserving)."""
+    """Place the still on the 576x1024 SVD canvas with margins so the subject
+    (especially the face at the top) can't be cut off by SVD's motion/pan."""
     img = Image.open(io.BytesIO(data)).convert("RGB")
     canvas = Image.new("RGB", (MODEL_W, MODEL_H), (120, 120, 120))
-    scale = min(MODEL_W / img.width, MODEL_H / img.height)
+    max_w = MODEL_W * FIT_SCALE
+    max_h = MODEL_H * FIT_SCALE
+    scale = min(max_w / img.width, max_h / img.height)
     img = img.resize(
         (max(1, round(img.width * scale)), max(1, round(img.height * scale))),
         Image.LANCZOS,
     )
-    canvas.paste(img, ((MODEL_W - img.width) // 2, (MODEL_H - img.height) // 2))
+    # Center horizontally; add extra room at the top for the head.
+    x = (MODEL_W - img.width) // 2
+    top_margin = int(MODEL_H * TOP_MARGIN_FRAC)
+    y = min(top_margin, MODEL_H - img.height - 8)  # never overflow the bottom
+    canvas.paste(img, (x, y))
     buf = io.BytesIO()
     canvas.save(buf, "PNG")
     return buf.getvalue()
