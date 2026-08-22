@@ -4,7 +4,7 @@
 /* the hidden attribute must always win over display rules (.block/.compare etc) */
 [hidden] { display:none !important; }
 body { margin:0; font-family: system-ui, sans-serif; background:var(--bg); color:var(--txt); }
-header { padding:14px 24px; border-bottom:1px solid var(--line); display:flex; gap:14px; align-items:center; }
+header { position:sticky; top:0; z-index:15; background:var(--bg); padding:14px 24px; border-bottom:1px solid var(--line); display:flex; gap:14px; align-items:center; }
 header h1 { font-size:19px; margin:0; }
 header .tag { color:var(--mut); font-size:13px; }
 nav { margin-left:auto; display:flex; gap:8px; align-items:center; }
@@ -101,11 +101,11 @@ ul#reasons { color:var(--mut); padding-left:18px; margin:8px 0 0; }
 /* ---- iPhone-first responsive ---- */
 @media (max-width: 640px) {
   main { padding:14px; }
-  header { padding:10px 14px; flex-wrap:wrap; gap:10px; }
-  header h1 { font-size:17px; }
+  header { padding:10px 14px; flex-wrap:wrap; gap:8px; }
+  header h1 { font-size:16px; flex:1 1 100%; }
   header .tag { display:none; }
-  nav { flex-wrap:wrap; gap:6px; }
-  nav a { padding:8px 10px; font-size:13px; }
+  nav { flex:1 1 100%; flex-wrap:nowrap; gap:6px; margin-left:0; }
+  nav a { flex:1 1 0; min-width:0; text-align:center; white-space:nowrap; padding:8px 4px; font-size:12px; }
   .card { padding:14px; }
   .photos { grid-template-columns:repeat(2,1fr); gap:10px; }
   .photo .row { flex-direction:column; align-items:stretch; }
