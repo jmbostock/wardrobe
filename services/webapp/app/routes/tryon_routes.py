@@ -98,6 +98,11 @@ async def do_tryon_outfit(
         raise HTTPException(400, "provide a person photo, saved photo_id, or base_result")
     if not person_bytes:
         raise HTTPException(400, "empty person image")
+    # Record WHICH source person photo produced this render (metadata only —
+    # no copies of the image are stored; the base photo stays in place as
+    # context for follow-ups).
+    person_photo_id = int(photo_id) if photo_id is not None else 0
+    person_url = f"/api/photos/{person_photo_id}/image" if person_photo_id else ""
     # Apply the look (garments) if any. With an empty look (Saved-image / chat
     # refine mode) the base image passes through untouched — no garments are
     # re-added to an already-rendered image. A promptable model (Phase 5) can
@@ -117,7 +122,10 @@ async def do_tryon_outfit(
         out_name = f"tryon_outfit_{int(time.time())}.png"
         (out_dir / out_name).write_bytes(person_bytes)
         result_url = f"/api/uploads/{out_name}"
-        outfit_id = _auto_save_outfit(user["id"], ids, result_url, outfit_name or "")
+        outfit_id = _auto_save_outfit(
+            user["id"], ids, result_url, outfit_name or "",
+            person_photo_id=person_photo_id, person_url=person_url,
+        )
     elif base_result:
         # garment-free refine of an existing render — nothing new to draw, so
         # return the same image without writing a duplicate file.
@@ -130,14 +138,24 @@ async def do_tryon_outfit(
         out_name = f"tryon_refine_{int(time.time())}.png"
         (out_dir / out_name).write_bytes(person_bytes)
         result_url = f"/api/uploads/{out_name}"
-    return {"result_url": result_url, "garment_ids": ids, "prompt": prompt or "", "outfit_id": outfit_id}
+    return {
+        "result_url": result_url, "garment_ids": ids, "prompt": prompt or "",
+        "outfit_id": outfit_id, "person_photo_id": person_photo_id, "person_url": person_url,
+    }
 
 
-def _auto_save_outfit(user_id: int, ids: list[int], result_url: str, name: str) -> int:
+def _auto_save_outfit(
+    user_id: int, ids: list[int], result_url: str, name: str,
+    person_photo_id: int = 0, person_url: str = "",
+) -> int:
     """Save a rendered look to the Outfits page. Every render creates a NEW
-    outfit row so the user always sees their latest look appear — no dedupe."""
+    outfit row (no dedupe). Stores metadata about the source person photo
+    (person_photo_id + a reference URL) — never a copy of the image itself."""
     final_name = (name or "").strip()[:120] or ("Outfit " + time.strftime("%b %d"))
-    return outfits.create(user_id, final_name, ids, result_url=result_url)["id"]
+    return outfits.create(
+        user_id, final_name, ids, result_url=result_url,
+        person_photo_id=person_photo_id, person_url=person_url,
+    )["id"]
 
 
 @router.get("/api/uploads/{filename}")

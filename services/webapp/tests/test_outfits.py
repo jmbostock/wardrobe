@@ -33,6 +33,21 @@ def test_create_list_delete():
     assert store.list(uid) == []
 
 
+def test_create_stores_person_mapping():
+    """Outfits record which source person photo produced the render (metadata
+    only — no image copies)."""
+    ua = auth.create_user("oMap@example.com", "password123")
+    uid = ua["id"]
+    g = w.create(uid, "Tee", "top")
+    o = store.create(uid, "Look", [g.id], result_url="/api/uploads/r.png",
+                     person_photo_id=7, person_url="/api/photos/7/image")
+    assert o["person_photo_id"] == 7
+    assert o["person_url"] == "/api/photos/7/image"
+    # defaults when not supplied
+    o2 = store.create(uid, "Look2", [g.id], result_url="/api/uploads/r2.png")
+    assert o2["person_photo_id"] == 0 and o2["person_url"] == ""
+
+
 def test_update():
     ua = auth.create_user("oU@example.com", "password123")
     uid = ua["id"]

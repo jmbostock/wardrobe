@@ -67,14 +67,16 @@ CREATE TABLE IF NOT EXISTS garments (
 CREATE INDEX IF NOT EXISTS idx_garments_user ON garments(user_id);
 
 CREATE TABLE IF NOT EXISTS outfits (
-    id          INTEGER PRIMARY KEY,
-    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    name        TEXT NOT NULL,
-    garment_ids TEXT NOT NULL DEFAULT '[]',  -- JSON array of garment ids
-    result_url  TEXT NOT NULL DEFAULT '',    -- saved try-on render, if any
-    motion_url  TEXT NOT NULL DEFAULT '',    -- SVD animated clip of the render
-    rating      INTEGER NOT NULL DEFAULT 0,  -- user rating 0..10 (0 = unrated)
-    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    id              INTEGER PRIMARY KEY,
+    user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name            TEXT NOT NULL,
+    garment_ids     TEXT NOT NULL DEFAULT '[]',  -- JSON array of garment ids
+    result_url      TEXT NOT NULL DEFAULT '',    -- saved try-on render, if any
+    motion_url      TEXT NOT NULL DEFAULT '',    -- SVD animated clip of the render
+    person_photo_id INTEGER NOT NULL DEFAULT 0,  -- source person photo id (0 = upload)
+    person_url      TEXT NOT NULL DEFAULT '',    -- snapshot of the exact source person image
+    rating          INTEGER NOT NULL DEFAULT 0,  -- user rating 0..10 (0 = unrated)
+    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_outfits_user ON outfits(user_id);
 
@@ -144,6 +146,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE outfits ADD COLUMN rating INTEGER NOT NULL DEFAULT 0")
     if "motion_url" not in ocols:
         conn.execute("ALTER TABLE outfits ADD COLUMN motion_url TEXT NOT NULL DEFAULT ''")
+    if "person_photo_id" not in ocols:
+        conn.execute("ALTER TABLE outfits ADD COLUMN person_photo_id INTEGER NOT NULL DEFAULT 0")
+    if "person_url" not in ocols:
+        conn.execute("ALTER TABLE outfits ADD COLUMN person_url TEXT NOT NULL DEFAULT ''")
     # clips table (added 2026-08-22) for async SVD motion generation
     conn.execute(
         """CREATE TABLE IF NOT EXISTS clips (

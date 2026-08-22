@@ -68,6 +68,9 @@ body.auth-page .app-version { display:none; }  /* login screen is a centered car
 #outfit-detail .modal-head h2 { margin:0; font-size:16px; overflow-wrap:anywhere; }
 #outfit-detail img { width:100%; max-height:380px; object-fit:contain; background:#000; border-radius:10px; border:1px solid var(--line); }
 #outfit-detail #od-clip img { max-height:300px; }
+#od-source label { font-size:12px; color:var(--mut); text-transform:uppercase; }
+.od-src-row { display:flex; align-items:center; gap:10px; margin-top:6px; }
+.od-src { width:72px; max-height:96px; object-fit:contain; background:#000; border-radius:8px; border:1px solid var(--line); flex:none; }
 #lightbox { position:fixed; inset:0; background:rgba(0,0,0,.85); display:flex; align-items:center; justify-content:center; z-index:20; cursor:zoom-out; }
 #lightbox[hidden] { display:none; }
 #lightbox img { max-width:92vw; max-height:92vh; border-radius:8px; }
