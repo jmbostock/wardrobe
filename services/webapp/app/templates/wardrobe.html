@@ -12,7 +12,7 @@
     <div class="block">
       <label>Brand &amp; sizes <span class="muted">(auto-filled where possible)</span></label>
       <div class="row">
-        <input type="text" id="g-brand" placeholder="brand (e.g. Old Navy)" class="field" />
+        <input type="text" id="g-brand" placeholder="brand (e.g. Old Navy)" class="field" list="brand-list" />
         <input type="text" id="g-sizes" placeholder="sizes (e.g. S,M,L)" class="field" />
       </div>
     </div>
@@ -27,7 +27,7 @@
           <option value="footwear">Footwear</option>
           <option value="accessory">Accessory</option>
         </select>
-        <input type="text" id="g-color" placeholder="color (e.g. navy)" class="field" />
+        <input type="text" id="g-color" placeholder="color (e.g. navy)" class="field" list="color-list" />
       </div>
     </div>
     <div class="block">
@@ -84,12 +84,12 @@
       <input type="text" id="gd-name" class="field" placeholder="garment name" />
     </div>
     <div class="row">
-      <div class="block" style="flex:1;min-width:0"><label>Brand</label><input type="text" id="gd-brand" class="field" placeholder="brand (e.g. Old Navy)" /></div>
+      <div class="block" style="flex:1;min-width:0"><label>Brand</label><input type="text" id="gd-brand" class="field" placeholder="brand (e.g. Old Navy)" list="brand-list" /></div>
       <div class="block" style="flex:1;min-width:0"><label>Sizes</label><input type="text" id="gd-sizes" class="field" placeholder="e.g. S,M,L" /></div>
     </div>
     <div class="row">
       <div class="block" style="flex:1;min-width:0"><label>Category</label><select id="gd-category"></select></div>
-      <div class="block" style="flex:1;min-width:0"><label>Color</label><input type="text" id="gd-color" class="field" placeholder="e.g. navy" /></div>
+      <div class="block" style="flex:1;min-width:0"><label>Color</label><input type="text" id="gd-color" class="field" placeholder="e.g. navy" list="color-list" /></div>
     </div>
     <div class="block">
       <label>Photo — upload a file or set it from a link</label>
@@ -120,4 +120,6 @@
   </div>
 </div>
 {% endblock %}
+<datalist id="brand-list"></datalist>
+<datalist id="color-list"></datalist>
 {% block scripts %}<script src="/static/js/wardrobe.js"></script>{% endblock %}

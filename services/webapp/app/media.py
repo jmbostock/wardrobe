@@ -94,23 +94,29 @@ def save_garment_image(user_id: int, garment_id: int, data: bytes, ext: str) -> 
         ext = "jpg"
     path = d / f"{garment_id}.{ext}"
     path.write_bytes(data)
-    # record image + perceptual hash for near-duplicate detection
-    wardrobe.update(user_id, garment_id, image_path=path.name, phash=phash.image_phash(data))
+    # record image + perceptual hash + color fingerprint for near-dup detection
+    wardrobe.update(user_id, garment_id, image_path=path.name,
+                    phash=phash.image_phash(data), color_sig=phash.image_color_class(data))
     return path
 
 
 def near_duplicates(
     user_id: int,
     phash_hex: str,
+    color_sig: str = "",
     exclude_id: int | None = None,
     threshold: int = phash.SIMILAR_THRESHOLD,
     category: str | None = None,
 ) -> list[dict]:
-    """Existing garments for this user whose dHash is within `threshold` bits of
-    the given hash — i.e. likely the same (or nearly the same) item. Sorted by
-    closest first. Empty list = no near-duplicate. When `category` is given,
-    only garments of that category are compared (a top vs. a pair of pants
-    photographed the same way are NOT the same item, so we don't flag them)."""
+    """Existing garments for this user that are likely the same (or nearly the
+    same) item as one with `phash_hex` + `color_sig`. Sorted by closest first.
+    Empty list = no near-duplicate.
+
+    Three gates (all must pass):
+    - same `category` (a top vs. a pair of pants shot the same way isn't a dup)
+    - same coarse `color_sig` (an olive jogger vs a black swimsuit isn't a dup)
+    - dHash Hamming distance <= threshold
+    """
     if not phash_hex:
         return []
     out: list[dict] = []
@@ -118,6 +124,9 @@ def near_duplicates(
         if not g.phash or g.id == exclude_id:
             continue
         if category is not None and g.category != category:
+            continue
+        # both need a color fingerprint; if either lacks one, don't match (safe)
+        if not color_sig or not g.color_sig or g.color_sig != color_sig:
             continue
         d = phash.hamming(phash_hex, g.phash)
         if d <= threshold:
@@ -127,12 +136,13 @@ def near_duplicates(
 
 
 def nearest_dup(
-    user_id: int, phash_hex: str, exclude_id: int | None = None,
+    user_id: int, phash_hex: str, color_sig: str = "", exclude_id: int | None = None,
     threshold: int = phash.SIMILAR_THRESHOLD, category: str | None = None,
 ) -> dict | None:
     """Closest match only (for the wardrobe grid's "similar to X" note)."""
-    dups = near_duplicates(user_id, phash_hex, exclude_id=exclude_id,
-                           threshold=threshold, category=category)
+    dups = near_duplicates(user_id, phash_hex, color_sig=color_sig,
+                           exclude_id=exclude_id, threshold=threshold,
+                           category=category)
     return dups[0] if dups else None
 
 
@@ -181,8 +191,9 @@ def garment_dict(user_id: int, g) -> dict:
     d = g.to_dict()
     d["has_image"] = garment_image_path(user_id, g.id) is not None
     # nearest existing garment this one is a near-duplicate of (for "similar to
-    # X" notes) — computed only when we have a phash, and only within the same
-    # category so we don't flag a top against a pair of pants
-    nd = nearest_dup(user_id, g.phash, exclude_id=g.id, category=g.category) if g.phash else None
+    # X" notes) — only within the same category AND same dominant color, so an
+    # olive jogger is never flagged against a black swimsuit
+    nd = (nearest_dup(user_id, g.phash, g.color_sig, exclude_id=g.id,
+                      category=g.category) if g.phash else None)
     d["near_dup_of"] = nd
     return d

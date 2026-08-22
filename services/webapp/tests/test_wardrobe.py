@@ -312,7 +312,7 @@ def test_phash_similarity():
 
 def test_near_duplicates():
     """media.near_duplicates flags the same/near-identical item, excludes self,
-    and ignores unrelated garments."""
+    and ignores unrelated garments (different category or different color)."""
     from app import media, phash
     from PIL import Image, ImageDraw
     import io as _io
@@ -335,18 +335,47 @@ def test_near_duplicates():
     g3 = w.create(ua["id"], "Red top", "top")
     media.save_garment_image(ua["id"], g3.id, make((126, 54, 54), "RED"), "png")
 
+    red1 = make((120, 50, 50), "RED")
+    red2 = make((126, 54, 54), "RED")
     # g2 is unrelated → no near-dup for g1's exact hash (excluding g1 itself)
-    assert media.near_duplicates(ua["id"], phash.image_phash(make((120, 50, 50), "RED")),
-                                 exclude_id=g1.id) == []
-    # a near-identical re-shoot of g1 flags g1 (same category)
-    dups = media.near_duplicates(ua["id"], phash.image_phash(make((126, 54, 54), "RED")))
+    assert media.near_duplicates(ua["id"], phash.image_phash(red1),
+                                 phash.image_color_class(red1), exclude_id=g1.id) == []
+    # a near-identical re-shoot of g1 flags g1 (same category + same color)
+    dups = media.near_duplicates(ua["id"], phash.image_phash(red2),
+                                 phash.image_color_class(red2))
     assert any(x["id"] == g1.id for x in dups), dups
-    assert not any(x["id"] == g2.id for x in dups), dups
+    assert not any(x["id"] == g2.id for x in dups), dups  # different color class
     assert not any(x["id"] == g3.id for x in dups), dups  # different category
+    # a blue near-twin of g2 flags g2 (color gate passes, not g1)
+    blue2 = make((66, 66, 146), "BLU")
+    dups2 = media.near_duplicates(ua["id"], phash.image_phash(blue2),
+                                  phash.image_color_class(blue2))
+    assert any(x["id"] == g2.id for x in dups2), dups2
+    assert not any(x["id"] == g1.id for x in dups2), dups2
     # garment_dict exposes near_dup_of for the grid "similar to" note
     g1d = media.garment_dict(ua["id"], w.get(ua["id"], g1.id))
     assert g1d["phash"] != "" and g1d["near_dup_of"] is None  # no other red item
     assert media.garment_dict(ua["id"], w.get(ua["id"], g2.id))["near_dup_of"] is None
+
+
+def test_color_class():
+    """image_color_class buckets dominant color coarsely (drives the dup gate)."""
+    from app import phash
+    from PIL import Image
+    import io as _io
+
+    def make(color):
+        buf = _io.BytesIO()
+        Image.new("RGB", (64, 64), color).save(buf, "PNG")
+        return buf.getvalue()
+
+    assert phash.image_color_class(make((40, 40, 40))) == "black"
+    assert phash.image_color_class(make((235, 235, 235))) == "white"
+    assert phash.image_color_class(make((128, 128, 128))) == "gray"
+    assert phash.image_color_class(make((220, 40, 40))) == "red"
+    assert phash.image_color_class(make((10, 90, 40))) == "green"
+    assert phash.image_color_class(make((40, 60, 200))) == "blue"
+    assert phash.image_color_class(b"not an image") == ""
 
 
 def test_extract_product_page_color_from_text():

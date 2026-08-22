@@ -90,6 +90,28 @@ def create_garment(req: WardrobeCreate, user: dict = Depends(get_current_user)) 
     return garment_dict(user["id"], wardrobe.get(user["id"], g.id))
 
 
+@router.get("/api/wardrobe/meta")
+def wardrobe_meta(user: dict = Depends(get_current_user)) -> dict:
+    """Known brands + colors for this user's wardrobe (dropdown suggestions).
+    Brands/colors come from what's already stored on the user's garments, so
+    anything the AI tag-reader (or parse-link) ever found becomes available."""
+    brands: list[str] = []
+    colors: list[str] = []
+    for g in wardrobe.all(user["id"]):
+        b = (g.brand or "").strip()
+        if b and b.lower() not in (x.lower() for x in brands):
+            brands.append(b)
+        for c in (g.color_tags or "").split(","):
+            c = c.strip().lower()
+            if c and c not in colors:
+                colors.append(c)
+    # always offer the canonical color palette so suggestions exist early
+    for c in sorted(COLOR_HEX):
+        if c not in colors:
+            colors.append(c)
+    return {"brands": sorted(brands, key=str.lower), "colors": sorted(colors)}
+
+
 @router.post("/api/wardrobe/parse-link")
 def parse_garment_link(req: ParseLinkRequest, user: dict = Depends(get_current_user)) -> dict:
     """Inspect a store page (or direct image URL) and return the product name/

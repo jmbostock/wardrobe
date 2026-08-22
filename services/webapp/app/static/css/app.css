@@ -22,6 +22,7 @@ body.auth-page main { min-height:100dvh; display:flex; align-items:center; justi
 .row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
 select, input[type=text], input[type=email], input[type=password], input[type=file], button {
   padding:10px 12px; border-radius:8px; border:1px solid var(--line); background:#0f1216; color:var(--txt); font-size:14px; }
+input:focus, select:focus { outline:2px solid var(--acc); outline-offset:2px; }
 button { background:var(--acc); border:none; cursor:pointer; font-weight:600; }
 button:disabled { opacity:.5; cursor:default; }
 button.ghost { background:transparent; border:1px solid var(--line); }
@@ -66,6 +67,10 @@ body.auth-page .app-version { display:none; }  /* login screen is a centered car
 #garment-detail .modal-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
 #garment-detail .modal-head h2 { margin:0; font-size:16px; overflow-wrap:anywhere; }
 #garment-detail img { width:100%; max-height:380px; object-fit:contain; background:#000; border-radius:10px; border:1px solid var(--line); }
+/* side-by-side field rows (Brand/Sizes, Category/Color): keep them separated */
+#garment-detail .row { gap:12px; align-items:flex-start; }
+#garment-detail .row .block { flex:1 1 0; min-width:0; margin-bottom:0; }
+#garment-detail .row .field { min-width:0; width:100%; }
 #outfit-detail #od-clip img { max-height:300px; }
 #od-source label { font-size:12px; color:var(--mut); text-transform:uppercase; }
 .od-src-row { display:flex; align-items:center; gap:10px; margin-top:6px; }
@@ -76,7 +81,7 @@ body.auth-page .app-version { display:none; }  /* login screen is a centered car
 .badge { font-size:11px; color:#0f1216; background:var(--acc); border-radius:5px; padding:1px 6px; justify-self:start; }
 .toast { position:fixed; bottom:18px; left:50%; transform:translateX(-50%); background:var(--acc);
   color:#0f1216; padding:10px 16px; border-radius:8px; font-weight:600; display:none; z-index:10; }
-.field { flex:1; min-width:220px; }
+.field { flex:1 1 0; min-width:0; }
 .spinner { width:22px; height:22px; border:3px solid rgba(79,156,249,.25); border-top-color:var(--acc);
   border-radius:50%; animation:spin .8s linear infinite; flex:none; }
 @keyframes spin { to { transform:rotate(360deg); } }

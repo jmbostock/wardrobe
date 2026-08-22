@@ -36,3 +36,67 @@ def image_phash(data: bytes) -> str:
 def hamming(a: str, b: str) -> int:
     """Number of differing bits between two hex phashes (0 = identical)."""
     return sum(x != y for x, y in zip(a, b))
+
+
+# ---- coarse color fingerprint ----------------------------------------------
+# dHash alone can't tell an olive-green pair of joggers from a black swimsuit
+# when they're photographed the same way (distances land in the same band). So
+# we also record a coarse dominant-color class and require it to MATCH before
+# calling two garments near-duplicates. Different-colored items never match.
+
+# canonical coarse classes we emit
+_COLOR_CLASSES = {
+    "black", "white", "gray", "red", "orange", "yellow", "green", "teal",
+    "blue", "purple", "pink", "brown",
+}
+
+
+def _pixel_class(r: int, g: int, b: int) -> str:
+    mx, mn = max(r, g, b), min(r, g, b)
+    d = mx - mn
+    v = mx / 255.0
+    if d < 40:  # near-achromatic
+        if v < 0.25:
+            return "black"
+        if v > 0.82:
+            return "white"
+        return "gray"
+    rr, gg, bb = r / 255.0, g / 255.0, b / 255.0
+    if mx == r:
+        h = 60 * (((gg - bb) / d) % 6)
+    elif mx == g:
+        h = 60 * (((bb - rr) / d) + 2)
+    else:
+        h = 60 * (((rr - gg) / d) + 4)
+    sat = d / mx
+    if h <= 15 or h > 345:
+        return "red"
+    if h <= 45:
+        return "orange" if sat > 0.55 else "brown"
+    if h <= 70:
+        return "yellow"
+    if h <= 160:
+        return "green"
+    if h <= 200:
+        return "teal"
+    if h <= 260:
+        return "blue"
+    if h <= 320:
+        return "purple"
+    return "pink"
+
+
+def image_color_class(data: bytes) -> str:
+    """Dominant coarse color class of an image ('black', 'blue', 'green', ...).
+    Empty string if the image can't be read. Used as a gate on top of dHash."""
+    try:
+        img = Image.open(io.BytesIO(data)).convert("RGB")
+        img.thumbnail((64, 64))
+        counts: dict[str, int] = {}
+        for r, g, b in img.getdata():
+            c = _pixel_class(r, g, b)
+            counts[c] = counts.get(c, 0) + 1
+        best = max(counts.items(), key=lambda kv: kv[1])
+        return best[0] if best[1] >= 2 else ""
+    except Exception:  # noqa: BLE001 — unreadable → no fingerprint
+        return ""

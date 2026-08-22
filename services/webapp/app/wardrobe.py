@@ -64,6 +64,7 @@ class Garment:
     brand: str = ""        # e.g. "Old Navy" (auto-filled from link/AI, editable)
     sizes: str = ""        # comma list e.g. "S,M,L" or "2,4,6" (from tags when visible)
     phash: str = ""        # 64-bit dHash (16 hex) for near-duplicate detection
+    color_sig: str = ""    # coarse dominant color class ('blue','black',...) gate
     last_worn: str | None = None
     wear_count: int = 0
     rating: int = 0
@@ -152,6 +153,7 @@ class Wardrobe:
         brand: str = "",
         sizes: str = "",
         phash: str = "",
+        color_sig: str = "",
         owned: int = 1,
     ) -> Garment:
         """Insert a user-added garment (sensible scoring defaults unless given)."""
@@ -159,12 +161,12 @@ class Wardrobe:
             cur = self._conn.execute(
                 """INSERT INTO garments
                    (user_id, name, category, color_hex, color_tags, warmth, waterproof,
-                    formality, occasions, material, fit, brand, sizes, phash, owned, image_path)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    formality, occasions, material, fit, brand, sizes, phash, color_sig, owned, image_path)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (user_id, name, category, color_hex or "", color_tags or "",
                  warmth, waterproof, formality or "casual", occasions or "casual",
                  material or "", fit or "regular", brand or "", sizes or "",
-                 phash or "", 1 if owned else 0, ""),
+                 phash or "", color_sig or "", 1 if owned else 0, ""),
             )
             self._conn.commit()
             gid = cur.lastrowid
@@ -214,6 +216,7 @@ class Wardrobe:
             fit=row["fit"] or "regular",
             brand=row["brand"] or "", sizes=row["sizes"] or "",
             phash=row["phash"] if "phash" in row.keys() else "",
+            color_sig=row["color_sig"] if "color_sig" in row.keys() else "",
             last_worn=row["last_worn"],
             wear_count=row["wear_count"], rating=row["rating"] or 0,
             owned=row["owned"] if "owned" in row.keys() else 1,

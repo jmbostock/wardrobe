@@ -292,4 +292,19 @@ $('g-file').addEventListener('change', async () => {
     : 'AI read the photo but found no tag info — fill manually';
 });
 
+// ---------- brand/color suggestions from the DB (datalists) ----------
+async function loadMeta() {
+  let meta;
+  try { meta = await apiJson('/api/wardrobe/meta'); }
+  catch (e) { return; }
+  const fill = (id, items) => {
+    const dl = $(id); if (!dl) return;
+    dl.innerHTML = '';
+    (items || []).forEach((v) => { const o = document.createElement('option'); o.value = v; dl.appendChild(o); });
+  };
+  fill('brand-list', meta.brands);
+  fill('color-list', meta.colors);
+}
+
 loadWardrobe();
+loadMeta();
