@@ -70,13 +70,16 @@ def api(base: str, token: str, method: str, path: str, json_body=None,
             return {"error": body}
 
 
-def heic_to_jpeg(data: bytes) -> bytes:
-    import pillow_heif  # noqa: F401 — registers the opener
+def heic_to_jpeg(data: bytes, max_px: int = 1024) -> bytes:
+    """HEIC → JPEG, downscaled so stored photos + try-on stay reasonable."""
+    import pillow_heif
+    pillow_heif.register_heif_opener()  # import alone does NOT register the PIL opener
     from PIL import Image, ImageOps
     img = Image.open(io.BytesIO(data))
     img = ImageOps.exif_transpose(img)
+    img.thumbnail((max_px, max_px), Image.LANCZOS)
     buf = io.BytesIO()
-    img.convert("RGB").save(buf, "JPEG", quality=90)
+    img.convert("RGB").save(buf, "JPEG", quality=88)
     return buf.getvalue()
 
 
@@ -162,8 +165,9 @@ def main() -> int:
             continue
         gid = created["id"]
 
+        # store the downscaled JPEG (the server also normalizes HEIC → JPEG)
         up = api(base, token, "POST", f"/api/wardrobe/{gid}/image",
-                 file_bytes=raw, filename=p.name)
+                 file_bytes=jpg, filename=Path(p.name).with_suffix(".jpg").name)
         nd = up.get("near_dup_of") or created.get("near_dup_of")
         if nd:
             dup_warnings += 1

@@ -86,7 +86,8 @@ def create_garment(req: WardrobeCreate, user: dict = Depends(get_current_user)) 
         data = fetch_product_image(req.image_url)
         ext = validate_image(data)
         save_garment_image(user["id"], g.id, data, ext)
-    return garment_dict(user["id"], g)
+    # re-fetch so phash is set and near_dup_of reflects the saved image
+    return garment_dict(user["id"], wardrobe.get(user["id"], g.id))
 
 
 @router.post("/api/wardrobe/parse-link")
@@ -142,7 +143,8 @@ async def upload_garment_image(
     data = await image.read()
     ext = validate_image(data)
     save_garment_image(user["id"], garment_id, data, ext)
-    return garment_dict(user["id"], g)
+    # re-fetch so phash is set and near_dup_of reflects the saved image
+    return garment_dict(user["id"], wardrobe.get(user["id"], garment_id))
 
 
 @router.post("/api/wardrobe/{garment_id}/image-url")
@@ -155,7 +157,8 @@ def garment_image_from_url(
     data = fetch_product_image(req.url)
     ext = validate_image(data)
     save_garment_image(user["id"], garment_id, data, ext)
-    return garment_dict(user["id"], g)
+    # re-fetch so phash is set and near_dup_of reflects the saved image
+    return garment_dict(user["id"], wardrobe.get(user["id"], garment_id))
 
 
 @router.get("/api/wardrobe/{garment_id}/image")

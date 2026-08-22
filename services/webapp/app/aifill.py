@@ -60,6 +60,21 @@ PROMPT = (
 
 _LINE_FIELDS = ["NAME", "BRAND", "COLOR", "CATEGORY", "SIZES"]
 
+# vision models answer "I can't tell" in many ways — treat these as empty
+_FILLER = {
+    "blank", "none", "n/a", "na", "-", "--", "unknown", "unknown ",
+    "not visible", "none visible", "not known", "not sure", "can't tell",
+    "cannot tell", "cannot determine", "not applicable", "n/a ", "null",
+}
+
+
+def _clean(v: str) -> str:
+    v = v.strip().strip('"')
+    low = v.lower().strip(".")
+    if not low or low in _FILLER or low.startswith("none") or low.startswith("not "):
+        return ""
+    return v
+
 
 def _parse_labeled_lines(text: str) -> dict[str, str] | None:
     """Parse the NAME:/BRAND:/COLOR:/CATEGORY:/SIZES: line format moondream is
@@ -83,11 +98,12 @@ def _normalize(out: dict[str, str]) -> dict[str, str]:
     for k in res:
         v = out.get(k)
         if isinstance(v, list):  # sizes sometimes come back as a list
-            res[k] = ", ".join(str(x).strip() for x in v if str(x).strip())
+            vals = [_clean(str(x)) for x in v if str(x).strip()]
+            res[k] = ",".join(vals[:12])
         elif isinstance(v, (int, float)):
             res[k] = str(v)
         elif isinstance(v, str):
-            res[k] = v.strip()
+            res[k] = _clean(v)
     # normalize category to our fixed set
     cat = res["category"].strip().lower()
     if cat and cat not in CATEGORY_SYNONYMS.values():
@@ -97,6 +113,7 @@ def _normalize(out: dict[str, str]) -> dict[str, str]:
         parts = []
         for s in re.split(r"[,;]", res["sizes"]):
             s = re.sub(r"\s+", " ", s).strip()
+            s = _clean(s)
             if s and s not in parts:
                 parts.append(s)
         res["sizes"] = ",".join(parts[:12])
