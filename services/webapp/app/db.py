@@ -141,6 +141,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE garments ADD COLUMN brand TEXT NOT NULL DEFAULT ''")
     if "sizes" not in gcols:
         conn.execute("ALTER TABLE garments ADD COLUMN sizes TEXT NOT NULL DEFAULT ''")
+    if "phash" not in gcols:
+        conn.execute("ALTER TABLE garments ADD COLUMN phash TEXT NOT NULL DEFAULT ''")
     # SQLite's ALTER TABLE only allows constant defaults (datetime('now') works in
     # CREATE TABLE but not ADD COLUMN) — add with '' then backfill existing rows.
     if "created_at" not in gcols:

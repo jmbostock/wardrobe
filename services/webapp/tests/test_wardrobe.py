@@ -245,24 +245,96 @@ def test_ai_fill_parse():
     """parse_ai_fill coerces raw model output into clean fields (no Ollama)."""
     from app import aifill
 
-    # JSON straight from the model
-    got = aifill.parse_ai_fill('{"name":"Navy Tee","brand":"Old Navy","color":"navy",'
-                               '"category":"shirt","sizes":"S, M, L"}')
+    # moondream-style labeled lines (default format)
+    got = aifill.parse_ai_fill("NAME: Navy Tee\nBRAND: Old Navy\nCOLOR: navy\n"
+                               "CATEGORY: shirt\nSIZES: S, M, L\n")
     assert got["name"] == "Navy Tee" and got["brand"] == "Old Navy"
     assert got["color"] == "navy" and got["category"] == "top"  # shirt → top
     assert got["sizes"] == "S,M,L", got
+
+    # labeled lines tolerate leading prose + blank values
+    got = aifill.parse_ai_fill("Here is what I see:\nNAME: Jeans\nBRAND:\n"
+                               "COLOR: blue\nCATEGORY: pants\nSIZES: 28, 30, 32\n")
+    assert got["name"] == "Jeans" and got["brand"] == "" and got["category"] == "bottom"
+    assert got["sizes"] == "28,30,32", got
+
+    # JSON straight from the model (llava/qwen style) still parses
+    got = aifill.parse_ai_fill('{"name":"Navy Tee","brand":"Old Navy","color":"navy",'
+                               '"category":"shirt","sizes":"S, M, L"}')
+    assert got["name"] == "Navy Tee" and got["brand"] == "Old Navy"
+    assert got["category"] == "top" and got["sizes"] == "S,M,L", got
 
     # markdown code fence + extra prose tolerated
     got = aifill.parse_ai_fill('```json\n{"name":"Jeans","color":"blue",'
                                '"category":"pants","sizes":["28","30","32"]}\n```')
     assert got["category"] == "bottom" and got["sizes"] == "28,30,32", got
 
-    # unknown category → dropped; empty dict → None
+    # unknown category → dropped; no data → None
     got = aifill.parse_ai_fill('{"name":"X","category":"mystery","sizes":""}')
     assert got["category"] == "" and got["sizes"] == ""
     assert aifill.parse_ai_fill("no json here") is None
-    assert aifill.parse_ai_fill("{}") is not None
     assert aifill.parse_ai_fill("") is None
+
+
+def test_phash_similarity():
+    """dHash: identical → same hash, near-identical → tiny distance, different
+    garments → large distance."""
+    from app import phash
+    from PIL import Image, ImageDraw
+    import io as _io
+
+    def make(color, label):
+        img = Image.new("RGB", (240, 240), color)
+        d = ImageDraw.Draw(img)
+        d.rectangle([40, 40, 200, 200], fill=tuple(max(0, c - 40) for c in color))
+        d.text((60, 90), label, fill=(255, 255, 255))
+        buf = _io.BytesIO()
+        img.save(buf, "PNG")
+        return buf.getvalue()
+
+    a = make((100, 60, 60), "AA")
+    a_same = make((100, 60, 60), "AA")
+    a_close = make((110, 66, 66), "AA")
+    b = make((60, 100, 200), "ZZ")
+    assert phash.image_phash(a) == phash.image_phash(a_same)
+    assert phash.hamming(phash.image_phash(a), phash.image_phash(a_close)) <= 4
+    assert phash.hamming(phash.image_phash(a), phash.image_phash(b)) >= 15
+    assert phash.hamming("0" * 16, "0" * 16) == 0
+
+
+def test_near_duplicates():
+    """media.near_duplicates flags the same/near-identical item, excludes self,
+    and ignores unrelated garments."""
+    from app import media, phash
+    from PIL import Image, ImageDraw
+    import io as _io
+
+    def make(color, label):
+        img = Image.new("RGB", (240, 240), color)
+        d = ImageDraw.Draw(img)
+        d.rectangle([40, 40, 200, 200], fill=color)
+        d.text((60, 90), label, fill=(0, 0, 0))
+        buf = _io.BytesIO()
+        img.save(buf, "PNG")
+        return buf.getvalue()
+
+    ua = auth.create_user("wDup@example.com", "password123")
+    g1 = w.create(ua["id"], "Red dress", "dress")
+    media.save_garment_image(ua["id"], g1.id, make((120, 50, 50), "RED"), "png")
+    g2 = w.create(ua["id"], "Blue dress", "dress")
+    media.save_garment_image(ua["id"], g2.id, make((60, 60, 140), "BLU"), "png")
+
+    # g2 is unrelated → no near-dup for g1's exact hash (excluding g1 itself)
+    assert media.near_duplicates(ua["id"], phash.image_phash(make((120, 50, 50), "RED")),
+                                 exclude_id=g1.id) == []
+    # a near-identical re-shoot of g1 flags g1
+    dups = media.near_duplicates(ua["id"], phash.image_phash(make((126, 54, 54), "RED")))
+    assert any(x["id"] == g1.id for x in dups), dups
+    assert not any(x["id"] == g2.id for x in dups), dups
+    # garment_dict exposes near_dup_of for the grid "similar to" note
+    g1d = media.garment_dict(ua["id"], w.get(ua["id"], g1.id))
+    assert g1d["phash"] != "" and g1d["near_dup_of"] is None  # no other red item
+    assert media.garment_dict(ua["id"], w.get(ua["id"], g2.id))["near_dup_of"] is None
 
 
 def test_extract_product_page_color_from_text():

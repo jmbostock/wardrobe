@@ -5,13 +5,15 @@ and the public garment dict so routers stay thin and consistent.
 """
 from __future__ import annotations
 
+import io
 from pathlib import Path
 from urllib.parse import urljoin
 
 import httpx
 from fastapi import HTTPException
+from PIL import Image, ImageOps
 
-from . import render
+from . import phash, render
 from .config import settings
 from .imglink import (
     clean_image_url,
@@ -21,11 +23,20 @@ from .imglink import (
 )
 from .store import wardrobe
 
+# iPhone photos come in as HEIC — pillow-heif adds a PIL opener so we can
+# decode (and normalize to JPEG on save) without any system libheif.
+try:
+    import pillow_heif
+
+    pillow_heif.register_heif_opener()
+except Exception:  # noqa: BLE001 — optional dep; HEIC just won't be readable
+    pass
+
 WARDROBE_DIR = Path(settings.data_dir) / "wardrobe"
 UPLOAD_DIR = Path(settings.data_dir) / "uploads"
 
 WARDROBE_CATEGORIES = {"top", "bottom", "dress", "outerwear", "footwear", "accessory"}
-IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".heic"}
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 COLOR_HEX = {
     "white": "#f2f2f2", "black": "#1a1a1a", "gray": "#8a8f98", "grey": "#8a8f98",
@@ -57,6 +68,19 @@ def validate_image(data: bytes) -> str:
     return detect_ext(data)
 
 
+def _heic_to_jpeg(data: bytes) -> bytes:
+    """Normalize a HEIC photo to JPEG so downstream (try-on, serving) is uniform."""
+    try:
+        import pillow_heif  # noqa: F401 — triggers opener registration if missing
+    except Exception:  # noqa: BLE001
+        raise HTTPException(400, "HEIC photos need pillow-heif (rebuild webapp)")
+    img = Image.open(io.BytesIO(data))
+    img = ImageOps.exif_transpose(img)
+    buf = io.BytesIO()
+    img.convert("RGB").save(buf, "JPEG", quality=90)
+    return buf.getvalue()
+
+
 def save_garment_image(user_id: int, garment_id: int, data: bytes, ext: str) -> Path:
     d = WARDROBE_DIR / str(user_id)
     d.mkdir(parents=True, exist_ok=True)
@@ -65,10 +89,45 @@ def save_garment_image(user_id: int, garment_id: int, data: bytes, ext: str) -> 
             old.unlink()
         except OSError:
             pass
+    if ext == "heic":  # normalize iPhone photos to JPEG on ingest
+        data = _heic_to_jpeg(data)
+        ext = "jpg"
     path = d / f"{garment_id}.{ext}"
     path.write_bytes(data)
-    wardrobe.update_image(user_id, garment_id, path.name)
+    # record image + perceptual hash for near-duplicate detection
+    wardrobe.update(user_id, garment_id, image_path=path.name, phash=phash.image_phash(data))
     return path
+
+
+def near_duplicates(
+    user_id: int,
+    phash_hex: str,
+    exclude_id: int | None = None,
+    threshold: int = phash.SIMILAR_THRESHOLD,
+) -> list[dict]:
+    """Existing garments for this user whose dHash is within `threshold` bits of
+    the given hash — i.e. likely the same (or nearly the same) item. Sorted by
+    closest first. Empty list = no near-duplicate."""
+    if not phash_hex:
+        return []
+    out: list[dict] = []
+    for g in wardrobe.all(user_id):
+        if not g.phash or g.id == exclude_id:
+            continue
+        d = phash.hamming(phash_hex, g.phash)
+        if d <= threshold:
+            out.append({"id": g.id, "name": g.name, "distance": d})
+    out.sort(key=lambda x: x["distance"])
+    return out
+
+
+def nearest_dup(
+    user_id: int, phash_hex: str, exclude_id: int | None = None,
+    threshold: int = phash.SIMILAR_THRESHOLD,
+) -> dict | None:
+    """Closest match only (for the wardrobe grid's "similar to X" note)."""
+    dups = near_duplicates(user_id, phash_hex, exclude_id=exclude_id, threshold=threshold)
+    return dups[0] if dups else None
 
 
 def fetch_url_bytes(url: str) -> bytes:
@@ -115,4 +174,8 @@ def fetch_product_image(url: str) -> bytes:
 def garment_dict(user_id: int, g) -> dict:
     d = g.to_dict()
     d["has_image"] = garment_image_path(user_id, g.id) is not None
+    # nearest existing garment this one is a near-duplicate of (for "similar to
+    # X" notes) — computed only when we have a phash
+    nd = nearest_dup(user_id, g.phash, exclude_id=g.id) if g.phash else None
+    d["near_dup_of"] = nd
     return d

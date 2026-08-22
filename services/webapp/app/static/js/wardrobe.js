@@ -46,6 +46,11 @@ async function loadWardrobe() {
       d.textContent = facts.join(' · ');
       meta.appendChild(d);
     }
+    if (g.near_dup_of) {
+      const n = document.createElement('div'); n.className = 'muted'; n.style.fontSize = '12px'; n.style.color = '#d4a72c';
+      n.textContent = '⚠ similar to ' + g.near_dup_of.name;
+      meta.appendChild(n);
+    }
     if (!g.owned) {
       const want = document.createElement('span'); want.className = 'badge'; want.textContent = 'to buy';
       want.style.background = '#d4a72c';
@@ -90,6 +95,9 @@ function openGarmentDetail(g) {
   if (g.has_image) {
     authImageUrl('/api/wardrobe/' + g.id + '/image').then((u) => { img.src = u; }).catch(() => {});
   }
+  $('gd-near').textContent = g.near_dup_of
+    ? '⚠ looks similar to "' + g.near_dup_of.name + '" — possible duplicate'
+    : '';
   bindRating('gd-rating', g.rating || 0);
   $('garment-detail').hidden = false;
 }
@@ -107,8 +115,9 @@ $('gd-file').addEventListener('change', async () => {
   const fd = new FormData(); fd.append('image', f);
   $('gd-status').textContent = 'uploading…';
   try {
-    await apiJson('/api/wardrobe/' + editingItem.id + '/image', { method: 'POST', body: fd });
+    const resp = await apiJson('/api/wardrobe/' + editingItem.id + '/image', { method: 'POST', body: fd });
     $('gd-status').textContent = 'photo saved'; $('gd-file').value = '';
+    if (resp.near_dup_of) toast('⚠ near-duplicate of "' + resp.near_dup_of.name + '"');
     refreshDetailImage(); loadWardrobe();
   } catch (e) { alert(e.message); }
 });
@@ -116,10 +125,11 @@ $('gd-url-btn').addEventListener('click', async () => {
   const u = $('gd-url').value.trim(); if (!u || !editingItem) return;
   $('gd-status').textContent = 'fetching…';
   try {
-    await apiJson('/api/wardrobe/' + editingItem.id + '/image-url', {
+    const resp = await apiJson('/api/wardrobe/' + editingItem.id + '/image-url', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: u }),
     });
     $('gd-status').textContent = 'photo saved'; $('gd-url').value = '';
+    if (resp.near_dup_of) toast('⚠ near-duplicate of "' + resp.near_dup_of.name + '"');
     refreshDetailImage(); loadWardrobe();
   } catch (e) { alert(e.message); }
 });
@@ -227,7 +237,10 @@ $('g-add').addEventListener('click', async () => {
     const f = $('g-file').files[0];
     if (f && !url) {
       const fd = new FormData(); fd.append('image', f);
-      await apiJson('/api/wardrobe/' + g.id + '/image', { method: 'POST', body: fd });
+      const up = await apiJson('/api/wardrobe/' + g.id + '/image', { method: 'POST', body: fd });
+      if (up.near_dup_of) toast('⚠ near-duplicate of "' + up.near_dup_of.name + '"');
+    } else if (g.near_dup_of) {
+      toast('⚠ near-duplicate of "' + g.near_dup_of.name + '"');
     }
     status.textContent = 'added "' + g.name + '"';
     $('g-name').value = ''; $('g-brand').value = ''; $('g-sizes').value = '';

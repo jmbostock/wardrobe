@@ -36,13 +36,22 @@ CATEGORY_KEYWORDS: dict[str, list[str]] = {
 
 
 def is_image_bytes(data: bytes) -> bool:
-    """True if the bytes look like a real image (PNG/JPEG/GIF/WebP)."""
+    """True if the bytes look like a real image (PNG/JPEG/GIF/WebP/HEIC)."""
     return bool(
         data[:8] == b"\x89PNG\r\n\x1a\n"
         or data[:3] == b"\xff\xd8\xff"
         or data[:6] in (b"GIF87a", b"GIF89a")
         or (data[:4] == b"RIFF" and data[8:12] == b"WEBP")
+        or _is_heic(data)
     )
+
+
+# ISO-BMFF container brands for HEIC (iPhone) — and AVIF as a bonus.
+_HEIC_BRANDS = {b"heic", b"heix", b"hevc", b"hevx", b"mif1", b"msf1", b"avif"}
+
+
+def _is_heic(data: bytes) -> bool:
+    return len(data) >= 12 and data[4:8] == b"ftyp" and data[8:12] in _HEIC_BRANDS
 
 
 def detect_ext(data: bytes) -> str:
@@ -54,6 +63,8 @@ def detect_ext(data: bytes) -> str:
         return "webp"
     if data[:6] in (b"GIF87a", b"GIF89a"):
         return "gif"
+    if _is_heic(data):
+        return "heic"
     return "png"
 
 
