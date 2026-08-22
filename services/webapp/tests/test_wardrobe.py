@@ -331,14 +331,18 @@ def test_near_duplicates():
     media.save_garment_image(ua["id"], g1.id, make((120, 50, 50), "RED"), "png")
     g2 = w.create(ua["id"], "Blue dress", "dress")
     media.save_garment_image(ua["id"], g2.id, make((60, 60, 140), "BLU"), "png")
+    # a top photographed the same way as g1 (near-identical hash) — NOT a dup
+    g3 = w.create(ua["id"], "Red top", "top")
+    media.save_garment_image(ua["id"], g3.id, make((126, 54, 54), "RED"), "png")
 
     # g2 is unrelated → no near-dup for g1's exact hash (excluding g1 itself)
     assert media.near_duplicates(ua["id"], phash.image_phash(make((120, 50, 50), "RED")),
                                  exclude_id=g1.id) == []
-    # a near-identical re-shoot of g1 flags g1
+    # a near-identical re-shoot of g1 flags g1 (same category)
     dups = media.near_duplicates(ua["id"], phash.image_phash(make((126, 54, 54), "RED")))
     assert any(x["id"] == g1.id for x in dups), dups
     assert not any(x["id"] == g2.id for x in dups), dups
+    assert not any(x["id"] == g3.id for x in dups), dups  # different category
     # garment_dict exposes near_dup_of for the grid "similar to" note
     g1d = media.garment_dict(ua["id"], w.get(ua["id"], g1.id))
     assert g1d["phash"] != "" and g1d["near_dup_of"] is None  # no other red item

@@ -104,15 +104,20 @@ def near_duplicates(
     phash_hex: str,
     exclude_id: int | None = None,
     threshold: int = phash.SIMILAR_THRESHOLD,
+    category: str | None = None,
 ) -> list[dict]:
     """Existing garments for this user whose dHash is within `threshold` bits of
     the given hash — i.e. likely the same (or nearly the same) item. Sorted by
-    closest first. Empty list = no near-duplicate."""
+    closest first. Empty list = no near-duplicate. When `category` is given,
+    only garments of that category are compared (a top vs. a pair of pants
+    photographed the same way are NOT the same item, so we don't flag them)."""
     if not phash_hex:
         return []
     out: list[dict] = []
     for g in wardrobe.all(user_id):
         if not g.phash or g.id == exclude_id:
+            continue
+        if category is not None and g.category != category:
             continue
         d = phash.hamming(phash_hex, g.phash)
         if d <= threshold:
@@ -123,10 +128,11 @@ def near_duplicates(
 
 def nearest_dup(
     user_id: int, phash_hex: str, exclude_id: int | None = None,
-    threshold: int = phash.SIMILAR_THRESHOLD,
+    threshold: int = phash.SIMILAR_THRESHOLD, category: str | None = None,
 ) -> dict | None:
     """Closest match only (for the wardrobe grid's "similar to X" note)."""
-    dups = near_duplicates(user_id, phash_hex, exclude_id=exclude_id, threshold=threshold)
+    dups = near_duplicates(user_id, phash_hex, exclude_id=exclude_id,
+                           threshold=threshold, category=category)
     return dups[0] if dups else None
 
 
@@ -175,7 +181,8 @@ def garment_dict(user_id: int, g) -> dict:
     d = g.to_dict()
     d["has_image"] = garment_image_path(user_id, g.id) is not None
     # nearest existing garment this one is a near-duplicate of (for "similar to
-    # X" notes) — computed only when we have a phash
-    nd = nearest_dup(user_id, g.phash, exclude_id=g.id) if g.phash else None
+    # X" notes) — computed only when we have a phash, and only within the same
+    # category so we don't flag a top against a pair of pants
+    nd = nearest_dup(user_id, g.phash, exclude_id=g.id, category=g.category) if g.phash else None
     d["near_dup_of"] = nd
     return d
