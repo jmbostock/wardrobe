@@ -73,8 +73,8 @@ async def do_tryon_outfit(
     upgrade path).
 
     Any render produced from a look (non-empty garment_ids) is auto-saved to
-    the Outfits page — if the same look already exists it's updated in place
-    (dedupe) rather than duplicated."""
+    the Outfits page — one new saved outfit per render (no dedupe: re-rendering
+    a look creates a fresh card so it's always obvious the render was saved)."""
     try:
         ids = [int(x) for x in json.loads(garment_ids)]
     except Exception as ex:  # noqa: BLE001
@@ -134,17 +134,9 @@ async def do_tryon_outfit(
 
 
 def _auto_save_outfit(user_id: int, ids: list[int], result_url: str, name: str) -> int:
-    """Save a rendered look to the Outfits page. Dedupes by garment set so
-    re-rendering the same look updates it instead of piling up duplicates."""
-    name = (name or "").strip()[:120]
-    for o in outfits.list(user_id):
-        if sorted(o["garment_ids"]) == sorted(ids):
-            fields = {"result_url": result_url}
-            if name and o["name"] != name:
-                fields["name"] = name
-            outfits.update(user_id, o["id"], **fields)
-            return o["id"]
-    final_name = name or ("Outfit " + time.strftime("%b %d"))
+    """Save a rendered look to the Outfits page. Every render creates a NEW
+    outfit row so the user always sees their latest look appear — no dedupe."""
+    final_name = (name or "").strip()[:120] or ("Outfit " + time.strftime("%b %d"))
     return outfits.create(user_id, final_name, ids, result_url=result_url)["id"]
 
 
