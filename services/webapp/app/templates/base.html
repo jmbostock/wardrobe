@@ -15,10 +15,9 @@
 <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png" />
 <link rel="stylesheet" href="/static/css/app.css" />
 </head>
-<body data-require-auth="{{ 'true' if active != 'auth' else 'false' }}">
+<body data-require-auth="{{ 'true' if active != 'auth' else 'false' }}" class="{{ 'auth-page' if active == 'auth' else '' }}">
 {% if active != 'auth' %}
 <header>
-  <h1>Clueless Closet</h1><span class="tag">your AI wardrobe stylist</span>
   <nav>
     <a href="/suggest" class="{{ 'active' if active == 'suggest' }}">Suggest</a>
     <a href="/tryon" class="{{ 'active' if active == 'tryon' }}">Try on</a>

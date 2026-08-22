@@ -1,8 +1,11 @@
 {% extends 'base.html' %}
 {% block title %}{{ page_title }}{% endblock %}
 {% block content %}
-<section class="card" id="auth-card" style="max-width:440px;margin:40px auto">
-  <h2>Clueless Closet</h2>
+<section class="card auth-card" id="auth-card">
+  <div class="auth-brand">
+    <h1>Clueless Closet</h1>
+    <p>created by DadaTech</p>
+  </div>
   <div class="block">
     <label>Email</label>
     <input type="email" id="auth-email" placeholder="you@example.com" autocomplete="email" class="field" />
