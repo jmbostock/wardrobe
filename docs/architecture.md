@@ -28,6 +28,11 @@
 | 12 | Ratings out of 10 on garments + saved outfits | 2026-08-21 | `rating` column on `garments` + `outfits` (additive migration); shared 10-dot tap widget in `common.js`; `PATCH /api/outfits/{id}` + `rating` on garment PATCH |
 | 13 | Try-on chat re-render + Saved-image mode | 2026-08-21 | After a render, Enter sends a note → `/api/tryon/outfit` with `base_result` re-renders from the last image. **Saved-image mode** picks a saved outfit render (no look needed); empty `garment_ids` + base = refine without re-adding garments (no duplicate files). CatVTON is garment-only, so the actual visual edit awaits a promptable model (Phase 5) |
 | 14 | PWA for iPhone home-screen | 2026-08-21 | `manifest.webmanifest` + `sw.js` (app-shell cache, API network-only, secure-context only) + PIL-generated icons + `viewport-fit=cover`/`env(safe-area-inset-*)` so standalone mode clears the notch + home indicator |
+| 15 | SVD motion clips (async, queued) | 2026-08-22 | `svd_xt.safetensors` symlinked into the comfyui image (recreate loses the symlink — weight persists). `POST /api/tryon/clip` submits → `GET /api/clips/{id}` polls; runs server-side so navigating away doesn't stop it. `clips` table tracks queued→running→done/error |
+| 16 | Outfits auto-save every render | 2026-08-22 | `POST /api/tryon/outfit` creates a NEW saved outfit per render (dedupe removed — re-rendering previously looked like "nothing saved"). Stores `person_photo_id`/`person_url` so the source photo is known |
+| 17 | Photo auto-pick driven by the GARMENT (vision) | 2026-08-22 | `GET /api/photos/best-for-garment/{id}` → `app/photopick.py` sends garment + every saved photo to Ollama `qwen2.5vl:3b` in ONE multi-image call, scored mostly on outfit type/coverage match (swimsuit garment → swimsuit-ish photo, dress → dress photo). Auto-selects the best in the Try-on dropdown; a manual pick wins. Falls back to `imageqa.suitability` (pure-PIL, category-nudged) when the model is down; vision-skipped photos filled with the heuristic |
+| 18 | Garment metadata + AI tag-read + auto-orient | 2026-08-22 | `garments.brand`/`sizes` columns; `POST /api/wardrobe/ai-fill` reads visible tags with `qwen2.5vl:3b` (moondream rejected — ignores multi-line prompts); parse-link extracts brand/sizes from product pages. Uploads are EXIF-righted + portrait-normalized (deterministic) with an optional manual/rotational correction path |
+| 19 | PWA cache discipline: bump `CACHE` per release | 2026-08-22 | `sw.js` serves static assets cache-first — without bumping `closet-v2 → v3`, phones kept serving the stale v0.12 `tryon.js` and never saw the auto-pick. **Bump `const CACHE` on every JS/CSS release.** |
 
 ## Frontend code layout (2026-08-21)
 
@@ -36,13 +41,17 @@ app/
   main.py            thin entrypoint (router includes + /health)
   deps.py            get_current_user (auth boundary)
   store.py           wardrobe/outfits singletons
-  media.py           garment-image + product-fetch helpers
+  media.py           garment-image + product-fetch + orientation helpers
+  imageqa.py         pure-PIL person/garment QA + suitability() fallback scorer
+  photopick.py       best saved photo FOR a garment (vision outfit-match + fallback)
+  aifill.py          optional AI tag-read (brand/color/category/sizes) via Ollama vision
+  svd.py / clips.py  SVD motion-clip client + async job store
   routes/            pages, auth, account, photos, wardrobe, outfits,
                      tryon, recommend, image (one router per domain)
   templates/         base.html + auth/suggest/tryon/wardrobe/outfits/account
-                     + partials/edit_modal.html (garment/outfit modes)
+                     (garment edit lives in the wardrobe detail card, not a partial)
   static/            css/app.css · js/{common,auth,suggest,tryon,wardrobe,
-                     outfits,account}.js · manifest.webmanifest · sw.js ·
+                     outfits,account}.js · manifest.webmanifest · sw.js (cache v3) ·
                      icons/ (PIL-generated)
 ```
 
