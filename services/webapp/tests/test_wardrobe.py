@@ -258,9 +258,12 @@ def test_ai_fill_parse():
     assert got["name"] == "Jeans" and got["brand"] == "" and got["category"] == "bottom"
     assert got["sizes"] == "28,30,32", got
 
-    # filler words ("Not visible" / "Blank") are treated as empty
+    # filler words ("Not visible" / "Blank" / "No visible brand name") are empty
     got = aifill.parse_ai_fill("NAME: Jeans\nBRAND: Not visible\nCOLOR: blue\n"
                                "CATEGORY: bottom\nSIZES: Blank\n")
+    assert got["brand"] == "" and got["sizes"] == "", got
+    got = aifill.parse_ai_fill("NAME: Top\nBRAND: No visible brand name\nCOLOR: navy\n"
+                               "CATEGORY: top\nSIZES: Not visible\n")
     assert got["brand"] == "" and got["sizes"] == "", got
 
     # JSON straight from the model (llava/qwen style) still parses

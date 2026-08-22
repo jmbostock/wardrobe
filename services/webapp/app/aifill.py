@@ -71,7 +71,8 @@ _FILLER = {
 def _clean(v: str) -> str:
     v = v.strip().strip('"')
     low = v.lower().strip(".")
-    if not low or low in _FILLER or low.startswith("none") or low.startswith("not "):
+    if (not low or low in _FILLER
+            or low.startswith(("none", "not ", "no visible", "no brand", "no size"))):
         return ""
     return v
 
