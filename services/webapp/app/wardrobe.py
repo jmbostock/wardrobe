@@ -65,6 +65,7 @@ class Garment:
     wear_count: int = 0
     rating: int = 0
     owned: int = 1  # 1 = own it, 0 = to buy / wishlist
+    created_at: str = ""
     image_path: str = ""
 
     def to_dict(self) -> dict[str, Any]:
@@ -206,5 +207,6 @@ class Wardrobe:
             fit=row["fit"] or "regular", last_worn=row["last_worn"],
             wear_count=row["wear_count"], rating=row["rating"] or 0,
             owned=row["owned"] if "owned" in row.keys() else 1,
+            created_at=row["created_at"] if "created_at" in row.keys() else "",
             image_path=row["image_path"] or "",
         )

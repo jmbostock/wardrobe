@@ -117,6 +117,39 @@ def test_empty_wardrobe_returns_helpful_note():
     assert res["outfit"] == {}
 
 
+def test_owned_only_excludes_wishlist_items():
+    w = wardrobe_mod.Wardrobe()
+    uid = auth.create_user("reco-own@example.com", "password123")["id"]
+    mk = lambda name, cat, **kw: w.create(uid, name, cat, **kw)  # noqa: E731
+    top_biz = mk("Business oxford", "top", warmth=2, formality="business", occasions="office")
+    top_wool = mk("Wool crewneck", "top", warmth=4, formality="smart-casual", occasions="office,date,casual")
+    overcoat = mk("Wool overcoat", "outerwear", warmth=5, waterproof=0, formality="formal", occasions="office")
+    chinos = mk("Chinos", "bottom", warmth=3, formality="business", occasions="office")
+    shoes = mk("Sneakers", "footwear", warmth=1, formality="casual", occasions="casual")
+    # mark the best-scoring candidates as to-buy (not owned)
+    w.update(uid, top_biz.id, owned=0)
+    w.update(uid, overcoat.id, owned=0)
+    out = recommend(
+        Weather(temp_c=2, feels_like_c=0),
+        "office",
+        wardrobe=w,
+        user_id=uid,
+        owned_only=True,
+    )["outfit"]
+    # owned-only must skip the to-buy oxford + overcoat
+    assert out["top"]["id"] == top_wool.id, out
+    assert out["outerwear"] is None, out  # only overcoat (to-buy) was cold enough
+    # full recommendation may still pick the to-buy overcoat
+    full = recommend(
+        Weather(temp_c=2, feels_like_c=0), "office", wardrobe=w, user_id=uid
+    )["outfit"]
+    assert full["top"] is not None
+    # nothing owned-only-excluded leaks into the owned result
+    for role in ("top", "bottom", "outerwear", "footwear"):
+        g = out.get(role)
+        assert g is None or g["owned"] == 1, f"{role} leaked a wishlist item: {g}"
+
+
 def _run_all():
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failures = 0

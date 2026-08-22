@@ -87,6 +87,27 @@ def test_owned_flag():
     assert w.get(ua["id"], g.id).owned == 1
 
 
+def test_list_wardrobe_used_count():
+    """used_count counts how many saved outfits reference each garment."""
+    from app.outfits import OutfitStore
+    from app.routes.wardrobe_routes import list_wardrobe
+
+    ua = auth.create_user("wUsed@example.com", "password123")
+    g1 = w.create(ua["id"], "Used tee", "top")
+    g2 = w.create(ua["id"], "Unused pants", "bottom")
+    outfits = OutfitStore()
+    outfits.create(ua["id"], "Outfit A", [g1.id])
+    outfits.create(ua["id"], "Outfit B", [g1.id])
+    outfits.create(ua["id"], "Outfit C", [g1.id, g2.id])
+
+    items = list_wardrobe({"id": ua["id"]})
+    by_id = {d["id"]: d for d in items}
+    assert by_id[g1.id]["used_count"] == 3, by_id[g1.id]
+    assert by_id[g2.id]["used_count"] == 1, by_id[g2.id]
+    # new garments default to created_at so "Newest" sorting has something to use
+    assert by_id[g1.id]["created_at"], by_id[g1.id]
+
+
 def test_imglink_product_gallery_preferred_over_logo():
     # og:image is a logo; product-gallery <img> alt pattern should win
     html = """

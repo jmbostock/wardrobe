@@ -19,7 +19,7 @@ from ..media import (
     save_garment_image,
     validate_image,
 )
-from ..store import wardrobe
+from ..store import outfits, wardrobe
 
 router = APIRouter()
 
@@ -50,7 +50,15 @@ class ParseLinkRequest(BaseModel):
 
 @router.get("/api/wardrobe")
 def list_wardrobe(user: dict = Depends(get_current_user)) -> list[dict]:
-    return [garment_dict(user["id"], g) for g in wardrobe.all(user["id"])]
+    items = [garment_dict(user["id"], g) for g in wardrobe.all(user["id"])]
+    # used_count = how many saved outfits reference this garment (for "most used" sort)
+    counts: dict[int, int] = {}
+    for o in outfits.list(user["id"]):
+        for gid in o["garment_ids"]:
+            counts[gid] = counts.get(gid, 0) + 1
+    for d in items:
+        d["used_count"] = counts.get(d["id"], 0)
+    return items
 
 
 @router.post("/api/wardrobe")

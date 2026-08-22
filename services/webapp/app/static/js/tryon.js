@@ -60,7 +60,8 @@ async function showSavedImagePreview() {
 async function populateLook() {
   let items = [];
   try { items = await apiJson('/api/wardrobe'); } catch (e) { /* ignore */ }
-  const withImg = items.filter((g) => g.has_image);
+  const ownedOnly = $('owned-only-look') ? $('owned-only-look').checked : false;
+  const withImg = items.filter((g) => g.has_image && (!ownedOnly || g.owned));
   for (const role of ['top', 'bottom', 'dress']) {
     const sel = document.querySelector('.look-select[data-role="' + role + '"]');
     if (!sel) continue;
@@ -70,6 +71,7 @@ async function populateLook() {
     if (prev && [...sel.options].some((o) => o.value === prev)) sel.value = prev;
   }
 }
+$('owned-only-look').addEventListener('change', populateLook);
 function applyOutfitToLook(outfit) {
   const status = $('look-status');
   if (!outfit || !Object.keys(outfit).length) { status.textContent = 'wardrobe empty — add clothes first'; return; }

@@ -24,6 +24,7 @@ class WeatherIn(BaseModel):
 class RecommendRequest(BaseModel):
     activity: str = Field("casual", description="office, date, hiking, ...")
     prompt: str | None = Field(None, description="free-form style hint")
+    owned_only: bool = Field(False, description="only recommend garments you own")
     weather: WeatherIn | None = Field(None, description="omit to auto-fetch")
 
 
@@ -49,4 +50,7 @@ def recommend_outfit(req: RecommendRequest, user: dict = Depends(get_current_use
     else:
         lat, lon = _user_coords(user)
         w = weather.fetch(lat, lon)
-    return recommender.recommend(w, req.activity, req.prompt, wardrobe=wardrobe, user_id=user["id"])
+    return recommender.recommend(
+        w, req.activity, req.prompt, wardrobe=wardrobe, user_id=user["id"],
+        owned_only=req.owned_only,
+    )

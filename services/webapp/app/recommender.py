@@ -205,9 +205,12 @@ def recommend(
     prompt: str | None = None,
     wardrobe: Wardrobe | None = None,
     user_id: int = 1,
+    owned_only: bool = False,
 ) -> dict:
     wardrobe = wardrobe or Wardrobe()
     items = wardrobe.all(user_id)
+    if owned_only:
+        items = [g for g in items if g.owned]
     formality, occasion_tags = ACTIVITY_MAP.get(
         activity.lower(), ACTIVITY_MAP["casual"]
     )
@@ -249,7 +252,7 @@ def recommend(
     def best(category: str, exclude: set[int] | None = None, require: int | None = None) -> Garment | None:
         exclude = exclude or set()
         candidates = [
-            g for g in wardrobe.all(user_id)
+            g for g in items
             if g.category == category and g.id not in exclude
             and (require is None or g.waterproof == require)
         ]
@@ -274,7 +277,7 @@ def recommend(
 
     # 5. accessory — cold -> wool/cotton (beanie/scarf); hot+sun -> sun hat; else belt
     accessory: Garment | None = None
-    accs = wardrobe.all(user_id, "accessory")
+    accs = [g for g in items if g.category == "accessory"]
     if target >= 4.0:
         cold_accs = [a for a in accs if a.material in ("wool", "cotton")]
         if cold_accs:

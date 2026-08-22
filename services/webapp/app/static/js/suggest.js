@@ -50,7 +50,7 @@ $('recommend-btn').addEventListener('click', async () => {
   try {
     const data = await apiJson('/api/recommend', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ activity: $('activity').value, prompt: $('prompt').value || null }),
+      body: JSON.stringify({ activity: $('activity').value, prompt: $('prompt').value || null, owned_only: $('owned-only').checked }),
     });
     renderOutfit(data.outfit);
     $('reasons').innerHTML = (data.reasoning || []).map((r) => `<li>${r}</li>`).join('');

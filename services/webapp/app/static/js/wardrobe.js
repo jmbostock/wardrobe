@@ -1,6 +1,7 @@
 // wardrobe page — add-garment form, grid, and the garment edit modal (with rating).
 let editingItem = null;
 let wardrobeFilter = 'all';
+let wardrobeSort = 'newest';
 
 // ---------- grid ----------
 async function loadWardrobe() {
@@ -11,6 +12,12 @@ async function loadWardrobe() {
   catch (e) { grid.innerHTML = '<p class="muted">failed to load wardrobe</p>'; return; }
   if (wardrobeFilter === 'owned') items = items.filter((g) => g.owned);
   else if (wardrobeFilter === 'want') items = items.filter((g) => !g.owned);
+  // sort: newest (date added) / top rated / most used (in saved outfits)
+  items = [...items].sort((a, b) => {
+    if (wardrobeSort === 'rating') return (b.rating || 0) - (a.rating || 0) || b.id - a.id;
+    if (wardrobeSort === 'used') return (b.used_count || 0) - (a.used_count || 0) || b.id - a.id;
+    return (b.created_at || '').localeCompare(a.created_at || '') || b.id - a.id;
+  });
   if (!items.length) {
     grid.innerHTML = '<p class="muted">no garments' + (wardrobeFilter === 'all' ? '' : ' in this filter') + ' — add one above</p>';
     return;
@@ -41,6 +48,11 @@ async function loadWardrobe() {
       r.textContent = '★ ' + g.rating + '/10';
       meta.appendChild(r);
     }
+    if (g.used_count) {
+      const u = document.createElement('div'); u.className = 'muted'; u.style.fontSize = '12px';
+      u.textContent = 'used ' + g.used_count + '×';
+      meta.appendChild(u);
+    }
     const editBtn = document.createElement('button'); editBtn.className = 'ghost'; editBtn.textContent = 'Edit';
     editBtn.addEventListener('click', () => openEdit({ kind: 'garment', ...g }));
     meta.appendChild(editBtn);
@@ -49,6 +61,7 @@ async function loadWardrobe() {
   }
 }
 $('wardrobe-filter').addEventListener('change', (e) => { wardrobeFilter = e.target.value; loadWardrobe(); });
+$('wardrobe-sort').addEventListener('change', (e) => { wardrobeSort = e.target.value; loadWardrobe(); });
 
 // ---------- edit modal (garment mode — shared partial) ----------
 function openEdit(g) {
