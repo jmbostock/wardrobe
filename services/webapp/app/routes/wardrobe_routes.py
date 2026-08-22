@@ -175,7 +175,9 @@ async def upload_garment_image(
         raise HTTPException(404, "garment not found")
     data = await image.read()
     ext = validate_image(data)
-    save_garment_image(user["id"], garment_id, data, ext)
+    # ai_orient=True: 'rotate-then-read-text' picks the right way up for the
+    # photo (the model reads the tag in the correct orientation)
+    save_garment_image(user["id"], garment_id, data, ext, ai_orient=True)
     # re-fetch so phash is set and near_dup_of reflects the saved image
     return garment_dict(user["id"], wardrobe.get(user["id"], garment_id))
 

@@ -13,7 +13,7 @@ import httpx
 from fastapi import HTTPException
 from PIL import Image, ImageOps
 
-from . import phash, render
+from . import aifill, phash, render
 from .config import settings
 from .imglink import (
     clean_image_url,
@@ -195,7 +195,12 @@ def normalize_orientation(data: bytes, rotate: int = 0) -> tuple[bytes, str]:
     return buf.getvalue(), "jpg"
 
 
-def save_garment_image(user_id: int, garment_id: int, data: bytes, ext: str) -> Path:
+def save_garment_image(user_id: int, garment_id: int, data: bytes, ext: str,
+                       ai_orient: bool = False) -> Path:
+    """Store a garment photo. Orientation is normalized on EVERY save (no
+    exceptions): EXIF righting + portrait. When `ai_orient` is set (file
+    uploads), we first run 'rotate-then-read-text' via the vision model to pick
+    the correct way up for photos with a readable tag."""
     d = WARDROBE_DIR / str(user_id)
     d.mkdir(parents=True, exist_ok=True)
     for old in d.glob(f"{garment_id}.*"):
@@ -206,7 +211,8 @@ def save_garment_image(user_id: int, garment_id: int, data: bytes, ext: str) -> 
     if ext == "heic":  # normalize iPhone photos to JPEG on ingest
         data = _heic_to_jpeg(data)
         ext = "jpg"
-    data, norm_ext = normalize_orientation(data)  # upright + portrait
+    rotate = aifill.ai_orientation(data) if ai_orient else 0
+    data, norm_ext = normalize_orientation(data, rotate=rotate)  # upright + portrait
     if norm_ext:
         ext = norm_ext
     path = d / f"{garment_id}.{ext}"

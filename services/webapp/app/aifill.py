@@ -148,6 +148,59 @@ def parse_ai_fill(text: str) -> dict[str, str] | None:
     return _normalize(data)
 
 
+_ORIENT_READ_PROMPT = (
+    "Read the text on this garment's tag. If the text is NOT perfectly readable "
+    "and right-side up, reply with exactly the single word 'none'. Otherwise "
+    "reply with only the exact text you are sure of."
+)
+
+
+def _vlm_read(image_bytes: bytes, prompt: str) -> str:
+    model = os.getenv("OLLAMA_VISION_MODEL", DEFAULT_VISION_MODEL).strip()
+    url = f"{settings.ollama_url}/api/generate"
+    payload = {
+        "model": model, "prompt": prompt,
+        "images": [base64.b64encode(image_bytes).decode("ascii")],
+        "stream": False, "options": {"temperature": 0},
+    }
+    try:
+        r = httpx.post(url, json=payload, timeout=AI_FILL_TIMEOUT)
+        return (r.json() or {}).get("response", "") if r.status_code == 200 else ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def ai_orientation(image_bytes: bytes) -> int:
+    """'Rotate first, then read the text': try the 4 orientations and ask the
+    vision model to read the tag text in each. If EXACTLY ONE orientation has
+    readable text (the others say 'none'), return that rotation in degrees
+    clockwise — that makes the garment upright. Returns 0 when ambiguous or no
+    text is found, so the caller falls back to deterministic EXIF + portrait."""
+    try:
+        import io as _io
+        from PIL import Image, ImageOps
+        img = Image.open(_io.BytesIO(image_bytes)).convert("RGB")
+        img.load()
+        img = ImageOps.exif_transpose(img)
+        img.thumbnail((1280, 1280))
+    except Exception:  # noqa: BLE001 — unreadable → caller falls back
+        return 0
+    trans = {0: None, 90: Image.Transpose.ROTATE_270,
+             180: Image.Transpose.ROTATE_180, 270: Image.Transpose.ROTATE_90}
+    reads: dict[int, str] = {}
+    for deg, t in trans.items():
+        im = img.transpose(t) if t else img
+        buf = _io.BytesIO()
+        im.save(buf, "JPEG", quality=88)
+        reads[deg] = _vlm_read(buf.getvalue(), _ORIENT_READ_PROMPT)
+    good = []
+    for deg, txt in reads.items():
+        t = (txt or "").strip().strip(".")
+        if t and t.lower() not in ("none", "no text", "n/a", "na"):
+            good.append(deg)
+    return good[0] if len(good) == 1 else 0
+
+
 def ai_fill_garment(image_bytes: bytes) -> dict[str, str] | None:
     """Read a garment photo with a vision LLM (Ollama) and return metadata.
     Returns None whenever the AI can't help (service down / no model / parse
