@@ -66,9 +66,9 @@ ul#reasons { color:var(--mut); padding-left:18px; margin:8px 0 0; }
 .progress .status { font-weight:600; }
 .progress .hint { color:var(--mut); font-size:13px; margin-top:2px; }
 .progress .timer { color:var(--mut); font-size:12px; margin-left:auto; flex:none; }
-.look-row { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+.look-row { display:flex; align-items:center; gap:10px; margin-bottom:8px; min-width:0; }
 .look-row label { width:70px; flex:none; color:var(--mut); font-size:12px; text-transform:uppercase; }
-.look-row select { flex:1; }
+.look-row select { flex:1; min-width:0; max-width:100%; min-width:0; max-width:100%; }
 
 /* ---- rating widget (0–10, tap-friendly dots) ---- */
 .rate { display:flex; gap:5px; flex-wrap:wrap; align-items:center; }
@@ -115,6 +115,9 @@ ul#reasons { color:var(--mut); padding-left:18px; margin:8px 0 0; }
   .field { min-width:0; }
   .garment { flex-wrap:wrap; }
   .garment .name { flex:1 1 100%; }
+  .look-row { flex-wrap:wrap; }
+  .look-row label { width:auto; flex:1 1 100%; }
+  .look-row select { flex:1 1 100%; min-width:0; max-width:100%; }
   .look-hint-row { align-items:stretch; }
   .look-hint-row .hint { flex:1; min-width:0; }
   .compare { grid-template-columns:1fr; }
