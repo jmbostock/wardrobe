@@ -108,6 +108,32 @@ def test_list_wardrobe_used_count():
     assert by_id[g1.id]["created_at"], by_id[g1.id]
 
 
+def test_prep_person_preserves_head_and_exif():
+    """CatVTON center-crops to 768x1024; _prep_person letterboxes first so the
+    crop is a no-op (head never cut) and EXIF-rotated photos are righted."""
+    from app import tryon
+    from PIL import Image as PILImage
+    import io as _io
+
+    # tall portrait (576x1246) — must letterbox to 3:4, not crop the top
+    buf = _io.BytesIO()
+    PILImage.new("RGB", (576, 1246), (180, 60, 60)).save(buf, "PNG")
+    out = tryon._prep_person(buf.getvalue())
+    img = PILImage.open(_io.BytesIO(out))
+    assert img.size == (768, 1024), img.size
+
+    # EXIF orientation 6 (stored landscape, meant to be portrait) — must be
+    # righted so the person isn't sideways (which distorts proportions)
+    base = PILImage.new("RGB", (1000, 500), (60, 60, 180))
+    exif = PILImage.Exif()
+    exif[0x0112] = 6
+    buf2 = _io.BytesIO()
+    base.save(buf2, "JPEG", exif=exif)
+    out2 = tryon._prep_person(buf2.getvalue())
+    img2 = PILImage.open(_io.BytesIO(out2))
+    assert img2.size == (768, 1024), img2.size
+
+
 def test_imglink_product_gallery_preferred_over_logo():
     # og:image is a logo; product-gallery <img> alt pattern should win
     html = """

@@ -13,12 +13,14 @@ The CatVTON node (release `ComfyUI-CatVTON.zip`) exposes:
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 import random
 import time
 from pathlib import Path
 
 import httpx
+from PIL import Image, ImageOps
 
 from .config import settings
 from .wardrobe import Garment
@@ -35,6 +37,12 @@ NODE_IDS = {
     "catvton": "16",
     "output": "18",
 }
+
+# CatVTON's node center-crops every person image to this canvas (768x1024, 3:4).
+# We letterbox to the same canvas first so that crop is a no-op and the head is
+# never cut off (non-3:4 / EXIF-rotated photos were losing their tops).
+CATVTON_W = 768
+CATVTON_H = 1024
 
 # garment category -> CatVTON cloth_type
 CLOTH_TYPE = {
@@ -57,6 +65,7 @@ async def run_tryon(person_bytes: bytes, garment: Garment, user_id: int) -> byte
     workflow = json.loads(WORKFLOW_PATH.read_text())
     garment_bytes = _load_garment_image(garment, user_id)
     cloth_type = CLOTH_TYPE.get(garment.category, "upper")
+    person_bytes = _prep_person(person_bytes)
 
     async with httpx.AsyncClient(timeout=30) as client:
         person_name = await _upload(client, "person.png", person_bytes)
@@ -87,6 +96,32 @@ def _load_garment_image(g: Garment, user_id: int) -> bytes:
             f"(upload or paste a product image link)"
         )
     return candidate.read_bytes()
+
+
+def _prep_person(data: bytes) -> bytes:
+    """Normalize the person photo for CatVTON so the model NEVER crops the head
+    or sees the image sideways:
+
+      * apply EXIF orientation (phone/DSLR shots store portrait as landscape +
+        a rotation tag; without this CatVTON gets a sideways person → distorted
+        proportions, the 'fatter' look)
+      * letterbox onto the 768x1024 (3:4) canvas CatVTON center-crops to, so
+        its internal resize_and_crop() becomes a no-op (padding, never cropping)
+
+    The full body (head to feet) is always preserved; gray letterbox bars fill
+    the remaining canvas just like CatVTON's own training/garment padding."""
+    img = Image.open(io.BytesIO(data))
+    img = ImageOps.exif_transpose(img).convert("RGB")
+    canvas = Image.new("RGB", (CATVTON_W, CATVTON_H), (128, 128, 128))
+    scale = min(CATVTON_W / img.width, CATVTON_H / img.height)
+    img = img.resize(
+        (max(1, round(img.width * scale)), max(1, round(img.height * scale))),
+        Image.LANCZOS,
+    )
+    canvas.paste(img, ((CATVTON_W - img.width) // 2, (CATVTON_H - img.height) // 2))
+    buf = io.BytesIO()
+    canvas.save(buf, "PNG")
+    return buf.getvalue()
 
 
 async def _upload(client: httpx.AsyncClient, name: str, data: bytes) -> str:
