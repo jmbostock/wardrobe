@@ -50,7 +50,7 @@ PROMPT = (
 
 # "PHOTO 2: 88 - swimsuit base matches" (also tolerates a bare score, or a colon
 # after the score instead of a dash, and extra prose lines before/after).
-_PHOTO_LINE = re.compile(r"^\s*PHOTO\s+(\d+)\s*:\s*(\d{1,3})\b(.*)$", re.I)
+_PHOTO_LINE = re.compile(r"^\s*PHOTO\s+(\d+)\s*:\s*(\d{1,3})\b(.*)$", re.I | re.M)
 
 
 def _thumb(data: bytes, max_px: int = 512) -> bytes:
@@ -144,7 +144,9 @@ def rank_photos_for_garment(
     unavailable. Corrupt/undecodable photos are skipped — never offered.
 
     Returns photo dicts (photos._row_to_dict fields) plus score/grade/reason/
-    method ("ai" | "heuristic")."""
+    method ("ai" | "heuristic"). Corrupt/undecodable photos are skipped, and any
+    candidate the vision model skips is filled in with the heuristic so every
+    saved photo stays ranked."""
     candidates: list[tuple[dict[str, Any], bytes]] = []
     for p in photos.list(user_id):
         try:
@@ -156,23 +158,29 @@ def rank_photos_for_garment(
     if not candidates:
         return []
 
-    method = "ai"
-    scores = _vision_rank(garment_bytes, [(p["id"], d) for p, d in candidates])
-    if scores is None:
-        method = "heuristic"
-        scores = {}
-        for p, d in candidates:
+    entries: dict[int, dict[str, Any]] = {}
+    ai_scores = _vision_rank(garment_bytes, [(p["id"], d) for p, d in candidates])
+    for p, d in candidates:
+        if ai_scores is None:
             s = imageqa.suitability(d, garment_category)
-            scores[p["id"]] = {"score": s["score"], "reason": s["reason"]}
+            entries[p["id"]] = {"score": s["score"], "reason": s["reason"], "method": "heuristic"}
+        else:
+            sc = ai_scores.get(p["id"])
+            if sc is not None:
+                entries[p["id"]] = {"score": sc["score"], "reason": sc["reason"], "method": "ai"}
+            else:
+                # vision skipped this one — keep it ranked by quality alone
+                s = imageqa.suitability(d, garment_category)
+                entries[p["id"]] = {"score": s["score"], "reason": s["reason"], "method": "heuristic"}
 
     ranked: list[dict[str, Any]] = []
     for p, _d in candidates:
-        sc = scores.get(p["id"])
+        sc = entries.get(p["id"])
         if not sc:
             continue
         ranked.append(
             {**p, "score": sc["score"], "grade": _grade(sc["score"]),
-             "reason": sc["reason"], "method": method}
+             "reason": sc["reason"], "method": sc["method"]}
         )
     ranked.sort(key=lambda r: r["score"], reverse=True)
     return ranked

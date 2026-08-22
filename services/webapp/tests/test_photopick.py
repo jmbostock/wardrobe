@@ -110,6 +110,27 @@ def test_rank_cross_user_isolation():
     assert [r["id"] for r in rb] == [pb["id"]]
 
 
+def test_rank_fills_vision_gaps():
+    from app import auth, photos as photos_mod
+
+    ua = auth.create_user("pickgap@example.com", "password123")
+    p1 = photos_mod.upload(ua["id"], _bright(768, 1024), ".png")
+    p2 = photos_mod.upload(ua["id"], _bright(640, 1536), ".png")
+    garment = _bright(400, 600)
+    # vision only ranks p2 — p1 must STILL be ranked (quality heuristic), not dropped
+    orig = _stub(photopick, lambda gb, cands: {
+        p2["id"]: {"score": 90, "reason": "outfit match"},
+    })
+    try:
+        ranked = photopick.rank_photos_for_garment(ua["id"], garment, "dress")
+    finally:
+        photopick._vision_rank = orig
+    by_id = {r["id"]: r for r in ranked}
+    assert len(ranked) == 2, ranked
+    assert by_id[p2["id"]]["method"] == "ai" and by_id[p2["id"]]["score"] == 90
+    assert by_id[p1["id"]]["method"] == "heuristic" and "score" in by_id[p1["id"]]
+
+
 def test_route_best_for_garment():
     from fastapi.testclient import TestClient
 
