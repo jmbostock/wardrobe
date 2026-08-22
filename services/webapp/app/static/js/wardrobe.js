@@ -421,7 +421,7 @@ async function loadMeta() {
   let meta;
   try { meta = await apiJson('/api/wardrobe/meta'); }
   catch (e) { return; }
-  if (meta.schemas) SIZE_SCHEMAS = meta.schemas;
+  if (meta.schemas && meta.schemas.top) SIZE_SCHEMAS = meta.schemas;  // only override with a real schema set
   const fill = (id, items) => {
     const dl = $(id); if (!dl) return;
     dl.innerHTML = '';
