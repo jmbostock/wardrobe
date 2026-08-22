@@ -405,28 +405,41 @@ def test_normalize_orientation():
     assert normalize_orientation(b"not an image") == (b"not an image", "")
 
 
-def test_rotate_garment_image():
-    """Manual 90° rotate (detail-card Rotate button) flips a portrait to
-    landscape and back, recomputing the fingerprints."""
-    from app import media
+def test_normalize_orientation_ai_rotate():
+    """An explicit AI rotation (90/180/270 clockwise) is trusted over the
+    landscape guess, so untagged sideways/upside-down photos come out right."""
+    from app.media import normalize_orientation
     from PIL import Image
     import io as _io
 
-    ua = auth.create_user("wRot@example.com", "password123")
-    g = w.create(ua["id"], "Rot me", "top")
-    buf = _io.BytesIO()
-    Image.new("RGB", (300, 200), (100, 100, 100)).save(buf, "PNG")
-    # save auto-orients landscape → portrait (300x200 → 200x300)
-    media.save_garment_image(ua["id"], g.id, buf.getvalue(), "png")
-    p1 = media.garment_image_path(ua["id"], g.id)
-    w1, h1 = Image.open(p1).size
-    assert h1 > w1, (w1, h1)
-    # manual rotate 90° clockwise → 300x200
-    media.rotate_garment_image(ua["id"], g.id)
-    p2 = media.garment_image_path(ua["id"], g.id)
-    w2, h2 = Image.open(p2).size
-    assert (w2, h2) == (h1, w1), (w2, h2)
-    assert w.get(ua["id"], g.id).phash != ""
+    def data_of(img):
+        buf = _io.BytesIO()
+        img.save(buf, "PNG")
+        return buf.getvalue()
+
+    land = Image.new("RGB", (1200, 800), (120, 120, 120))
+    port = Image.new("RGB", (800, 1200), (120, 120, 120))
+
+    # AI: rotate 270 clockwise on a landscape → portrait
+    d, e = normalize_orientation(data_of(land), rotate=270)
+    assert e == "jpg"
+    w, h = Image.open(_io.BytesIO(d)).size
+    assert h > w, (w, h)
+
+    # AI: rotate 180 on a portrait → still portrait dimensions (flipped in place)
+    d, e = normalize_orientation(data_of(port), rotate=180)
+    w, h = Image.open(_io.BytesIO(d)).size
+    assert w == 800 and h == 1200, (w, h)
+
+    # AI: rotate 90 clockwise on a portrait → landscape (AI is trusted)
+    d, e = normalize_orientation(data_of(port), rotate=90)
+    w, h = Image.open(_io.BytesIO(d)).size
+    assert w > h, (w, h)
+
+    # invalid rotate value is ignored → falls back to deterministic behaviour
+    d, e = normalize_orientation(data_of(land), rotate=45)
+    w, h = Image.open(_io.BytesIO(d)).size
+    assert h > w, (w, h)  # landscape → portrait default
 
 
 def test_normalize_color():

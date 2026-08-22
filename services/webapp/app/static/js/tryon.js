@@ -261,29 +261,37 @@ document.querySelectorAll('.look-select').forEach((s) => s.addEventListener('cha
   autoPickBestPhoto();
 }));
 
-// ---------- auto-pick the best saved photo for the current look ----------
-// Each saved photo is EXIF-aware scored server-side for the look's garment
-// category; the best one is auto-selected (a manual pick wins), dropdown
-// options show scores, and a hint explains the pick.
-function lookCategory() {
-  const v = (role) => document.querySelector('.look-select[data-role="' + role + '"]')?.value || '';
-  return v('dress') ? 'dress' : v('bottom') ? 'bottom' : v('top') ? 'top' : '';
+// ---------- auto-pick the best saved photo for the garment being tried on ----------
+// The best photo is chosen by OUTFIT MATCH with the specific garment: a swimsuit
+// garment wants a swimsuit-ish saved photo, a dress wants a dress photo, etc.
+// Server-side the vision model judges it (pure-PIL heuristic if the model is
+// down). The picked photo is what generates the try-on. A manual pick in the
+// dropdown wins and stops auto-overriding.
+function primaryGarmentId() {
+  const dress = document.querySelector('.look-select[data-role="dress"]')?.value;
+  if (dress) return Number(dress);              // a dress defines the whole outfit
+  const ids = currentLookIds();
+  return ids.length ? ids[0] : null;            // first garment applied in the chain
 }
 async function autoPickBestPhoto() {
   const sel = $('saved-photo');
+  const hint = $('auto-pick-hint');
   if (!sel) return;
   const src = document.querySelector('input[name=psrc]:checked')?.value || 'saved';
-  if (src !== 'saved') return;  // only relevant when the base is a saved photo
-  const category = lookCategory();
-  let ranked = [];
-  try {
-    const q = category ? '?category=' + encodeURIComponent(category) : '';
-    ranked = (await apiJson('/api/photos/suitability' + q)).ranked || [];
-  } catch (e) { ranked = []; }
+  if (src !== 'saved') return;                  // only relevant when the base is a saved photo
+  const gid = primaryGarmentId();
+  if (!gid) { hint.hidden = true; return; }     // no garment picked yet
+  if (!manualPhotoPick) {
+    hint.hidden = false;
+    hint.textContent = '✨ picking the best saved photo for this garment…';
+  }
+  let res = null;
+  try { res = await apiJson('/api/photos/best-for-garment/' + gid); } catch (e) { res = null; }
+  const ranked = (res && res.ranked) || [];
   const best = ranked[0] || null;
   // Re-label every option with its score; mark the best pick.
   for (const opt of sel.options) {
-    if (!opt.value) continue;  // placeholder ("no saved photos …")
+    if (!opt.value) continue;                   // placeholder ("no saved photos …")
     const p = ranked.find((r) => String(r.id) === opt.value);
     if (!p) continue;
     const star = p.is_default ? '★ ' : '';
@@ -291,18 +299,14 @@ async function autoPickBestPhoto() {
     const bestTag = best && p.id === best.id ? ' ✓best' : '';
     opt.textContent = `${star}${label} (${p.score})${bestTag}`;
   }
-  const hint = $('auto-pick-hint');
-  if (best && !manualPhotoPick) {
-    const prev = sel.value;
-    sel.value = String(best.id);
-    if (sel.value !== prev) checkPersonImage();  // programmatic set doesn't fire change
-    hint.hidden = false;
-    hint.textContent = '✨ Auto-picked best saved photo for this look — ' +
-      best.grade + ' (' + best.score + '/100)';
-    if (best.reason) hint.textContent += ' — ' + best.reason;
-  } else {
-    hint.hidden = true;
-  }
+  if (!best || manualPhotoPick) { hint.hidden = true; return; }
+  const prev = sel.value;
+  sel.value = String(best.id);
+  if (sel.value !== prev) checkPersonImage();   // programmatic set doesn't fire change
+  hint.hidden = false;
+  hint.textContent = '✨ Using the best saved photo to try on ' +
+    (res.garment_name || 'this garment') + ' — ' + best.grade + ' (' + best.score + '/100)';
+  if (best.reason) hint.textContent += ' — ' + best.reason;
 }
 
 async function loadSavedPhotos() {

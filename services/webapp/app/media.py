@@ -147,17 +147,25 @@ def _heic_to_jpeg(data: bytes) -> bytes:
     return buf.getvalue()
 
 
-def normalize_orientation(data: bytes) -> tuple[bytes, str]:
+# clockwise degrees -> PIL transpose op (used for AI-determined orientation)
+_ROTATE_CW = {
+    90: Image.Transpose.ROTATE_270,
+    180: Image.Transpose.ROTATE_180,
+    270: Image.Transpose.ROTATE_90,
+}
+
+
+def normalize_orientation(data: bytes, rotate: int = 0) -> tuple[bytes, str]:
     """Right-side-up + portrait (vertical) for consistent display.
 
-    Applies EXIF orientation (fixes sideways / upside-down phone photos) and
-    rotates landscape shots to portrait so every wardrobe photo hangs the same
-    way in the 3:4 grid. Returns (normalized bytes, new ext) or (data, '') when
-    nothing needed changing / the image can't be decoded (caller keeps it).
+    Pipeline (deterministic unless an AI rotation is supplied):
+      1. apply EXIF orientation (fixes sideways / upside-down phone photos)
+      2. if `rotate` (90/180/270 clockwise, from the AI tag-reader) is given,
+         trust it — it tells us which way is up for images with no metadata
+      3. otherwise, rotate landscape shots to portrait (counter-clockwise)
 
-    Note: for an untagged landscape shot, EXIF can't tell which rotation is
-    "up" — we default to counter-clockwise; the detail card's Rotate button
-    flips any that come out upside down."""
+    Returns (normalized bytes, new ext) or (data, '') when nothing needed
+    changing / the image can't be decoded (caller keeps it)."""
     try:
         img = Image.open(io.BytesIO(data))
         img.load()
@@ -170,7 +178,11 @@ def normalize_orientation(data: bytes) -> tuple[bytes, str]:
             changed = True
     except Exception:  # noqa: BLE001 — no/odd EXIF → treat as upright
         pass
-    if img.width > img.height:
+    if rotate in _ROTATE_CW:
+        # AI-determined direction takes precedence over the landscape guess
+        img = img.transpose(_ROTATE_CW[rotate])
+        changed = True
+    elif img.width > img.height:
         img = img.transpose(Image.Transpose.ROTATE_90)  # landscape → portrait
         changed = True
     if not changed:
@@ -183,7 +195,7 @@ def normalize_orientation(data: bytes) -> tuple[bytes, str]:
     return buf.getvalue(), "jpg"
 
 
-def save_garment_image(user_id: int, garment_id: int, data: bytes, ext: str) -> Path:
+def save_garment_image(user_id: int, garment_id: int, data: bytes, ext: str, rotate: int = 0) -> Path:
     d = WARDROBE_DIR / str(user_id)
     d.mkdir(parents=True, exist_ok=True)
     for old in d.glob(f"{garment_id}.*"):
@@ -194,42 +206,12 @@ def save_garment_image(user_id: int, garment_id: int, data: bytes, ext: str) -> 
     if ext == "heic":  # normalize iPhone photos to JPEG on ingest
         data = _heic_to_jpeg(data)
         ext = "jpg"
-    data, norm_ext = normalize_orientation(data)  # upright + portrait
+    data, norm_ext = normalize_orientation(data, rotate=rotate)  # upright + portrait
     if norm_ext:
         ext = norm_ext
     path = d / f"{garment_id}.{ext}"
     path.write_bytes(data)
     # record image + perceptual hash + color fingerprint for near-dup detection
-    wardrobe.update(user_id, garment_id, image_path=path.name,
-                    phash=phash.image_phash(data), color_sig=phash.image_color_class(data))
-    return path
-
-
-def rotate_garment_image(user_id: int, garment_id: int) -> Path | None:
-    """Rotate the stored garment image 90° clockwise (manual orientation fix);
-    recomputes fingerprints. Returns the new path, or None if no image."""
-    path = garment_image_path(user_id, garment_id)
-    if path is None:
-        return None
-    img = Image.open(path)
-    img.load()
-    img = img.transpose(Image.Transpose.ROTATE_270)  # clockwise
-    buf = io.BytesIO()
-    if img.mode in ("RGBA", "LA", "P"):
-        img.convert("RGBA").save(buf, "PNG")
-        ext = "png"
-    else:
-        img.convert("RGB").save(buf, "JPEG", quality=88)
-        ext = "jpg"
-    data = buf.getvalue()
-    d = WARDROBE_DIR / str(user_id)
-    for old in d.glob(f"{garment_id}.*"):
-        try:
-            old.unlink()
-        except OSError:
-            pass
-    path = d / f"{garment_id}.{ext}"
-    path.write_bytes(data)
     wardrobe.update(user_id, garment_id, image_path=path.name,
                     phash=phash.image_phash(data), color_sig=phash.image_color_class(data))
     return path

@@ -222,16 +222,6 @@ function refreshDetailImage() {
 $('gd-close').addEventListener('click', closeGarmentDetail);
 $('garment-detail').addEventListener('click', (e) => { if (e.target === $('garment-detail')) closeGarmentDetail(); });
 $('gd-upload').addEventListener('click', () => $('gd-file').click());
-$('gd-rotate').addEventListener('click', async () => {
-  if (!editingItem) return;
-  $('gd-status').textContent = 'rotating…';
-  try {
-    const resp = await apiJson('/api/wardrobe/' + editingItem.id + '/rotate', { method: 'POST' });
-    $('gd-status').textContent = 'rotated';
-    refreshDetailImage(); loadWardrobe();
-    if (resp.near_dup_of) toast('⚠ near-duplicate of "' + resp.near_dup_of.name + '"');
-  } catch (e) { $('gd-status').textContent = e.message; }
-});
 $('gd-file').addEventListener('change', async () => {
   const f = $('gd-file').files[0]; if (!f || !editingItem) return;
   const fd = new FormData(); fd.append('image', f);
@@ -286,6 +276,7 @@ $('gd-delete').addEventListener('click', async () => {
 // ---------- add garment form ----------
 let pickedImage = null;
 let previewImages = [];
+let pendingRotate = 0;   // AI-determined clockwise rotation for the picked file
 
 $('g-fetch').addEventListener('click', async () => {
   const status = $('g-status');
@@ -361,6 +352,7 @@ $('g-add').addEventListener('click', async () => {
     const f = $('g-file').files[0];
     if (f && !url) {
       const fd = new FormData(); fd.append('image', f);
+      fd.append('rotate', String(pendingRotate || 0));
       const up = await apiJson('/api/wardrobe/' + g.id + '/image', { method: 'POST', body: fd });
       if (up.near_dup_of) toast('⚠ near-duplicate of "' + up.near_dup_of.name + '"');
     } else if (g.near_dup_of) {
@@ -371,7 +363,7 @@ $('g-add').addEventListener('click', async () => {
     renderSizeInputs('g-sizes-wrap', $('g-category').value, '');
     $('g-color').value = ''; setSwatch('g-color', 'g-color-swatch');
     $('g-url').value = ''; $('g-file').value = '';
-    pickedImage = null; previewImages = [];
+    pickedImage = null; previewImages = []; pendingRotate = 0;
     $('g-preview').hidden = true; $('g-preview').innerHTML = '';
     loadWardrobe();
   } catch (e) { status.textContent = e.message; }
@@ -383,7 +375,7 @@ $('g-clear').addEventListener('click', () => {
   $('g-url').value = ''; $('g-file').value = '';
   $('g-category').selectedIndex = 0;
   renderSizeInputs('g-sizes-wrap', $('g-category').value, '');
-  pickedImage = null; previewImages = [];
+  pickedImage = null; previewImages = []; pendingRotate = 0;
   $('g-preview').hidden = true; $('g-preview').innerHTML = '';
   $('g-status').textContent = 'form cleared — paste a new link or add manually';
 });
@@ -403,7 +395,9 @@ $('g-file').addEventListener('change', async () => {
   let res;
   try {
     res = await apiJson('/api/wardrobe/ai-fill', { method: 'POST', body: fd });
+    pendingRotate = (res && res.rotate) || 0;
   } catch (e) {
+    pendingRotate = 0;
     status.textContent = 'AI unavailable — fill the fields by hand'; return;
   }
   if (!res.available) { status.textContent = res.error || 'AI unavailable — fill the fields by hand'; return; }

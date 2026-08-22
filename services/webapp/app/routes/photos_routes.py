@@ -7,8 +7,10 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from .. import photos
+from .. import photopick, photos
 from ..deps import get_current_user
+from ..media import garment_image_path
+from ..store import wardrobe
 
 router = APIRouter()
 
@@ -22,17 +24,27 @@ def list_photos(user: dict = Depends(get_current_user)) -> list[dict]:
     return photos.list(user["id"])
 
 
-@router.get("/api/photos/suitability")
-def photo_suitability(
-    category: str | None = None, user: dict = Depends(get_current_user)
+@router.get("/api/photos/best-for-garment/{garment_id}")
+def best_photo_for_garment(
+    garment_id: int, user: dict = Depends(get_current_user)
 ) -> dict:
-    """Rank the user's saved person photos by try-on suitability (best first),
-    with an optional garment-category nudge (top/bottom/dress) so the frontend
-    can auto-pick the best base photo for a look/swap."""
-    ranked = photos.suitability(user["id"], category)
+    """Pick the best saved person photo as the try-on base for a SPECIFIC
+    garment. Driven by OUTFIT MATCH (vision LLM: a swimsuit garment wants a
+    swimsuit-ish photo, a dress wants a dress photo, etc.) with a pure-PIL
+    fallback when the vision model is down. Returns best + full ranked list
+    (best-first), each entry carrying score/grade/reason/method."""
+    g = wardrobe.get(user["id"], garment_id)
+    if g is None:
+        raise HTTPException(404, f"garment {garment_id} not found in your wardrobe")
+    path = garment_image_path(user["id"], garment_id)
+    if path is None:
+        raise HTTPException(404, "no image for this garment")
+    ranked = photopick.rank_photos_for_garment(user["id"], path.read_bytes(), g.category)
     best = ranked[0] if ranked else None
     return {
-        "category": category or "",
+        "garment_id": garment_id,
+        "garment_name": g.name,
+        "method": best["method"] if best else "none",
         "best_id": best["id"] if best else None,
         "best": best,
         "ranked": ranked,

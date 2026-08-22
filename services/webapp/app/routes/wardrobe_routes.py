@@ -18,7 +18,6 @@ from ..media import (
     garment_dict,
     garment_image_path,
     normalize_color,
-    rotate_garment_image as _rotate_stored_image,
     save_garment_image,
     validate_image,
 )
@@ -147,20 +146,6 @@ def parse_garment_link(req: ParseLinkRequest, user: dict = Depends(get_current_u
     return info
 
 
-@router.post("/api/wardrobe/{garment_id}/rotate")
-def rotate_garment(
-    garment_id: int, user: dict = Depends(get_current_user)
-) -> dict:
-    """Rotate a garment's stored photo 90° clockwise (manual orientation fix
-    for photos the auto-orientation got upside down)."""
-    g = wardrobe.get(user["id"], garment_id)
-    if g is None:
-        raise HTTPException(404, "garment not found")
-    if _rotate_stored_image(user["id"], garment_id) is None:
-        raise HTTPException(404, "no image for this garment")
-    return garment_dict(user["id"], wardrobe.get(user["id"], garment_id))
-
-
 @router.post("/api/wardrobe/ai-fill")
 async def ai_fill(
     image: UploadFile = File(...), user: dict = Depends(get_current_user)
@@ -171,25 +156,30 @@ async def ai_fill(
     data = await image.read()
     validate_image(data)  # 400 if not a real image
     fields = aifill.ai_fill_garment(data)
+    rotate = aifill.ai_rotate(data)
     if fields is None:
-        return {"available": False, "fields": None, "error": "AI not available (Ollama/vision model down) — fill manually."}
+        return {"available": False, "fields": None, "rotate": rotate,
+                "error": "AI not available (Ollama/vision model down) — fill manually."}
     if fields.get("color"):
         fields["color"] = normalize_color(fields["color"])
-    return {"available": True, "fields": fields, "error": None}
+    return {"available": True, "fields": fields, "rotate": rotate, "error": None}
 
 
 @router.post("/api/wardrobe/{garment_id}/image")
 async def upload_garment_image(
     garment_id: int,
     image: UploadFile = File(...),
+    rotate: int = Form(0),
     user: dict = Depends(get_current_user),
 ) -> dict:
+    """Upload a garment photo. `rotate` (90/180/270, from the AI tag-reader) is
+    applied automatically so the stored image is upright and portrait."""
     g = wardrobe.get(user["id"], garment_id)
     if g is None:
         raise HTTPException(404, "garment not found")
     data = await image.read()
     ext = validate_image(data)
-    save_garment_image(user["id"], garment_id, data, ext)
+    save_garment_image(user["id"], garment_id, data, ext, rotate=rotate)
     # re-fetch so phash is set and near_dup_of reflects the saved image
     return garment_dict(user["id"], wardrobe.get(user["id"], garment_id))
 
