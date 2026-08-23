@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from ..deps import get_current_user
+from .. import interactions
 from ..media import garment_dict
 from ..store import outfits, wardrobe
 
@@ -29,7 +30,7 @@ def list_outfits(user: dict = Depends(get_current_user)) -> list[dict]:
         d = dict(o)
         gs = []
         for gid in o["garment_ids"]:
-            g = wardrobe.get(user["id"], gid)
+            g = wardrobe.get_visible(user["id"], gid)  # family-shared items expand too
             if g:
                 gs.append(garment_dict(user["id"], g))
         d["garments"] = gs
@@ -40,10 +41,11 @@ def list_outfits(user: dict = Depends(get_current_user)) -> list[dict]:
 @router.post("/api/outfits")
 def save_outfit(req: OutfitSave, user: dict = Depends(get_current_user)) -> dict:
     for gid in req.garment_ids:
-        if wardrobe.get(user["id"], gid) is None:
+        if wardrobe.get_visible(user["id"], gid) is None:
             raise HTTPException(404, f"garment {gid} not in your wardrobe")
     name = (req.name or "").strip()[:120] or "Saved outfit"
     result_url = (req.result_url or "").strip()[:200]
+    interactions.log_many(user["id"], req.garment_ids, "saved", {"name": name})
     return outfits.create(user["id"], name, req.garment_ids, result_url=result_url)
 
 
@@ -63,6 +65,9 @@ def update_outfit(
         fields["name"] = name
     if req.rating is not None:
         fields["rating"] = req.rating
+        kind = "rated_up" if req.rating >= 7 else ("rated_down" if 1 <= req.rating <= 3 else None)
+        if kind:
+            interactions.log_many(user["id"], o["garment_ids"], kind, {"rating": req.rating})
     if fields:
         outfits.update(user["id"], outfit_id, **fields)
     return outfits.get(user["id"], outfit_id)

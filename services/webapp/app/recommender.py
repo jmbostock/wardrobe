@@ -18,6 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .wardrobe import Garment, Wardrobe
+from . import interactions, sharing
 
 FORMALITY_ORDER = ["casual", "smart-casual", "business", "formal"]
 
@@ -212,6 +213,11 @@ def recommend(
     items = wardrobe.all(user_id)
     if owned_only:
         items = [g for g in items if g.owned]
+    # a shared family garment the viewer has marked "doesn't fit" is never suggested
+    items = [
+        g for g in items
+        if not (g.shared and sharing.state(user_id, g.id).get("fit_ok") == 0)
+    ]
     formality, occasion_tags = ACTIVITY_MAP.get(
         activity.lower(), ACTIVITY_MAP["casual"]
     )
@@ -293,14 +299,18 @@ def recommend(
     def ser(g: Garment | None) -> dict | None:
         return g.to_dict() if g else None
 
+    outfit = {
+        "top": ser(_top),
+        "bottom": ser(bottom),
+        "outerwear": ser(outerwear),
+        "footwear": ser(footwear),
+        "accessories": [ser(a) for a in [accessory] if a],
+    }
+    # log "shown" interactions so the engine can learn from recommendations
+    interactions.log_outfit_shown(user_id, outfit, {"activity": activity, "prompt": prompt})
+
     return {
-        "outfit": {
-            "top": ser(_top),
-            "bottom": ser(bottom),
-            "outerwear": ser(outerwear),
-            "footwear": ser(footwear),
-            "accessories": [ser(a) for a in [accessory] if a],
-        },
+        "outfit": outfit,
         "reasoning": _build_reasoning(
             w, target, formality, precipitating, _top, bottom, outerwear, prompt
         ),

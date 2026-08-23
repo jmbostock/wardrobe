@@ -87,6 +87,7 @@
     <div class="body">
     <img id="gd-img" class="full" alt="" />
     <div class="muted" id="gd-near" style="margin-top:-8px"></div>
+    <div id="gd-editor">
     <div class="block" style="margin-top:18px">
       <label>Name</label>
       <input type="text" id="gd-name" class="field" placeholder="garment name" />
@@ -125,6 +126,11 @@
       <label style="display:flex;gap:8px;align-items:center;text-transform:none"><input type="checkbox" id="gd-owned" /> I own this</label>
       <span class="muted">Untick if it's on your wishlist / to buy.</span>
     </div>
+    <div class="block" id="gd-share-block" hidden>
+      <label>Family sharing</label>
+      <label style="display:flex;gap:8px;align-items:center;text-transform:none"><input type="checkbox" id="gd-shared" /> Shared to Family</label>
+      <span class="muted">Everyone in the family group can see and try this on.</span>
+    </div>
     <div class="block">
       <label>Rating <span class="muted">(out of 10)</span></label>
       <div class="rate" id="gd-rating"></div>
@@ -134,6 +140,17 @@
       <button id="gd-save">Save</button>
       <button id="gd-delete" class="danger">Delete</button>
       <span class="muted" id="gd-status"></span>
+    </div>
+    </div><!-- /gd-editor -->
+    <div class="block" id="gd-fit-block" hidden>
+      <label>Does it fit you?</label>
+      <div class="row">
+        <button id="gd-fit-yes" class="ghost">Fits me ✓</button>
+        <button id="gd-fit-no" class="ghost">Doesn't fit ✗</button>
+        <button id="gd-fit-unsure" class="ghost">Not sure</button>
+        <span class="muted" id="gd-fit-status"></span>
+      </div>
+      <span class="muted">Shared family clothes: mark the ones that don't fit so they're never suggested to you.</span>
     </div>
     </div>
   </div>

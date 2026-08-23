@@ -80,8 +80,10 @@ async def run_tryon(person_bytes: bytes, garment: Garment, user_id: int) -> byte
 
 def _load_garment_image(g: Garment, user_id: int) -> bytes:
     """Resolve the garment image file (any extension) — uses the recorded
-    image_path if present, else globs data/wardrobe/<uid>/<gid>.*."""
-    d = Path(settings.data_dir) / "wardrobe" / str(user_id)
+    image_path if present, else globs data/wardrobe/<owner>/<gid>.*. Images
+    live under the OWNER's dir, so g.user_id is used (the `user_id` arg is the
+    person trying it on — kept for call-site clarity)."""
+    d = Path(settings.data_dir) / "wardrobe" / str(g.user_id)
     candidate: Path | None = None
     if g.image_path:
         p = d / g.image_path

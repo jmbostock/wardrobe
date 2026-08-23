@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from .. import aifill, imglink, render
+from .. import aifill, imglink, interactions, render, sharing
 from ..deps import get_current_user
 from ..media import (
     COLOR_HEX,
@@ -67,6 +67,8 @@ def list_wardrobe(user: dict = Depends(get_current_user)) -> list[dict]:
             counts[gid] = counts.get(gid, 0) + 1
     for d in items:
         d["used_count"] = counts.get(d["id"], 0)
+        d["is_owner"] = d.get("user_id") == user["id"]
+        d["fit_ok"] = sharing.state(user["id"], d["id"]).get("fit_ok")
     return items
 
 
@@ -212,10 +214,11 @@ def garment_image_from_url(
 
 @router.get("/api/wardrobe/{garment_id}/image")
 def garment_image(garment_id: int, user: dict = Depends(get_current_user)) -> FileResponse:
-    g = wardrobe.get(user["id"], garment_id)
+    # get_visible: family viewers can see images of garments shared to them
+    g = wardrobe.get_visible(user["id"], garment_id)
     if g is None:
         raise HTTPException(404, "garment not found")
-    path = garment_image_path(user["id"], garment_id)
+    path = garment_image_path(g.user_id, garment_id)  # images live under the owner's dir
     if path is None:
         raise HTTPException(404, "no image for this garment")
     media = {
@@ -244,6 +247,50 @@ def rotate_garment_image(garment_id: int, user: dict = Depends(get_current_user)
     ext = norm_ext or path.suffix.lower().lstrip(".")
     save_garment_image(user["id"], garment_id, data, ext)
     return garment_dict(user["id"], wardrobe.get(user["id"], garment_id))
+
+
+class ShareRequest(BaseModel):
+    shared: bool = True
+
+
+class FitRequest(BaseModel):
+    fit_ok: bool | None = None  # None = unknown / clear
+
+
+class FeedbackRequest(BaseModel):
+    kind: str  # liked | disliked
+
+
+@router.post("/api/wardrobe/{garment_id}/share")
+def share_garment(garment_id: int, req: ShareRequest, user: dict = Depends(get_current_user)) -> dict:
+    """Owner-only: mark a garment shared to Family (or private again)."""
+    g = wardrobe.get(user["id"], garment_id)  # owner-only on purpose
+    if g is None:
+        raise HTTPException(404, "garment not found")
+    sharing.set_shared(user["id"], garment_id, req.shared)
+    return {"ok": True, "shared": req.shared}
+
+
+@router.post("/api/wardrobe/{garment_id}/fit")
+def set_garment_fit(garment_id: int, req: FitRequest, user: dict = Depends(get_current_user)) -> dict:
+    """Viewer-scoped: record whether this garment fits the user (shared rotation)."""
+    g = wardrobe.get_visible(user["id"], garment_id)
+    if g is None:
+        raise HTTPException(404, "garment not found")
+    sharing.set_fit(user["id"], garment_id, req.fit_ok)
+    return {"ok": True, "fit_ok": req.fit_ok}
+
+
+@router.post("/api/wardrobe/{garment_id}/feedback")
+def garment_feedback(garment_id: int, req: FeedbackRequest, user: dict = Depends(get_current_user)) -> dict:
+    """Explicit like/dislike on a suggested garment (learning signal)."""
+    if req.kind not in ("liked", "disliked"):
+        raise HTTPException(400, "kind must be 'liked' or 'disliked'")
+    g = wardrobe.get_visible(user["id"], garment_id)
+    if g is None:
+        raise HTTPException(404, "garment not found")
+    interactions.log(user["id"], garment_id, req.kind)
+    return {"ok": True}
 
 
 @router.patch("/api/wardrobe/{garment_id}")
@@ -275,6 +322,10 @@ def update_garment(
         fields["sizes"] = req.sizes.strip()[:200]
     if req.rating is not None:
         fields["rating"] = req.rating
+        if req.rating >= 7:
+            interactions.log(user["id"], garment_id, "rated_up", {"rating": req.rating})
+        elif 1 <= req.rating <= 3:
+            interactions.log(user["id"], garment_id, "rated_down", {"rating": req.rating})
     if req.owned is not None:
         fields["owned"] = 1 if req.owned else 0
     wardrobe.update(user["id"], garment_id, **fields)

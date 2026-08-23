@@ -20,7 +20,7 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from . import db
+from . import db, sharing
 
 ITERATIONS = 200_000
 SESSION_TTL_DAYS = int(os.getenv("SESSION_TTL_DAYS", "30"))
@@ -74,6 +74,7 @@ def create_user(email: str, password: str) -> dict[str, Any]:
             raise AuthError("email already registered") from e
         conn.commit()
         user_id = cur.lastrowid
+    sharing.ensure_family(user_id)  # every user is a member of the Family group
     # NOTE: no seed wardrobe — users start empty and add clothes in the
     # Wardrobe tab (generic seed was removed 2026-08-21).
     return get_user(user_id)  # type: ignore[return-value]
@@ -90,12 +91,14 @@ def _json_col(value: str | None) -> dict:
 
 
 def public_user(user: dict[str, Any]) -> dict[str, Any]:
-    """User dict to send to the browser — includes the raw `profile` bio AND the
-    computed `derived_profile`. The derived schema is simple and harmless, so it
-    goes out everywhere a user dict is returned (account, auth/me, login, ...),
-    and is also fed to Cher as a personalization signal server-side.
+    """User dict safe to send to the browser — includes the raw `profile` bio
+    but drops the computed `derived_profile`. The derived profile is server-side
+    only (stylist/recommender input); per user request it is tracked but never
+    shown in the UI.
     """
-    return dict(user)
+    u = dict(user)
+    u.pop("derived_profile", None)
+    return u
 
 def get_user(user_id: int) -> dict[str, Any] | None:
     conn = db.init()
@@ -121,6 +124,7 @@ def authenticate(email: str, password: str) -> dict[str, Any] | None:
         ).fetchone()
     if row is None or not _verify_password(password, row["password_salt"], row["password_hash"]):
         return None
+    sharing.ensure_family(row["id"])  # keep returning users in the Family group
     return {
         "id": row["id"], "email": row["email"],
         "lat": row["lat"], "lon": row["lon"], "created_at": row["created_at"],

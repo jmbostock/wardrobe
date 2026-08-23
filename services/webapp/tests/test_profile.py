@@ -75,7 +75,7 @@ def test_derive_profile():
     assert d["version"] == 1
 
 
-def test_api_profile_save_and_exposed():
+def test_api_profile_save_and_hidden():
     c = TestClient(app)
     try:
         auth.create_user("pf@example.com", "password123")
@@ -95,21 +95,19 @@ def test_api_profile_save_and_exposed():
     assert r.status_code == 200, r.text
     assert r.json()["profile"]["warmth_bias"] == "1"
 
-    # derived profile persisted server-side (also available to stylist/recommender)
+    # derived profile persisted server-side (available to stylist/recommender)
     uid = auth.get_user_by_token(tok)["id"]
     derived = profile.load_derived(uid)
     assert derived["warmth_bias"] == 1
     assert derived["guardrails"] == ["no_shorts", "no_patterns"]
 
-    # ...and exposed everywhere a user/account dict is returned
+    # ...but hidden from every client-facing response (not top-level, not in user)
     for path in ("/api/account", "/api/auth/me"):
         body = c.get(path, headers=h).json()
-        assert "derived_profile" in body.get("user", {}), f"{path} user"
-        assert body["user"]["derived_profile"]["warmth_bias"] == 1
-    # /api/account also exposes it at top level alongside the bio
+        assert "derived_profile" not in body, path
+        assert "derived_profile" not in body.get("user", {}), f"{path} user"
+    # /api/account still returns the editable bio
     acc = c.get("/api/account", headers=h).json()
-    assert acc["derived_profile"]["warmth_bias"] == 1
-    assert acc["derived_profile"]["guardrails"] == ["no_shorts", "no_patterns"]
     assert acc["profile"]["sex"] == "f"
 
 

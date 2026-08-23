@@ -60,6 +60,11 @@ async function loadWardrobe() {
       want.style.background = '#d4a72c';
       meta.appendChild(want);
     }
+    if (g.shared) {
+      const sh = document.createElement('span'); sh.className = 'badge'; sh.textContent = 'shared';
+      sh.style.background = '#2ea043';
+      meta.appendChild(sh);
+    }
     if (g.rating) {
       const r = document.createElement('div'); r.className = 'muted'; r.style.fontSize = '12px';
       r.textContent = '★ ' + g.rating + '/10';
@@ -208,6 +213,14 @@ function openGarmentDetail(g) {
   Array.from($('g-category').options).forEach((o) => cat.add(new Option(o.text, o.value)));
   cat.value = g.category;
   $('gd-owned').checked = g.owned !== false && g.owned !== 0;
+  // owner gets the editor + family-share toggle; a family viewer gets the fit toggle
+  const isOwner = g.is_owner !== false;
+  $('gd-editor').hidden = !isOwner;
+  $('gd-share-block').hidden = !isOwner;
+  $('gd-shared').checked = !!g.shared;
+  $('gd-fit-block').hidden = isOwner;
+  $('gd-fit-status').textContent = '';
+  setFitActive(g.fit_ok);
   $('gd-url').value = '';
   $('gd-status').textContent = '';
   const img = $('gd-img');
@@ -271,6 +284,41 @@ $('gd-rotate').addEventListener('click', async () => {
     img.style.opacity = '1';
     loadWardrobe();
   } catch (e) { img.style.opacity = '1'; $('gd-status').textContent = e.message; }
+});
+// family sharing + per-person fit (rec-engine v2) — quick actions in the detail card
+function setFitActive(v) {
+  ['gd-fit-yes', 'gd-fit-no', 'gd-fit-unsure'].forEach((id) => $(id).classList.remove('active'));
+  if (v === true) $('gd-fit-yes').classList.add('active');
+  else if (v === false) $('gd-fit-no').classList.add('active');
+  else $('gd-fit-unsure').classList.add('active');
+}
+async function postFit(v) {
+  if (!editingItem) return;
+  try {
+    await apiJson(`/api/wardrobe/${editingItem.id}/fit`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fit_ok: v }),
+    });
+    setFitActive(v);
+    $('gd-fit-status').textContent = v === null ? "won't filter suggestions" : (v ? 'fits — will be suggested' : "won't be suggested to you");
+    toast('fit preference saved');
+  } catch (e) { $('gd-fit-status').textContent = e.message; }
+}
+$('gd-fit-yes').addEventListener('click', () => postFit(true));
+$('gd-fit-no').addEventListener('click', () => postFit(false));
+$('gd-fit-unsure').addEventListener('click', () => postFit(null));
+$('gd-shared').addEventListener('change', async () => {
+  if (!editingItem) return;
+  const v = $('gd-shared').checked;
+  try {
+    await apiJson(`/api/wardrobe/${editingItem.id}/share`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ shared: v }),
+    });
+    $('gd-status').textContent = v ? 'shared to Family' : 'made private';
+    toast(v ? 'shared to Family' : 'made private');
+    loadWardrobe();
+  } catch (e) { $('gd-shared').checked = !v; $('gd-status').textContent = e.message; }
 });
 $('gd-save').addEventListener('click', async () => {
   if (!editingItem) return;

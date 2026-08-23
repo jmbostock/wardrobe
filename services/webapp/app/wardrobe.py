@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, asdict
 from typing import Any
 
-from . import db
+from . import db, sharing
 
 # name, category, color_hex, color_tags, warmth, waterproof, formality, occasions, material, fit
 SEED_GARMENTS = [
@@ -69,6 +69,7 @@ class Garment:
     wear_count: int = 0
     rating: int = 0
     owned: int = 1  # 1 = own it, 0 = to buy / wishlist
+    shared: bool = False  # True = visible because a family member shared it to you
     created_at: str = ""
     image_path: str = ""
 
@@ -109,17 +110,44 @@ class Wardrobe:
             return cur.rowcount
 
     def all(self, user_id: int, category: str | None = None) -> list[Garment]:
+        """Garments visible to this user: their own + items their family shared.
+        Shared rows carry `shared=True` (owned rows False)."""
+        gids = sharing.user_group_ids(user_id)
+        in_clause = ", ".join("?" * len(gids)) if gids else "NULL"
+        # the group list appears twice (CASE + WHERE), so supply it in both spots
+        params = (*gids, user_id, *gids)
         with self._lock:
             if category:
                 rows = self._conn.execute(
-                    "SELECT * FROM garments WHERE user_id=? AND category=?",
-                    (user_id, category),
+                    f"""SELECT g.*, CASE WHEN g.share_group_id IN ({in_clause}) THEN 1 ELSE 0 END AS is_shared
+                        FROM garments g
+                        WHERE (g.user_id=? OR g.share_group_id IN ({in_clause}))
+                          AND g.category=?""",
+                    (*params, category),
                 ).fetchall()
             else:
                 rows = self._conn.execute(
-                    "SELECT * FROM garments WHERE user_id=?", (user_id,)
+                    f"""SELECT g.*, CASE WHEN g.share_group_id IN ({in_clause}) THEN 1 ELSE 0 END AS is_shared
+                        FROM garments g
+                        WHERE g.user_id=? OR g.share_group_id IN ({in_clause})""",
+                    params,
                 ).fetchall()
         return [self._row_to_garment(r) for r in rows]
+
+    def get_visible(self, user_id: int, garment_id: int) -> Garment | None:
+        """Read access: a garment the user owns OR a family member shared to them.
+        (Mutations must keep using `get()` — owner-only.)"""
+        gids = sharing.user_group_ids(user_id)
+        in_clause = ", ".join("?" * len(gids)) if gids else "NULL"
+        params = (*gids, user_id, *gids)
+        with self._lock:
+            row = self._conn.execute(
+                f"""SELECT g.*, CASE WHEN g.share_group_id IN ({in_clause}) THEN 1 ELSE 0 END AS is_shared
+                    FROM garments g
+                    WHERE (g.user_id=? OR g.share_group_id IN ({in_clause})) AND g.id=?""",
+                (*params, garment_id),
+            ).fetchone()
+        return self._row_to_garment(row) if row else None
 
     def get(self, user_id: int, garment_id: int) -> Garment | None:
         with self._lock:
@@ -220,6 +248,7 @@ class Wardrobe:
             last_worn=row["last_worn"],
             wear_count=row["wear_count"], rating=row["rating"] or 0,
             owned=row["owned"] if "owned" in row.keys() else 1,
+            shared=bool(row["is_shared"]) if "is_shared" in row.keys() else False,
             created_at=row["created_at"] if "created_at" in row.keys() else "",
             image_path=row["image_path"] or "",
         )

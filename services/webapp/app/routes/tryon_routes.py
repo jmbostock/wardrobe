@@ -8,7 +8,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
-from .. import editor, photos, svd, tryon
+from .. import editor, interactions, photos, svd, tryon
 from ..deps import get_current_user
 from ..media import UPLOAD_DIR
 from ..store import clips, outfits, wardrobe
@@ -23,9 +23,10 @@ async def do_tryon(
     photo_id: int | None = Form(None),
     user: dict = Depends(get_current_user),
 ) -> dict:
-    garment = wardrobe.get(user["id"], garment_id)
+    garment = wardrobe.get_visible(user["id"], garment_id)
     if garment is None:
         raise HTTPException(404, f"garment {garment_id} not found in your wardrobe")
+    interactions.log(user["id"], garment_id, "tried_on", {"mode": "single"})
     if photo_id is not None:
         try:
             person_bytes = photos.photo_bytes(user["id"], photo_id)
@@ -111,9 +112,10 @@ async def do_tryon_outfit(
     if ids:
         try:
             for gid in ids:
-                garment = wardrobe.get(user["id"], gid)
+                garment = wardrobe.get_visible(user["id"], gid)
                 if garment is None:
                     raise HTTPException(404, f"garment {gid} not found in your wardrobe")
+                interactions.log(user["id"], gid, "tried_on", {"mode": "outfit"})
                 person_bytes = await tryon.run_tryon(person_bytes, garment, user["id"])
         except tryon.ComfyUnavailable as ex:
             raise HTTPException(503, str(ex)) from ex

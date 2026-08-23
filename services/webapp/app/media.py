@@ -456,11 +456,12 @@ def fetch_product_image(url: str) -> bytes:
 
 def garment_dict(user_id: int, g) -> dict:
     d = g.to_dict()
-    d["has_image"] = garment_image_path(user_id, g.id) is not None
+    # images live under the OWNER's wardrobe dir — shared garments must resolve
+    # to g.user_id (== user_id for the owner, owner for a family viewer)
+    d["has_image"] = garment_image_path(g.user_id, g.id) is not None
     # nearest existing garment this one is a near-duplicate of (for "similar to
-    # X" notes) — only within the same category AND same dominant color, so an
-    # olive jogger is never flagged against a black swimsuit
-    nd = (nearest_dup(user_id, g.phash, g.color_sig, exclude_id=g.id,
+    # X" notes) — scoped to the owner's collection, same category + dominant color
+    nd = (nearest_dup(g.user_id, g.phash, g.color_sig, exclude_id=g.id,
                       category=g.category, color_tags=g.color_tags)
           if g.phash else None)
     d["near_dup_of"] = nd

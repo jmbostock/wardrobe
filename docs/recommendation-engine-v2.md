@@ -1,6 +1,8 @@
 # Recommendation Engine v2 — Plan (shared wardrobe, learning, ~300 items/person)
 
-> Status: **PLANNED** (2026-08-23). No code changed yet.
+> Status: **IN PROGRESS** — Step A (foundation) shipped in v0.33.0 (style profile)
+> and v0.34.0 (interaction log + family sharing). Layers 2/3 (FashionCLIP style
+> centroid, ALS learning) + the batch pipeline remain. Plan below is the spec.
 > Goal: an **accurate, self-improving** outfit recommender for **a few people** with
 > **~300 garments each**, where some garments are **shared between people**, that
 > **learns from every recommendation** and keeps learning as the wardrobe grows.
@@ -49,6 +51,39 @@ add **two cheap, battle-tested ML layers** on top, fueled by a new **interaction
   `user_garment_state` table for per-person wear/rating/fit on shared items.
 - **Batch pipeline** = one script/endpoint: ingest → vision tag-read (extended) →
   background-remove → embed → dedup → QC → `partial_fit` → live. ~minutes per 300.
+
+---
+
+## Progress (2026-08-23) — what's implemented
+
+### ✅ Style profile + hidden derived profile (v0.33.0, deployed 187+202)
+- Account → **Style profile (optional)** bio: sex, height, sizes (top/bottom/shoe),
+  warmth bias, formality min/max, never-wear, style keywords, typical week, fav/avoid
+  colors, age range. Stored as `users.profile` JSON.
+- `app/profile.py::derive_profile()` computes a **hidden** `users.derived_profile`
+  (size buckets, warmth bias, formality zone, guardrails, style tags, occasion weights,
+  completeness). Server-side only — `auth.public_user()` strips it from every browser
+  response, but Cher receives it as a personalization signal (`stylist._derived_summary`).
+- Endpoints: `GET /api/account` (bio only) · `POST /api/account/profile`.
+
+### ✅ Interaction log + family sharing (v0.34.0, committed — not yet deployed)
+- `interactions` table + `app/interactions.py`: every user↔garment event with a
+  confidence weight — `shown` (logged from `recommender.recommend()`), `tried_on`
+  (try-on routes), `saved` (outfit save), `rated_up`/`rated_down` (garment/outfit
+  rating), `liked`/`disliked` (new feedback endpoint). This is the learning fuel for
+  Layers 2/3.
+- Family sharing (flat "Family" group): `groups` + `group_members` +
+  `garments.share_group_id` + `user_garment_state` (per-person wear/rating/fit_ok).
+  Every user auto-joins Family at signup/login/migration-backfill. Owner toggles
+  "Shared to Family" (`POST /api/wardrobe/{id}/share`); every member sees shared items
+  (`wardrobe.all`/`get_visible` are now owned ∪ family-shared). Mutations stay owner-only.
+- Fit: viewer marks "Fits me ✓ / ✗" (`POST /api/wardrobe/{id}/fit`); a shared item with
+  `fit_ok=0` is **never suggested** to that viewer (recommender filter).
+- Feedback: `POST /api/wardrobe/{id}/feedback {kind: liked|disliked}`.
+- UI: garment detail card — "Shared to Family" toggle (owner) + "Does it fit you?"
+  (viewer); shared items get a green `shared` badge. Like/Dislike buttons on Suggest
+  cards deferred until the parallel session's `suggest.js` rewrite settles.
+- Tests: `tests/test_sharing.py` (4/4) + updated `test_profile.py`. v0.34.0, SW v23.
 
 ---
 

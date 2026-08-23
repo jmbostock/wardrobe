@@ -202,6 +202,60 @@ def _migrate(conn: sqlite3.Connection) -> None:
         )"""
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_chat_user ON chat_sessions(user_id)")
+    # --- rec-engine v2: interaction log + family sharing (added 2026-08-23) ---
+    # every user↔garment event (shown/tried_on/saved/rated/liked/disliked/worn)
+    # is the learning fuel for the recommendation engine
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS interactions (
+            id          INTEGER PRIMARY KEY,
+            user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            garment_id  INTEGER NOT NULL REFERENCES garments(id) ON DELETE CASCADE,
+            kind        TEXT NOT NULL,
+            weight      REAL NOT NULL DEFAULT 1.0,
+            context     TEXT NOT NULL DEFAULT '{}',
+            created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+        )"""
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_interactions_user ON interactions(user_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_interactions_garment ON interactions(garment_id)")
+    # flat family sharing: one global Family group, every user a member
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS groups (
+            id   INTEGER PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE
+        )"""
+    )
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS group_members (
+            group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+            user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            PRIMARY KEY (group_id, user_id)
+        )"""
+    )
+    # per-person state on (possibly shared) garments: wear/rating/fit per user
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS user_garment_state (
+            user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            garment_id INTEGER NOT NULL REFERENCES garments(id) ON DELETE CASCADE,
+            wear_count INTEGER NOT NULL DEFAULT 0,
+            last_worn  TEXT,
+            rating     INTEGER NOT NULL DEFAULT 0,
+            fit_ok     INTEGER,
+            PRIMARY KEY (user_id, garment_id)
+        )"""
+    )
+    gcols = {r[1] for r in conn.execute("PRAGMA table_info(garments)").fetchall()}
+    if "share_group_id" not in gcols:
+        conn.execute("ALTER TABLE garments ADD COLUMN share_group_id INTEGER")
+    # backfill: every existing user joins the Family group so shared items work
+    # immediately for accounts created before this migration
+    conn.execute("INSERT OR IGNORE INTO groups (name) VALUES ('Family')")
+    frow = conn.execute("SELECT id FROM groups WHERE name='Family'").fetchone()
+    if frow:
+        conn.execute(
+            "INSERT OR IGNORE INTO group_members (group_id, user_id) SELECT ?, id FROM users",
+            (frow["id"],),
+        )
 
 
 def lock() -> threading.Lock:
