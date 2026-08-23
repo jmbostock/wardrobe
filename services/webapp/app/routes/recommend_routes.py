@@ -152,15 +152,24 @@ def _detect_location(message: str, user: dict) -> dict | None:
     weather so the recommendation is built for where they're GOING, not where
     they are. Returns {name, lat, lon, weather} or None."""
     m = _ZIP_RE.search(message)
-    query = m.group(1) if m else None
-    if query is None:
+    loc = None
+    fallback_name = None
+    if m:
+        loc = weather.geocode(m.group(1))
+        fallback_name = m.group(1)
+    else:
         pm = _PLACE_RE.search(message)
-        if not pm:
-            return None
-        query = pm.group(1).strip()
-        if len(query) < 3 or query.lower() in _LOCATION_STOPWORDS:
-            return None
-    loc = weather.geocode(query)
+        if pm:
+            fallback_name = pm.group(1).strip()
+            parts = fallback_name.split()
+            # drop trailing words until geocoding succeeds ("Miami tomorrow" → "Miami")
+            for i in range(len(parts), 0, -1):
+                q = " ".join(parts[:i])
+                if len(q) < 3 or q.lower() in _LOCATION_STOPWORDS:
+                    continue
+                loc = weather.geocode(q)
+                if loc and loc.get("name"):
+                    break
     if not loc or not loc.get("name"):
         return None
     if user.get("lat") is not None and user.get("lon") is not None:
@@ -173,7 +182,7 @@ def _detect_location(message: str, user: dict) -> dict | None:
         w = weather.fetch(loc["lat"], loc["lon"])
     except Exception:  # noqa: BLE001
         return None
-    return {"name": loc.get("name") or query, "lat": loc["lat"], "lon": loc["lon"], "weather": w}
+    return {"name": loc.get("name") or fallback_name, "lat": loc["lat"], "lon": loc["lon"], "weather": w}
 
 
 _ACTIVITY_LABELS = {
