@@ -80,6 +80,7 @@ let SIZE_SCHEMAS = {
   bottom:    { mode: 'wxl', label: 'Waist × Length', ph1: 'Waist (e.g. 30)', ph2: 'Length (e.g. 32)' },
   bra:       { mode: 'bandcup', label: 'Band × Cup', ph1: 'Band (e.g. 34)', ph2: 'Cup (e.g. C)' },
   dress:     { mode: 'list', placeholder: 'e.g. 0,2,4,6 or S,M,L', options: ['XS','S','M','L','XL','0','2','4','6','8','10','12','14'] },
+  swimsuit:  { mode: 'list', placeholder: 'e.g. S, M, L or 4, 6, 8', options: ['XS','S','M','L','XL','0','2','4','6','8','10','12','14'] },
   outerwear: { mode: 'list', placeholder: 'e.g. S, M, L', options: ['XS','S','M','L','XL','XXL','3XL'] },
   footwear:  { mode: 'list', placeholder: 'e.g. 8, 8.5, 9', options: ['5','5.5','6','6.5','7','7.5','8','8.5','9','9.5','10','10.5','11'] },
   accessory: { mode: 'list', placeholder: 'e.g. One size', options: ['One size','OS'] }
@@ -242,6 +243,20 @@ $('gd-url-btn').addEventListener('click', async () => {
     });
     $('gd-status').textContent = 'photo saved'; $('gd-url').value = '';
     if (resp.near_dup_of) toast('⚠ near-duplicate of "' + resp.near_dup_of.name + '"');
+    refreshDetailImage(); loadWardrobe();
+  } catch (e) { alert(e.message); }
+});
+$('gd-rotate').addEventListener('click', async () => {
+  if (!editingItem) return;
+  $('gd-status').textContent = 'rotating…';
+  try {
+    const resp = await apiJson('/api/wardrobe/' + editingItem.id + '/rotate', { method: 'POST' });
+    $('gd-status').textContent = 'rotated 180°';
+    if (resp.near_dup_of) toast('⚠ near-duplicate of "' + resp.near_dup_of.name + '"');
+    editingItem.near_dup_of = resp.near_dup_of || null;
+    $('gd-near').textContent = resp.near_dup_of
+      ? '⚠ looks similar to "' + resp.near_dup_of.name + '" — possible duplicate'
+      : '';
     refreshDetailImage(); loadWardrobe();
   } catch (e) { alert(e.message); }
 });

@@ -35,7 +35,7 @@ except Exception:  # noqa: BLE001 — optional dep; HEIC just won't be readable
 WARDROBE_DIR = Path(settings.data_dir) / "wardrobe"
 UPLOAD_DIR = Path(settings.data_dir) / "uploads"
 
-WARDROBE_CATEGORIES = {"top", "bottom", "dress", "outerwear", "footwear", "accessory", "bra"}
+WARDROBE_CATEGORIES = {"top", "bottom", "dress", "swimsuit", "outerwear", "footwear", "accessory", "bra"}
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".heic"}
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 
@@ -51,6 +51,8 @@ SIZE_SCHEMAS: dict[str, dict] = {
     "bra":       {"mode": "bandcup", "label": "Band × Cup",
                    "ph1": "Band (e.g. 34)", "ph2": "Cup (e.g. C)"},
     "dress":     {"mode": "list", "label": "Sizes", "placeholder": "e.g. 0,2,4,6 or S,M,L",
+                   "options": ["XS", "S", "M", "L", "XL", "0", "2", "4", "6", "8", "10", "12", "14"]},
+    "swimsuit":  {"mode": "list", "label": "Sizes", "placeholder": "e.g. S, M, L or 4, 6, 8",
                    "options": ["XS", "S", "M", "L", "XL", "0", "2", "4", "6", "8", "10", "12", "14"]},
     "outerwear": {"mode": "list", "label": "Sizes", "placeholder": "e.g. S, M, L",
                    "options": ["XS", "S", "M", "L", "XL", "XXL", "3XL"]},

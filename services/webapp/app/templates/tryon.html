@@ -38,6 +38,7 @@
             <span class="look-thumb" data-thumb="top"></span>
             <span class="look-pick-label" data-label="top">— tap to pick a top —</span>
           </button>
+          <button type="button" class="look-clear" data-role="top" title="Clear this slot" aria-label="Clear top" hidden>✕</button>
           <select class="look-select" data-role="top" hidden></select>
         </div>
         <div class="look-row">
@@ -46,6 +47,7 @@
             <span class="look-thumb" data-thumb="bottom"></span>
             <span class="look-pick-label" data-label="bottom">— tap to pick a bottom —</span>
           </button>
+          <button type="button" class="look-clear" data-role="bottom" title="Clear this slot" aria-label="Clear bottom" hidden>✕</button>
           <select class="look-select" data-role="bottom" hidden></select>
         </div>
         <div class="look-row">
@@ -54,12 +56,22 @@
             <span class="look-thumb" data-thumb="dress"></span>
             <span class="look-pick-label" data-label="dress">— tap to pick a dress —</span>
           </button>
+          <button type="button" class="look-clear" data-role="dress" title="Clear this slot" aria-label="Clear dress" hidden>✕</button>
           <select class="look-select" data-role="dress" hidden></select>
+        </div>
+        <div class="look-row">
+          <label>Swimsuit</label>
+          <button type="button" class="look-pick" data-role="swimsuit">
+            <span class="look-thumb" data-thumb="swimsuit"></span>
+            <span class="look-pick-label" data-label="swimsuit">— tap to pick a swimsuit —</span>
+          </button>
+          <button type="button" class="look-clear" data-role="swimsuit" title="Clear this slot" aria-label="Clear swimsuit" hidden>✕</button>
+          <select class="look-select" data-role="swimsuit" hidden></select>
         </div>
       </div>
       <label style="display:flex;gap:8px;align-items:center;text-transform:none;margin-bottom:8px"><input type="checkbox" id="owned-only-look" /> Owned only</label>
       <div class="row look-hint-row" style="margin-top:6px">
-        <span class="muted hint" id="look-hint">Pick a top, a bottom, or a dress (one-piece). Choose 2 for a full look — they render one after another. Renders auto-save to Outfits.</span>
+        <span class="muted hint" id="look-hint">Pick a top, a bottom, a dress, or a swimsuit (one-pieces). Choose 2 for a full look — they render one after another. Tap ✕ to clear one slot, or Reset to clear all. Renders auto-save to Outfits.</span>
         <button id="tryon-btn">Try on</button>
       </div>
       <div id="garment-qa" hidden></div>
@@ -89,6 +101,7 @@
       <h2 id="lp-title">Pick</h2>
       <button id="lp-close" class="ghost">✕</button>
     </div>
+    <button type="button" id="lp-none" class="ghost">None — clear this slot</button>
     <p class="muted" id="lp-empty" hidden>No garments with photos in this category yet — add one in the Wardrobe tab.</p>
     <div id="lp-grid" class="photos"></div>
   </div>

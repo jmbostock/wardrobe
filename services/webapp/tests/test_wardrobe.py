@@ -44,6 +44,52 @@ def test_create_upload_serve_delete():
     assert w.get(ua["id"], g.id) is None
 
 
+def test_rotate_180_flips_and_stays_portrait():
+    """Manual 180° rotate (upside-down fix) flips the photo in place, stays
+    portrait (never horizontal), and re-saves through save_garment_image so
+    phash / color_sig stay consistent."""
+    import io as _io
+
+    from PIL import Image
+
+    from app.media import garment_image_path, save_garment_image
+    from app.routes.wardrobe_routes import rotate_garment_image
+
+    ua = auth.create_user("wRot@example.com", "password123")
+    g = w.create(ua["id"], "Upside-down top", "top")
+    # portrait image with a DARK band at the TOP so orientation is measurable
+    img = Image.new("RGB", (800, 1200), (200, 200, 200))
+    for x in range(800):
+        for y in range(0, 300):
+            img.putpixel((x, y), (20, 20, 20))
+    buf = _io.BytesIO()
+    img.save(buf, "PNG")
+    save_garment_image(ua["id"], g.id, buf.getvalue(), "png")
+
+    def dark_band_at_top() -> bool:
+        data = garment_image_path(ua["id"], g.id).read_bytes()
+        im = Image.open(_io.BytesIO(data)).convert("RGB")
+        top = sum(im.getpixel((400, y))[0] for y in range(0, 100)) / 100
+        bot = sum(im.getpixel((400, y))[0] for y in range(1100, 1200)) / 100
+        return top < bot
+
+    assert dark_band_at_top(), "precondition: dark band should be at the top"
+    d = rotate_garment_image(g.id, {"id": ua["id"]})
+    assert d["has_image"] is True
+    assert not dark_band_at_top(), "after 180° the dark band should be at the bottom"
+    # still a valid portrait image on disk
+    im = Image.open(_io.BytesIO(garment_image_path(ua["id"], g.id).read_bytes()))
+    assert im.height > im.width, im.size
+    # cross-user cannot rotate someone else's garment
+    ub = auth.create_user("wRot2@example.com", "password123")
+    from fastapi import HTTPException
+    try:
+        rotate_garment_image(g.id, {"id": ub["id"]})
+        raise AssertionError("expected 404 for cross-user rotate")
+    except HTTPException as ex:
+        assert ex.status_code == 404
+
+
 def test_cross_user_isolation():
     ua = auth.create_user("wA@example.com", "password123")
     ub = auth.create_user("wB@example.com", "password123")

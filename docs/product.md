@@ -41,10 +41,11 @@ Clueless Closet (repo name `altacloset`) is a **self-hosted, Dockerized AI perso
 
 ### Try on
 - **Person source**: saved photo / upload / webcam.
-- **Look builder**: tap **Top / Bottom / Dress** to open a **photo picker** of every
-  garment in that category (only garments **with photos**; shows name/brand/size).
-  The picked garment's photo is shown in the row, so it's always clear what's being
-  tried on. Also *Use recommendation*, *Reset look*, *Save outfit*.
+- **Look builder**: tap **Top / Bottom / Dress / Swimsuit** to open a **photo picker**
+  of every garment in that category (only garments **with photos**; shows
+  name/brand/size). The picked garment's photo is shown in the row, so it's always
+  clear what's being tried on. Tap the per-slot **✕** (or *None* in the picker) to
+  clear just that one, or *Reset look* to clear all. Also *Use recommendation*.
 - **Image-quality feedback** inline for both person and garment (auto on change).
 - **Progress panel**: Uploading → DensePose → SCHP → CatVTON → Finalizing, with an
   elapsed timer, so a ~40s GPU render doesn't look stuck.
@@ -152,6 +153,17 @@ Full write-up: **`docs/wardrobe-v0.12.md`** (metadata / dedup / dropdowns / size
   guessing between several similar names (e.g. several jeans). The old text
   dropdowns stay as hidden `<select>`s so all existing logic (recommendation
   fill, auto best-photo pick) is unchanged.
+- **Clear one slot + rotate 180 + swimsuit category** (v0.16.0): (1) each look row
+  has a per-slot **✕** and the picker has **None — clear this slot**, so you can
+  clear one category without resetting the whole look. (2) The garment detail card
+  has **↻ Rotate 180°** (`POST /api/wardrobe/{id}/rotate`) — only 180° is offered
+  because photos are guaranteed never-horizontal (90/270 would turn a portrait
+  sideways); it re-saves through `save_garment_image` so near-dup stays correct.
+  (3) New **swimsuit** category (WARDROBE_CATEGORIES, size schema, AI/parse-link
+  keywords `bikini`/`one-piece`/`swim trunks`/`boardshorts`, CatVTON `overall`),
+  recommended as a hot-weather one-piece for **beach** (new `beach` occasion tag;
+  warmth 1 defaults), never paired with a bottom, and never suggested for the
+  office. Try-on look builder gained a **Swimsuit** row.
 
 ---
 

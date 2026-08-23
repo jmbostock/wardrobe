@@ -27,6 +27,8 @@ CATEGORY_KEYWORDS: dict[str, list[str]] = {
             "polo", "crewneck", "henley", "tank", "cardigan", "sweatshirt"],
     "bottom": ["pant", "jean", "trouser", "short", "chino", "legging", "skirt", "jogger"],
     "dress": ["dress", "jumpsuit", "romper", "gown"],
+    "swimsuit": ["swimsuit", "swimwear", "swim", "bikini", "tankini", "one-piece",
+                  "one piece", "trunks", "boardshorts", "board shorts", "rash guard", "rashguard"],
     "bra": ["bra", "bralette", "bustier", "corset", "sports bra", "padded bra",
             "underwire", "triangle bra", "strapless bra"],
     "outerwear": ["jacket", "coat", "puffer", "parka", "vest", "blazer", "windbreaker", "shell"],

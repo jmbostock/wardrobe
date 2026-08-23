@@ -33,7 +33,8 @@ function renderOutfit(outfit) {
   let html = '';
   for (const [key, label] of order) {
     const g = outfit[key]; if (!g) continue;
-    html += `<div class="garment"><span class="role">${label}</span>` +
+    const l = (key === 'top' && (g.category === 'dress' || g.category === 'swimsuit')) ? 'One-piece' : label;
+    html += `<div class="garment"><span class="role">${l}</span>` +
             `<span class="swatch" style="background:${g.color_hex || '#888'}"></span>` +
             `<span class="name">${g.name}</span></div>`;
   }

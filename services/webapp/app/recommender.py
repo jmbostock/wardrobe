@@ -34,7 +34,7 @@ ACTIVITY_MAP = {
     "home": ("casual", ["casual"]),
     "hiking": ("casual", ["active"]),
     "gym": ("casual", ["active"]),
-    "beach": ("casual", ["active"]),
+    "beach": ("casual", ["beach"]),  # own occasion so swimwear/beachwear beats generic active
     "wedding": ("formal", ["event"]),
     "gala": ("formal", ["event"]),
     "formal": ("formal", ["event"]),
@@ -243,7 +243,7 @@ def recommend(
         if precipitating:
             if g.waterproof:
                 s += 10.0
-            elif g.category in ("outerwear", "top", "dress"):
+            elif g.category in ("outerwear", "top", "dress", "swimsuit"):
                 s -= 15.0
         if top and g.category in ("bottom", "outerwear", "footwear", "accessory"):
             s += 8.0 * harmony(top, g)
@@ -260,13 +260,15 @@ def recommend(
             return None
         return max(candidates, key=lambda g: score(g, top=_top))
 
-    # 1. top (a dress can fill the top slot; if chosen, bottom becomes optional)
+    # 1. top (a dress or swimsuit can fill the top slot; if chosen, bottom is optional)
     top = best("top")
     dress = best("dress")
-    _top = max((g for g in (top, dress) if g), key=lambda g: score(g)) if (top or dress) else None
+    swimsuit = best("swimsuit")
+    _top = max((g for g in (top, dress, swimsuit) if g), key=lambda g: score(g)) \
+        if (top or dress or swimsuit) else None
 
-    # 2. bottom (skip if we picked a dress — it covers both)
-    bottom = None if (_top and _top.category == "dress") else best("bottom")
+    # 2. bottom (skip if we picked a dress/swimsuit — it covers both)
+    bottom = None if (_top and _top.category in ("dress", "swimsuit")) else best("bottom")
 
     # 3. outerwear — needed when cold (target>=4) or when precipitating
     needs_outer = target >= 4.0 or precipitating
@@ -324,9 +326,9 @@ def _build_reasoning(
         lines.append(f"{w.condition.title()} outside → picking waterproof layer")
     lines.append(f"{w.feels:.0f}°C feels → target warmth {target:.0f}/5")
     lines.append(f"{formality} activity → matching formality level")
-    if top and bottom and top.category != "dress":
+    if top and bottom and top.category not in ("dress", "swimsuit"):
         lines.append(f"{top.name} + {bottom.name} are color-compatible")
-    if top and top.category == "dress":
+    if top and top.category in ("dress", "swimsuit"):
         lines.append(f"{top.name} is a one-piece — no separate bottom needed")
     if outerwear:
         lines.append(f"layering with {outerwear.name}")

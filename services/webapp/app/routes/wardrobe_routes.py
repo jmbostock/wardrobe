@@ -18,6 +18,7 @@ from ..media import (
     garment_dict,
     garment_image_path,
     normalize_color,
+    normalize_orientation,
     save_garment_image,
     validate_image,
 )
@@ -79,10 +80,18 @@ def create_garment(req: WardrobeCreate, user: dict = Depends(get_current_user)) 
         raise HTTPException(400, "name required")
     color = normalize_color(req.color)
     color_hex = COLOR_HEX.get(color, "#8a8f98")
+    # category-aware scoring defaults — a swimsuit is a hot-weather one-piece, so
+    # it gets warmth 1 + beach/active occasions (recommender proposes it for
+    # beach/pool/hot days, never the office). Everything else stays the general
+    # casual/warmth-3 default.
+    dflt_warmth, dflt_formality, dflt_occasions = 3, "casual", "casual"
+    if category == "swimsuit":
+        dflt_warmth, dflt_formality, dflt_occasions = 1, "casual", "active,beach"
     g = wardrobe.create(
         user["id"], name, category, color_hex=color_hex, color_tags=color,
         brand=req.brand.strip()[:120], sizes=req.sizes.strip()[:200],
-        owned=req.owned,
+        owned=req.owned, warmth=dflt_warmth, formality=dflt_formality,
+        occasions=dflt_occasions,
     )
     if req.image_url:
         data = fetch_product_image(req.image_url)
@@ -209,6 +218,25 @@ def garment_image(garment_id: int, user: dict = Depends(get_current_user)) -> Fi
         ".webp": "image/webp", ".gif": "image/gif",
     }.get(path.suffix.lower(), "application/octet-stream")
     return FileResponse(path, media_type=media)
+
+
+@router.post("/api/wardrobe/{garment_id}/rotate")
+def rotate_garment_image(garment_id: int, user: dict = Depends(get_current_user)) -> dict:
+    """Flip a garment photo 180° to fix an upside-down upload. Only 180° is ever
+    offered: garment photos are guaranteed never-horizontal, and a 90/270 rotation
+    would turn a portrait frame sideways (forbidden). Re-saves through
+    save_garment_image so phash / color_sig / near-dup stay consistent."""
+    g = wardrobe.get(user["id"], garment_id)
+    if g is None:
+        raise HTTPException(404, "garment not found")
+    path = garment_image_path(user["id"], garment_id)
+    if path is None:
+        raise HTTPException(404, "no image for this garment")
+    data = path.read_bytes()
+    data, norm_ext = normalize_orientation(data, rotate=180)
+    ext = norm_ext or path.suffix.lower().lstrip(".")
+    save_garment_image(user["id"], garment_id, data, ext)
+    return garment_dict(user["id"], wardrobe.get(user["id"], garment_id))
 
 
 @router.patch("/api/wardrobe/{garment_id}")

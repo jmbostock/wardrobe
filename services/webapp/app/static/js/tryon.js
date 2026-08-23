@@ -16,6 +16,8 @@ let savedOutfits = [];      // cached /api/outfits that have a render (Saved-ima
 let selectedSaved = null;   // the chosen saved outfit render
 let manualPhotoPick = false; // user hand-picked the base photo → don't auto-override it
 let lookGarments = [];       // cached /api/wardrobe list — drives the look photo pickers
+const LOOK_ROLES = ['top', 'bottom', 'dress', 'swimsuit'];
+let lookPickingRole = null;  // which category the look picker modal is open for
 
 async function photoBaseUrl(pid) {
   const p = savedPhotos.find((x) => String(x.id) === String(pid));
@@ -66,7 +68,7 @@ async function populateLook() {
   lookGarments = items;
   const ownedOnly = $('owned-only-look') ? $('owned-only-look').checked : false;
   const withImg = items.filter((g) => g.has_image && (!ownedOnly || g.owned));
-  for (const role of ['top', 'bottom', 'dress']) {
+  for (const role of LOOK_ROLES) {
     const sel = document.querySelector('.look-select[data-role="' + role + '"]');
     if (!sel) continue;
     const prev = sel.value;
@@ -84,11 +86,12 @@ function garmentById(id) {
 // Refresh every look row's thumbnail + label from its hidden select value, so
 // it's always clear which garment (photo) is being tried on.
 function syncLookRows() {
-  for (const role of ['top', 'bottom', 'dress']) {
+  for (const role of LOOK_ROLES) {
     const sel = document.querySelector('.look-select[data-role="' + role + '"]');
     const thumb = document.querySelector('.look-thumb[data-thumb="' + role + '"]');
     const label = document.querySelector('.look-pick-label[data-label="' + role + '"]');
     const btn = document.querySelector('.look-pick[data-role="' + role + '"]');
+    const clr = document.querySelector('.look-clear[data-role="' + role + '"]');
     if (!sel) continue;
     const g = garmentById(sel.value);
     if (thumb) {
@@ -105,6 +108,7 @@ function syncLookRows() {
         : '— tap to pick a ' + role + ' —';
     }
     if (btn) btn.title = g ? g.name + ' — tap to change' : 'tap to pick a ' + role;
+    if (clr) clr.hidden = !g;   // only show the ✕ when this slot has a pick
   }
 }
 // Set a look role to a specific garment (or clear it) and refresh the UI.
@@ -116,10 +120,11 @@ function setLookRole(role, g) {
   checkGarmentImage();
   autoPickBestPhoto();
 }
-// Tap a category (Top / Bottom / Dress) → show every photo in that category to
-// pick from; the chosen image then shows in the look row.
+// Tap a category (Top / Bottom / Dress / Swimsuit) → show every photo in that
+// category to pick from; the chosen image then shows in the look row.
 function openLookPicker(role) {
-  const titles = { top: 'Pick a top', bottom: 'Pick a bottom', dress: 'Pick a dress' };
+  lookPickingRole = role;
+  const titles = { top: 'Pick a top', bottom: 'Pick a bottom', dress: 'Pick a dress', swimsuit: 'Pick a swimsuit' };
   $('lp-title').textContent = titles[role] || 'Pick';
   const grid = $('lp-grid'); grid.innerHTML = '';
   const ownedOnly = $('owned-only-look') ? $('owned-only-look').checked : false;
@@ -148,10 +153,14 @@ function openLookPicker(role) {
   }
   $('look-picker').hidden = false;
 }
-function closeLookPicker() { $('look-picker').hidden = true; }
+function closeLookPicker() { $('look-picker').hidden = true; lookPickingRole = null; }
 $('lp-close').addEventListener('click', closeLookPicker);
 $('look-picker').addEventListener('click', (e) => { if (e.target === $('look-picker')) closeLookPicker(); });
+// "None — clear this slot" clears just this category (not the whole look).
+$('lp-none').addEventListener('click', () => { setLookRole(lookPickingRole, null); closeLookPicker(); });
 document.querySelectorAll('.look-pick').forEach((b) => b.addEventListener('click', () => openLookPicker(b.dataset.role)));
+// Per-row ✕ clears just that slot.
+document.querySelectorAll('.look-clear').forEach((b) => b.addEventListener('click', () => setLookRole(b.dataset.role, null)));
 function applyOutfitToLook(outfit) {
   const status = $('look-status');
   if (!outfit || !Object.keys(outfit).length) { status.textContent = 'wardrobe empty — add clothes first'; return; }
@@ -162,16 +171,19 @@ function applyOutfitToLook(outfit) {
     else sel.value = '';
   };
   const top = outfit.top || outfit.dress || null;
-  if (top && top.category === 'dress') {
-    setRole('dress', top); setRole('top', null); setRole('bottom', null);
+  if (top && (top.category === 'dress' || top.category === 'swimsuit')) {
+    setRole(top.category === 'swimsuit' ? 'swimsuit' : 'dress', top);
+    setRole('top', null); setRole('bottom', null);
+    setRole('dress', null); setRole('swimsuit', null);
   } else {
-    setRole('top', top); setRole('bottom', outfit.bottom || null); setRole('dress', null);
+    setRole('top', top); setRole('bottom', outfit.bottom || null);
+    setRole('dress', null); setRole('swimsuit', null);
   }
   syncLookRows();
 }
 function currentLookIds() {
   const ids = [];
-  for (const role of ['top', 'bottom', 'dress']) {
+  for (const role of LOOK_ROLES) {
     const v = document.querySelector('.look-select[data-role="' + role + '"]').value;
     if (v) ids.push(Number(v));
   }
@@ -197,7 +209,7 @@ $('tryon-use-reco').addEventListener('click', async () => {
   autoPickBestPhoto();
 });
 $('tryon-reset').addEventListener('click', () => {
-  ['top', 'bottom', 'dress'].forEach((role) => {
+  LOOK_ROLES.forEach((role) => {
     document.querySelector('.look-select[data-role="' + role + '"]').value = '';
   });
   syncLookRows();
@@ -329,6 +341,7 @@ async function checkPersonImage() {
 async function checkGarmentImage() {
   const el = $('garment-qa'); if (!el) return;
   const sel = (document.querySelector('.look-select[data-role=top]')?.value
+    || document.querySelector('.look-select[data-role=swimsuit]')?.value
     || document.querySelector('.look-select[data-role=dress]')?.value
     || document.querySelector('.look-select[data-role=bottom]')?.value);
   if (!sel) { el.hidden = true; return; }
@@ -350,6 +363,8 @@ document.querySelectorAll('.look-select').forEach((s) => s.addEventListener('cha
 function primaryGarmentId() {
   const dress = document.querySelector('.look-select[data-role="dress"]')?.value;
   if (dress) return Number(dress);              // a dress defines the whole outfit
+  const swim = document.querySelector('.look-select[data-role="swimsuit"]')?.value;
+  if (swim) return Number(swim);                // a swimsuit defines the whole outfit too
   const ids = currentLookIds();
   return ids.length ? ids[0] : null;            // first garment applied in the chain
 }

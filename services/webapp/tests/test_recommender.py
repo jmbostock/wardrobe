@@ -72,6 +72,30 @@ def test_hot_beach_is_light():
     assert any("sun hat" in a["name"].lower() for a in out["accessories"])
 
 
+def test_swimsuit_for_hot_beach_and_no_bottom():
+    """A swimsuit is a hot-weather one-piece: recommended for beach, never for
+    the office, and never paired with a separate bottom."""
+    _COUNTER[0] += 1
+    w = wardrobe_mod.Wardrobe()
+    uid = auth.create_user(f"reco_swim{_COUNTER[0]}@example.com", "password123")["id"]
+    w.create(uid, "Navy one-piece swimsuit", "swimsuit", warmth=1, formality="casual", occasions="active,beach")
+    w.create(uid, "Cotton tee", "top", warmth=1, formality="casual", occasions="casual,active", material="cotton")
+    w.create(uid, "Linen shorts", "bottom", warmth=1, formality="casual", occasions="casual,active,beach", material="cotton")
+
+    out = recommend(
+        Weather(temp_c=31, feels_like_c=33, condition="clear", uv_index=10),
+        "beach", wardrobe=w, user_id=uid,
+    )["outfit"]
+    assert out["top"] is not None and out["top"]["category"] == "swimsuit", out["top"]
+    assert out["bottom"] is None, "swimsuit is a one-piece — no separate bottom"
+
+    out2 = recommend(
+        Weather(temp_c=18, feels_like_c=17, condition="clear"),
+        "office", wardrobe=w, user_id=uid,
+    )["outfit"]
+    assert out2["top"]["category"] != "swimsuit", "swimsuit should not be recommended for the office"
+
+
 def test_cold_hiking_layers():
     w, uid = _make_wardrobe()
     out = recommend(
