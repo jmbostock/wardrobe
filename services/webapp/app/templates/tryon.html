@@ -51,27 +51,18 @@
           <select class="look-select" data-role="bottom" hidden></select>
         </div>
         <div class="look-row">
-          <label>Dress</label>
-          <button type="button" class="look-pick" data-role="dress">
-            <span class="look-thumb" data-thumb="dress"></span>
-            <span class="look-pick-label" data-label="dress">— tap to pick a dress —</span>
+          <label>Full</label>
+          <button type="button" class="look-pick" data-role="full">
+            <span class="look-thumb" data-thumb="full"></span>
+            <span class="look-pick-label" data-label="full">— tap to pick a one-piece —</span>
           </button>
-          <button type="button" class="look-clear" data-role="dress" title="Clear this slot" aria-label="Clear dress" hidden>✕</button>
-          <select class="look-select" data-role="dress" hidden></select>
-        </div>
-        <div class="look-row">
-          <label>Swimsuit</label>
-          <button type="button" class="look-pick" data-role="swimsuit">
-            <span class="look-thumb" data-thumb="swimsuit"></span>
-            <span class="look-pick-label" data-label="swimsuit">— tap to pick a swimsuit —</span>
-          </button>
-          <button type="button" class="look-clear" data-role="swimsuit" title="Clear this slot" aria-label="Clear swimsuit" hidden>✕</button>
-          <select class="look-select" data-role="swimsuit" hidden></select>
+          <button type="button" class="look-clear" data-role="full" title="Clear this slot" aria-label="Clear full" hidden>✕</button>
+          <select class="look-select" data-role="full" hidden></select>
         </div>
       </div>
       <label style="display:flex;gap:8px;align-items:center;text-transform:none;margin-bottom:8px"><input type="checkbox" id="owned-only-look" /> Owned only</label>
       <div class="row look-hint-row" style="margin-top:6px">
-        <span class="muted hint" id="look-hint">Pick a top, a bottom, a dress, or a swimsuit (one-pieces). Choose 2 for a full look — they render one after another. Tap ✕ to clear one slot, or Reset to clear all. Renders auto-save to Outfits.</span>
+        <span class="muted hint" id="look-hint">Pick a top, a bottom, or a Full — one-piece items (dresses, swimsuits, jumpsuits) that don't need a separate top/bottom. Choose 2 for a full look — they render one after another. Tap ✕ to clear one slot, or Reset to clear all. Renders auto-save to Outfits.</span>
         <button id="tryon-btn">Try on</button>
       </div>
       <div id="garment-qa" hidden></div>

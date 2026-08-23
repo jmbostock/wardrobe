@@ -171,6 +171,11 @@ Full write-up: **`docs/wardrobe-v0.12.md`** (metadata / dedup / dropdowns / size
   longer drags the background), a **swipe down** dismisses it, and the ✕ close
   button is a big 48px touch target. On phones the look picker shows **one
   full-width garment image per row** so the whole photo is visible when choosing.
+- **Look builder = Top / Bottom / Full** (v0.18.0): the Dress and Swimsuit rows
+  are merged into a single **Full** row — one-piece items (dresses, swimsuits,
+  jumpsuits) that don't need a separate top/bottom. Picking a Full garment
+  clears top/bottom. Sheet CSS hardened for older iOS (explicit offsets, flex
+  stretch instead of `dvh`).
 
 ---
 
