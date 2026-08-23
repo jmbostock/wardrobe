@@ -41,8 +41,10 @@ Clueless Closet (repo name `altacloset`) is a **self-hosted, Dockerized AI perso
 
 ### Try on
 - **Person source**: saved photo / upload / webcam.
-- **Look builder**: Top / Bottom / Dress selects (only garments **with photos**), plus
-  *Use recommendation*, *Reset look*, *Save outfit*.
+- **Look builder**: tap **Top / Bottom / Dress** to open a **photo picker** of every
+  garment in that category (only garments **with photos**; shows name/brand/size).
+  The picked garment's photo is shown in the row, so it's always clear what's being
+  tried on. Also *Use recommendation*, *Reset look*, *Save outfit*.
 - **Image-quality feedback** inline for both person and garment (auto on change).
 - **Progress panel**: Uploading → DensePose → SCHP → CatVTON → Finalizing, with an
   elapsed timer, so a ~40s GPU render doesn't look stuck.
@@ -143,6 +145,13 @@ Full write-up: **`docs/wardrobe-v0.12.md`** (metadata / dedup / dropdowns / size
   portrait. An earlier "look, then rotate" edge-detection pass was reverted — the
   small VLM's up/down/sideways answers were unreliable and its 90° rotations made
   some photos landscape (forbidden). All 20 photos are portrait + upright.
+- **Try-on look photo pickers** (v0.15.0): tapping **Top / Bottom / Dress** in the
+  look builder opens a modal grid of **every garment photo in that category**
+  (name/brand/size shown; the current pick is outlined). The chosen garment's
+  photo is shown in the look row, so it's clear what's being tried on — no more
+  guessing between several similar names (e.g. several jeans). The old text
+  dropdowns stay as hidden `<select>`s so all existing logic (recommendation
+  fill, auto best-photo pick) is unchanged.
 
 ---
 

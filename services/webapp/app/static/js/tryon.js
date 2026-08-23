@@ -15,6 +15,7 @@ let savedPhotos = [];       // cached /api/photos (saved-photo source for look-b
 let savedOutfits = [];      // cached /api/outfits that have a render (Saved-image source)
 let selectedSaved = null;   // the chosen saved outfit render
 let manualPhotoPick = false; // user hand-picked the base photo → don't auto-override it
+let lookGarments = [];       // cached /api/wardrobe list — drives the look photo pickers
 
 async function photoBaseUrl(pid) {
   const p = savedPhotos.find((x) => String(x.id) === String(pid));
@@ -58,10 +59,11 @@ async function showSavedImagePreview() {
   hideCompare();
 }
 
-// ---------- look builder ----------
+// ---------- look builder (photo pickers) ----------
 async function populateLook() {
   let items = [];
   try { items = await apiJson('/api/wardrobe'); } catch (e) { /* ignore */ }
+  lookGarments = items;
   const ownedOnly = $('owned-only-look') ? $('owned-only-look').checked : false;
   const withImg = items.filter((g) => g.has_image && (!ownedOnly || g.owned));
   for (const role of ['top', 'bottom', 'dress']) {
@@ -72,8 +74,84 @@ async function populateLook() {
     withImg.filter((g) => g.category === role).forEach((g) => sel.add(new Option(g.name, g.id)));
     if (prev && [...sel.options].some((o) => o.value === prev)) sel.value = prev;
   }
+  syncLookRows();
 }
 $('owned-only-look').addEventListener('change', () => { populateLook(); autoPickBestPhoto(); });
+
+function garmentById(id) {
+  return lookGarments.find((g) => String(g.id) === String(id)) || null;
+}
+// Refresh every look row's thumbnail + label from its hidden select value, so
+// it's always clear which garment (photo) is being tried on.
+function syncLookRows() {
+  for (const role of ['top', 'bottom', 'dress']) {
+    const sel = document.querySelector('.look-select[data-role="' + role + '"]');
+    const thumb = document.querySelector('.look-thumb[data-thumb="' + role + '"]');
+    const label = document.querySelector('.look-pick-label[data-label="' + role + '"]');
+    const btn = document.querySelector('.look-pick[data-role="' + role + '"]');
+    if (!sel) continue;
+    const g = garmentById(sel.value);
+    if (thumb) {
+      thumb.innerHTML = '';
+      if (g && g.has_image) {
+        const img = document.createElement('img'); img.alt = g.name;
+        authImageUrl('/api/wardrobe/' + g.id + '/image').then((u) => { img.src = u; }).catch(() => {});
+        thumb.appendChild(img);
+      }
+    }
+    if (label) {
+      label.textContent = g
+        ? (g.name + (g.brand ? ' · ' + g.brand : '') + (g.sizes ? ' · ' + g.sizes : ''))
+        : '— tap to pick a ' + role + ' —';
+    }
+    if (btn) btn.title = g ? g.name + ' — tap to change' : 'tap to pick a ' + role;
+  }
+}
+// Set a look role to a specific garment (or clear it) and refresh the UI.
+function setLookRole(role, g) {
+  const sel = document.querySelector('.look-select[data-role="' + role + '"]');
+  if (!sel) return;
+  sel.value = g ? String(g.id) : '';
+  syncLookRows();
+  checkGarmentImage();
+  autoPickBestPhoto();
+}
+// Tap a category (Top / Bottom / Dress) → show every photo in that category to
+// pick from; the chosen image then shows in the look row.
+function openLookPicker(role) {
+  const titles = { top: 'Pick a top', bottom: 'Pick a bottom', dress: 'Pick a dress' };
+  $('lp-title').textContent = titles[role] || 'Pick';
+  const grid = $('lp-grid'); grid.innerHTML = '';
+  const ownedOnly = $('owned-only-look') ? $('owned-only-look').checked : false;
+  const items = lookGarments.filter((g) => g.category === role && g.has_image && (!ownedOnly || g.owned));
+  $('lp-empty').hidden = items.length > 0;
+  const cur = document.querySelector('.look-select[data-role="' + role + '"]');
+  for (const g of items) {
+    const card = document.createElement('div'); card.className = 'photo';
+    const img = document.createElement('img'); img.alt = g.name;
+    img.style.cursor = 'pointer';
+    authImageUrl('/api/wardrobe/' + g.id + '/image').then((u) => { img.src = u; }).catch(() => {});
+    const meta = document.createElement('div'); meta.className = 'meta';
+    const name = document.createElement('div'); name.textContent = g.name; name.style.fontSize = '13px';
+    meta.appendChild(name);
+    const facts = [];
+    if (g.brand) facts.push(g.brand);
+    if (g.sizes) facts.push(g.sizes);
+    if (facts.length) {
+      const d = document.createElement('div'); d.className = 'muted'; d.style.fontSize = '12px';
+      d.textContent = facts.join(' · '); meta.appendChild(d);
+    }
+    card.appendChild(img); card.appendChild(meta);
+    if (cur && String(cur.value) === String(g.id)) card.style.outline = '3px solid var(--acc)';
+    card.addEventListener('click', () => { setLookRole(role, g); closeLookPicker(); });
+    grid.appendChild(card);
+  }
+  $('look-picker').hidden = false;
+}
+function closeLookPicker() { $('look-picker').hidden = true; }
+$('lp-close').addEventListener('click', closeLookPicker);
+$('look-picker').addEventListener('click', (e) => { if (e.target === $('look-picker')) closeLookPicker(); });
+document.querySelectorAll('.look-pick').forEach((b) => b.addEventListener('click', () => openLookPicker(b.dataset.role)));
 function applyOutfitToLook(outfit) {
   const status = $('look-status');
   if (!outfit || !Object.keys(outfit).length) { status.textContent = 'wardrobe empty — add clothes first'; return; }
@@ -89,6 +167,7 @@ function applyOutfitToLook(outfit) {
   } else {
     setRole('top', top); setRole('bottom', outfit.bottom || null); setRole('dress', null);
   }
+  syncLookRows();
 }
 function currentLookIds() {
   const ids = [];
@@ -121,6 +200,7 @@ $('tryon-reset').addEventListener('click', () => {
   ['top', 'bottom', 'dress'].forEach((role) => {
     document.querySelector('.look-select[data-role="' + role + '"]').value = '';
   });
+  syncLookRows();
   $('look-status').textContent = 'look cleared';
   autoPickBestPhoto();
 });

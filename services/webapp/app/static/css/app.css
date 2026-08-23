@@ -94,6 +94,31 @@ body.auth-page .app-version { display:none; }  /* login screen is a centered car
 .look-row label { width:70px; flex:none; color:var(--mut); font-size:12px; text-transform:uppercase; }
 .look-row select { flex:1; min-width:0; max-width:100%; min-width:0; max-width:100%; }
 
+/* ---- try-on look picker (tap a category to see photo choices) ---- */
+.look-pick { display:flex; align-items:center; gap:10px; flex:1; min-width:0; max-width:100%;
+  padding:6px 8px; background:#0f1216; border:1px solid var(--line); border-radius:10px; text-align:left; }
+.look-pick:focus { outline:2px solid var(--acc); outline-offset:2px; }
+.look-thumb { width:42px; height:56px; flex:none; aspect-ratio:3/4; border-radius:6px; background:#000;
+  border:1px solid var(--line); display:flex; align-items:center; justify-content:center;
+  font-size:16px; color:var(--mut); overflow:hidden; }
+.look-thumb img { width:100%; height:100%; object-fit:contain; display:block; }
+.look-thumb:empty::after { content:'＋'; }
+.look-pick-label { flex:1; min-width:0; color:var(--mut); font-size:13px; overflow:hidden;
+  text-overflow:ellipsis; white-space:nowrap; }
+
+#look-picker { position:fixed; inset:0; background:rgba(0,0,0,.85); display:flex; align-items:flex-start;
+  justify-content:center; overflow-y:auto; z-index:30; padding:20px; }
+#look-picker[hidden] { display:none; }
+#look-picker .modal { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px;
+  width:100%; max-width:520px; display:grid; gap:14px; margin:auto 0; }
+#look-picker .modal-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+#look-picker .modal-head h2 { margin:0; font-size:16px; }
+#look-picker .photos { grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:10px;
+  max-height:60vh; overflow-y:auto; padding-right:4px; }
+#look-picker .photo { cursor:pointer; }
+#look-picker .photo img { cursor:pointer; }
+#look-picker .photo .meta { padding:8px; gap:5px; }
+
 /* ---- rating widget (0–10, single-line slider) ---- */
 .rate { display:flex; align-items:center; }
 .rate-row { display:flex; align-items:center; gap:10px; width:100%; }
@@ -137,6 +162,8 @@ body.auth-page .app-version { display:none; }  /* login screen is a centered car
   .look-row { flex-wrap:wrap; }
   .look-row label { width:auto; flex:1 1 100%; }
   .look-row select { flex:1 1 100%; min-width:0; max-width:100%; }
+  .look-pick { flex:1 1 100%; width:100%; }
+  #look-picker .photos { grid-template-columns:repeat(2,1fr); gap:8px; }
   .look-hint-row { align-items:stretch; }
   .look-hint-row .hint { flex:1; min-width:0; }
   .compare { grid-template-columns:1fr; }

@@ -32,9 +32,30 @@
         <span class="muted" id="look-status"></span>
       </div>
       <div id="look">
-        <div class="look-row"><label>Top</label><select class="look-select" data-role="top"></select></div>
-        <div class="look-row"><label>Bottom</label><select class="look-select" data-role="bottom"></select></div>
-        <div class="look-row"><label>Dress</label><select class="look-select" data-role="dress"></select></div>
+        <div class="look-row">
+          <label>Top</label>
+          <button type="button" class="look-pick" data-role="top">
+            <span class="look-thumb" data-thumb="top"></span>
+            <span class="look-pick-label" data-label="top">— tap to pick a top —</span>
+          </button>
+          <select class="look-select" data-role="top" hidden></select>
+        </div>
+        <div class="look-row">
+          <label>Bottom</label>
+          <button type="button" class="look-pick" data-role="bottom">
+            <span class="look-thumb" data-thumb="bottom"></span>
+            <span class="look-pick-label" data-label="bottom">— tap to pick a bottom —</span>
+          </button>
+          <select class="look-select" data-role="bottom" hidden></select>
+        </div>
+        <div class="look-row">
+          <label>Dress</label>
+          <button type="button" class="look-pick" data-role="dress">
+            <span class="look-thumb" data-thumb="dress"></span>
+            <span class="look-pick-label" data-label="dress">— tap to pick a dress —</span>
+          </button>
+          <select class="look-select" data-role="dress" hidden></select>
+        </div>
       </div>
       <label style="display:flex;gap:8px;align-items:center;text-transform:none;margin-bottom:8px"><input type="checkbox" id="owned-only-look" /> Owned only</label>
       <div class="row look-hint-row" style="margin-top:6px">
@@ -60,5 +81,17 @@
     </div>
   </div>
 </section>
+{% endblock %}
+{% block modals %}
+<div id="look-picker" hidden>
+  <div class="modal">
+    <div class="modal-head">
+      <h2 id="lp-title">Pick</h2>
+      <button id="lp-close" class="ghost">✕</button>
+    </div>
+    <p class="muted" id="lp-empty" hidden>No garments with photos in this category yet — add one in the Wardrobe tab.</p>
+    <div id="lp-grid" class="photos"></div>
+  </div>
+</div>
 {% endblock %}
 {% block scripts %}<script src="/static/js/tryon.js"></script>{% endblock %}
