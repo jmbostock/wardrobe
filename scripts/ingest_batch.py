@@ -125,7 +125,7 @@ def ingest_one(user_id: int, path: Path, use_ai: bool, dry_run: bool = False) ->
     #     created but noted (surfaced as "possible duplicate" in the UI) ---
     clear = media.nearest_dup(
         user_id, ph, color_sig=cs, threshold=phash.SIMILAR_THRESHOLD,
-        category=None, color_tags=color,
+        category=category, color_tags=color,
     )
     if clear:
         result.update({
@@ -137,7 +137,7 @@ def ingest_one(user_id: int, path: Path, use_ai: bool, dry_run: bool = False) ->
 
     debate = media.nearest_dup(
         user_id, ph, color_sig=cs, threshold=phash.DEBATE_THRESHOLD,
-        category=None, color_tags=color,
+        category=category, color_tags=color,
     )
     if debate:
         result["dup"] = debate.get("name")

@@ -274,7 +274,7 @@ $('gd-rotate').addEventListener('click', async () => {
   img.style.opacity = '0.35';  // instant feedback: dims the old photo
   try {
     const resp = await apiJson('/api/wardrobe/' + editingItem.id + '/rotate', { method: 'POST' });
-    $('gd-status').textContent = 'rotated 180°';
+    $('gd-status').textContent = 'rotated 90°';
     if (resp.near_dup_of) toast('⚠ near-duplicate of "' + resp.near_dup_of.name + '"');
     editingItem.near_dup_of = resp.near_dup_of || null;
     $('gd-near').textContent = resp.near_dup_of

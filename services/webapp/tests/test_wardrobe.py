@@ -44,10 +44,10 @@ def test_create_upload_serve_delete():
     assert w.get(ua["id"], g.id) is None
 
 
-def test_rotate_180_flips_and_stays_portrait():
-    """Manual 180° rotate (upside-down fix) flips the photo in place, stays
-    portrait (never horizontal), and re-saves through save_garment_image so
-    phash / color_sig stay consistent."""
+def test_rotate_90_swaps_orientation():
+    """Manual 90° rotate (the sideways-fix button) rotates the photo 90° per
+    click — a portrait frame becomes landscape — and re-saves through
+    save_garment_image so phash / color_sig stay consistent."""
     import io as _io
 
     from PIL import Image
@@ -56,7 +56,7 @@ def test_rotate_180_flips_and_stays_portrait():
     from app.routes.wardrobe_routes import rotate_garment_image
 
     ua = auth.create_user("wRot@example.com", "password123")
-    g = w.create(ua["id"], "Upside-down top", "top")
+    g = w.create(ua["id"], "Sideways top", "top")
     # portrait image with a DARK band at the TOP so orientation is measurable
     img = Image.new("RGB", (800, 1200), (200, 200, 200))
     for x in range(800):
@@ -69,17 +69,19 @@ def test_rotate_180_flips_and_stays_portrait():
     def dark_band_at_top() -> bool:
         data = garment_image_path(ua["id"], g.id).read_bytes()
         im = Image.open(_io.BytesIO(data)).convert("RGB")
-        top = sum(im.getpixel((400, y))[0] for y in range(0, 100)) / 100
-        bot = sum(im.getpixel((400, y))[0] for y in range(1100, 1200)) / 100
+        w, h = im.size
+        band = min(100, h)
+        top = sum(im.getpixel((w // 2, y))[0] for y in range(0, band)) / band
+        bot = sum(im.getpixel((w // 2, y))[0] for y in range(h - band, h)) / band
         return top < bot
 
     assert dark_band_at_top(), "precondition: dark band should be at the top"
     d = rotate_garment_image(g.id, {"id": ua["id"]})
     assert d["has_image"] is True
-    assert not dark_band_at_top(), "after 180° the dark band should be at the bottom"
-    # still a valid portrait image on disk
+    # a 90° rotation swaps portrait → landscape (how a sideways item gets upright)
     im = Image.open(_io.BytesIO(garment_image_path(ua["id"], g.id).read_bytes()))
-    assert im.height > im.width, im.size
+    assert im.width > im.height, im.size
+    assert not dark_band_at_top(), "dark band should no longer be at the top"
     # cross-user cannot rotate someone else's garment
     ub = auth.create_user("wRot2@example.com", "password123")
     from fastapi import HTTPException
@@ -391,9 +393,11 @@ def test_phash_similarity():
 
 
 def test_near_duplicates():
-    """media.near_duplicates flags the same/near-identical item (even across
-    categories — the same picture is the same item no matter how it's tagged),
-    excludes self, and ignores unrelated garments (different color)."""
+    """media.near_duplicates flags the same/near-identical item (same category,
+    or a confusable cross-category pair like a shirt tagged 'top' vs
+    'outerwear'), excludes self, and ignores unrelated garments (different
+    color, or a non-confusable category — a skirt is never "similar to" a
+    top/sweater just because both photos are red)."""
     from app import media, phash
     from PIL import Image, ImageDraw
     import io as _io
@@ -408,41 +412,45 @@ def test_near_duplicates():
         return buf.getvalue()
 
     ua = auth.create_user("wDup@example.com", "password123")
-    g1 = w.create(ua["id"], "Red dress", "dress")
+    g1 = w.create(ua["id"], "Plaid shirt", "top")
     media.save_garment_image(ua["id"], g1.id, make((120, 50, 50), "RED"), "png")
-    g2 = w.create(ua["id"], "Blue dress", "dress")
+    g2 = w.create(ua["id"], "Blue shirt", "top")
     media.save_garment_image(ua["id"], g2.id, make((60, 60, 140), "BLU"), "png")
-    # g3 = the same photo under a different category (a top vs the red dress).
-    # A near-identical image is the same item regardless of how it's tagged, so
-    # this IS a cross-category duplicate the user wants flagged.
-    g3 = w.create(ua["id"], "Red top", "top")
+    # g3 = same photo, confusable cross-category (the shirt tagged 'outerwear') → a dup
+    g3 = w.create(ua["id"], "Plaid jacket", "outerwear")
     media.save_garment_image(ua["id"], g3.id, make((126, 54, 54), "RED"), "png")
+    # g4 = same photo but a NON-confusable category (a skirt vs the shirt) → NOT a dup
+    g4 = w.create(ua["id"], "Red skirt", "bottom")
+    media.save_garment_image(ua["id"], g4.id, make((126, 54, 54), "RED"), "png")
 
     red1 = make((120, 50, 50), "RED")
     red2 = make((126, 54, 54), "RED")
-    # g2 is unrelated → no near-dup for g1's exact hash (excluding g1 itself)
-    assert media.near_duplicates(ua["id"], phash.image_phash(red1),
-                                 phash.image_color_class(red1), exclude_id=g1.id) == []
-    # a near-identical re-shoot of g1 flags g1 (same category + same color)
+    # g2 (blue) is unrelated → never returned for a red photo
+    assert not any(x["id"] == g2.id for x in
+                   media.near_duplicates(ua["id"], phash.image_phash(red1),
+                                         phash.image_color_class(red1),
+                                         exclude_id=g1.id, category="top"))
+    # a near-identical re-shoot of g1 flags g1 (same category) + g3 (confusable
+    # cross-category: shirt tagged 'outerwear'), but NOT g4 (non-confusable
+    # skirt) nor g2 (different color)
     dups = media.near_duplicates(ua["id"], phash.image_phash(red2),
-                                 phash.image_color_class(red2))
+                                 phash.image_color_class(red2), category="top")
     assert any(x["id"] == g1.id for x in dups), dups
-    assert not any(x["id"] == g2.id for x in dups), dups  # different color class
-    # g3 is the same picture tagged as a different category — a near-identical
-    # image bypasses the category gate (cross-category duplicate)
     assert any(x["id"] == g3.id for x in dups), dups
+    assert not any(x["id"] == g4.id for x in dups), dups
+    assert not any(x["id"] == g2.id for x in dups), dups
     # a blue near-twin of g2 flags g2 (color gate passes, not g1)
     blue2 = make((66, 66, 146), "BLU")
     dups2 = media.near_duplicates(ua["id"], phash.image_phash(blue2),
-                                  phash.image_color_class(blue2))
+                                  phash.image_color_class(blue2), category="top")
     assert any(x["id"] == g2.id for x in dups2), dups2
     assert not any(x["id"] == g1.id for x in dups2), dups2
-    # garment_dict exposes near_dup_of for the grid "similar to" note — now
-    # cross-category + debate zone, so g1 (red dress) notes g3 (red top, same pic)
+    # garment_dict exposes near_dup_of for the grid "similar to" note — g1's
+    # confusable cross-category twin (g3) is the note; the skirt (g4) is not
     g1d = media.garment_dict(ua["id"], w.get(ua["id"], g1.id))
     assert g1d["phash"] != ""
     assert g1d["near_dup_of"] is not None and g1d["near_dup_of"]["id"] == g3.id
-    assert media.garment_dict(ua["id"], w.get(ua["id"], g2.id))["near_dup_of"] is None
+    assert media.garment_dict(ua["id"], w.get(ua["id"], g4.id))["near_dup_of"] is None
 
 
 def test_near_duplicates_canonical_color_gate():
@@ -706,7 +714,7 @@ def test_clean_image_url():
 if __name__ == "__main__":
     test_create_upload_serve_delete()
     test_cross_user_isolation()
-    test_rotate_180_flips_and_stays_portrait()
+    test_rotate_90_swaps_orientation()
     test_update()
     test_imglink_product_gallery_preferred_over_logo()
     test_imglink_jsonld_product_image()

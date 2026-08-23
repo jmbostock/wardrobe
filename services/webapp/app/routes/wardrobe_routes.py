@@ -232,10 +232,11 @@ def garment_image(garment_id: int, user: dict = Depends(get_current_user)) -> Fi
 
 @router.post("/api/wardrobe/{garment_id}/rotate")
 def rotate_garment_image(garment_id: int, user: dict = Depends(get_current_user)) -> dict:
-    """Flip a garment photo 180° to fix an upside-down upload. Only 180° is ever
-    offered: garment photos are guaranteed never-horizontal, and a 90/270 rotation
-    would turn a portrait frame sideways (forbidden). Re-saves through
-    save_garment_image so phash / color_sig / near-dup stay consistent."""
+    """Rotate a garment photo 90° per click — the manual escape hatch for a
+    sideways/upside-down upload the tag reader couldn't fix. Each click adds 90°
+    (click 1-3× to get the upright view). A 90° rotation swaps a portrait frame
+    to landscape when correcting a sideways item — that's expected. Re-saves
+    through save_garment_image so phash / color_sig / near-dup stay consistent."""
     g = wardrobe.get(user["id"], garment_id)
     if g is None:
         raise HTTPException(404, "garment not found")
@@ -243,9 +244,8 @@ def rotate_garment_image(garment_id: int, user: dict = Depends(get_current_user)
     if path is None:
         raise HTTPException(404, "no image for this garment")
     data = path.read_bytes()
-    data, norm_ext = normalize_orientation(data, rotate=180)
-    ext = norm_ext or path.suffix.lower().lstrip(".")
-    save_garment_image(user["id"], garment_id, data, ext)
+    ext = path.suffix.lower().lstrip(".")
+    save_garment_image(user["id"], garment_id, data, ext, rotate=90)
     return garment_dict(user["id"], wardrobe.get(user["id"], garment_id))
 
 

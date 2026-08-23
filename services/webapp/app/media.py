@@ -358,6 +358,13 @@ def save_garment_image(user_id: int, garment_id: int, data: bytes, ext: str,
     return path
 
 
+# Categories that can plausibly be the SAME garment when mislabeled at ingest
+# (a shirt tagged 'top' vs 'outerwear'). Cross-category matches are ONLY allowed
+# within this set — a plaid skirt is never "similar to" a red sweater just
+# because both photos happen to be red.
+_CONFUSABLE = frozenset({"top", "outerwear"})
+
+
 def _canonical_color(color_tags: str) -> str:
     """First canonical color tag, normalized ('navy,dark' -> 'navy'). Empty
     string when no canonical color is set (caller falls back to the photo-based
@@ -388,10 +395,10 @@ def near_duplicates(
       matching the coarse photo `color_sig`
     - center-crop dHash Hamming distance <= threshold
 
-    Pass `category=None` to search across ALL categories — this is how
-    cross-category duplicates (the same plaid shirt imported once as 'top' and
-    once as 'outerwear') are caught for the ingest gate and the 'possible
-    duplicate' note.
+    Cross-category matches are only allowed for confusable item types
+    (_CONFUSABLE — a shirt tagged 'top' vs 'outerwear'); any other category
+    difference never matches, so a red plaid skirt is never "similar to" a red
+    sweater just because both photos are red.
     """
     if not phash_hex:
         return []
@@ -401,7 +408,11 @@ def near_duplicates(
         if not g.phash or g.id == exclude_id:
             continue
         if category is not None and g.category != category:
-            continue
+            # cross-category only for confusable item types (a shirt tagged
+            # 'top' vs 'outerwear'); a plaid skirt is never "similar to" a red
+            # sweater just because both photos are red
+            if not (category in _CONFUSABLE and g.category in _CONFUSABLE):
+                continue
         g_color = _canonical_color(g.color_tags)
         if my_color and g_color:
             # both canonical → must be the same color (red != pink)
@@ -479,7 +490,7 @@ def garment_dict(user_id: int, g) -> dict:
     # nearest existing garment this one is a near-duplicate of (for "similar to
     # X" notes) — scoped to the owner's collection, same category + dominant color
     nd = (nearest_dup(g.user_id, g.phash, g.color_sig, exclude_id=g.id,
-                      threshold=phash.DEBATE_THRESHOLD, category=None,
+                      threshold=phash.DEBATE_THRESHOLD, category=g.category,
                       color_tags=g.color_tags)
           if g.phash else None)
     d["near_dup_of"] = nd
