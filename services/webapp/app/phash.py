@@ -19,12 +19,7 @@ from PIL import Image
 # the same item at a slightly different angle/hang can be up to ~8. We hash the
 # CENTER CROP (see image_phash), so unrelated garments land well above this.
 SIMILAR_THRESHOLD = 8
-# Below this we treat two photos as *the same picture* (identical or just
-# re-encoded) regardless of their metadata labels — so a duplicate imported with
-# a wrong/missing category is still caught (e.g. the same plaid shirt tagged
-# once as 'top' and once as 'outerwear').
-SAME_IMAGE_DISTANCE = 4
-# Distances between SAME_IMAGE_DISTANCE and DEBATE_THRESHOLD are the "debate"
+# Distances between SIMILAR_THRESHOLD and DEBATE_THRESHOLD are the "debate"
 # zone — plausibly the same item re-photographed (different angle/lighting) but
 # not provably so. These are flagged as 'possible duplicate' instead of blocked.
 DEBATE_THRESHOLD = 20

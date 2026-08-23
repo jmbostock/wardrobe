@@ -380,15 +380,18 @@ def near_duplicates(
     same) item as one with `phash_hex`. Sorted by closest first.
     Empty list = no near-duplicate.
 
-    Three gates (all must pass) — EXCEPT a near-identical picture (Hamming
-    distance <= SAME_IMAGE_DISTANCE) which bypasses the category/color gates,
-    since it is the same photo regardless of how it was tagged:
+    Three gates (all must pass):
     - same `category` (a top vs. a pair of pants shot the same way isn't a dup)
     - color: when BOTH garments carry a canonical color tag, those must match
       (so a red one-piece is never "similar to" a pink polka-dot one even when
       their photo-based coarse color class collides); otherwise fall back to
       matching the coarse photo `color_sig`
     - center-crop dHash Hamming distance <= threshold
+
+    Pass `category=None` to search across ALL categories — this is how
+    cross-category duplicates (the same plaid shirt imported once as 'top' and
+    once as 'outerwear') are caught for the ingest gate and the 'possible
+    duplicate' note.
     """
     if not phash_hex:
         return []
@@ -397,23 +400,20 @@ def near_duplicates(
     for g in wardrobe.all(user_id):
         if not g.phash or g.id == exclude_id:
             continue
-        d = phash.hamming(phash_hex, g.phash)
-        if d > threshold:
-            continue
-        same_image = d <= phash.SAME_IMAGE_DISTANCE
-        # a near-identical picture is the same item no matter how it was tagged
-        # (same plaid shirt imported once as 'top' and once as 'outerwear')
-        if not same_image and category is not None and g.category != category:
+        if category is not None and g.category != category:
             continue
         g_color = _canonical_color(g.color_tags)
-        if not same_image:
-            if my_color and g_color:
-                # both canonical → must be the same color (red != pink)
-                if my_color != g_color:
-                    continue
-            elif not color_sig or not g.color_sig or g.color_sig != color_sig:
+        if my_color and g_color:
+            # both canonical → must be the same color (red != pink)
+            if my_color != g_color:
                 continue
-        out.append({"id": g.id, "name": g.name, "distance": d})
+        else:
+            # no canonical colors → fall back to coarse photo color match
+            if not color_sig or not g.color_sig or g.color_sig != color_sig:
+                continue
+        d = phash.hamming(phash_hex, g.phash)
+        if d <= threshold:
+            out.append({"id": g.id, "name": g.name, "distance": d})
     out.sort(key=lambda x: x["distance"])
     return out
 
