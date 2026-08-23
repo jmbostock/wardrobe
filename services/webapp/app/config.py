@@ -20,6 +20,14 @@ class Settings:
         # optional fixed seed for reproducible try-on (None = random per request)
         seed = os.getenv("TRYON_SEED", "")
         self.tryon_seed: int | None = int(seed) if seed.isdigit() else None
+        # --- DeepSeek API (stylist chat — zero VRAM, keeps GPU free for CatVTON) ---
+        self.deepseek_api_key: str = os.getenv("DEEPSEEK_API_KEY", "")
+        self.deepseek_base_url: str = os.getenv(
+            "DEEPSEEK_BASE_URL", "https://api.deepseek.com"
+        ).rstrip("/")
+        self.deepseek_chat_model: str = os.getenv(
+            "DEEPSEEK_CHAT_MODEL", "deepseek-v4-flash"
+        )
 
 
 settings = Settings()

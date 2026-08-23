@@ -218,9 +218,6 @@ function openGarmentDetail(g) {
   $('gd-near').textContent = g.near_dup_of
     ? '⚠ looks similar to "' + g.near_dup_of.name + '" — possible duplicate'
     : '';
-  $('gd-used').textContent = g.used_count
-    ? 'used in ' + g.used_count + ' saved outfit' + (g.used_count === 1 ? '' : 's')
-    : '';
   bindRating('gd-rating', g.rating || 0);
   openSheet($('garment-detail'));
 }

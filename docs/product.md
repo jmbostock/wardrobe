@@ -195,6 +195,9 @@ Full write-up: **`docs/wardrobe-v0.12.md`** (metadata / dedup / dropdowns / size
   look rows) always loads the latest bytes. The rotate button also dims the
   current photo instantly and re-shows it rotated (clear feedback even if the
   180° flip is subtle).
+- **Detail card tidy-up** (v0.23.0): removed the "used in N saved outfits" line
+  from the garment detail card and added a gap between the photo and the Name
+  field. (`used_count` is still kept for the wardrobe "Most used" sort.)
 
 ---
 

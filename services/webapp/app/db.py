@@ -91,6 +91,16 @@ CREATE TABLE IF NOT EXISTS clips (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_clips_user ON clips(user_id);
+
+CREATE TABLE IF NOT EXISTS chat_sessions (
+    id         TEXT PRIMARY KEY,           -- UUID
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    messages   TEXT NOT NULL DEFAULT '[]', -- JSON [{role, content}]
+    context    TEXT NOT NULL DEFAULT '{}', -- JSON snapshot {weather, outfit, activity}
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_chat_user ON chat_sessions(user_id);
 """
 
 
@@ -173,6 +183,19 @@ def _migrate(conn: sqlite3.Connection) -> None:
         )"""
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_clips_user ON clips(user_id)")
+    # chat_sessions table (added 2026-08-23) for DeepSeek stylist chat
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS chat_sessions (
+            id         TEXT PRIMARY KEY,
+            user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            messages   TEXT NOT NULL DEFAULT '[]',
+            context    TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )"""
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_chat_user ON chat_sessions(user_id)")
 
 
 def lock() -> threading.Lock:
