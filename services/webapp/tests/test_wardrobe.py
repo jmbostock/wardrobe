@@ -562,10 +562,11 @@ def test_normalize_orientation_rotations():
         w, h = size(d)
         assert h > w, (r, w, h)
 
-    # landscape + a deliberate 90/270 → trusted (stays horizontal, garment upright)
+    # landscape + a deliberate 90/270 → rotation applied (no portrait fallback
+    # double-rotation) — a landscape frame rotated 90/270 becomes portrait
     for r in (90, 270):
         d, e = normalize_orientation(data_of(land), rotate=r)
-        assert size(d) == (1200, 800), (r, size(d))
+        assert size(d) == (800, 1200), (r, size(d))
 
 
 def test_normalize_color():
