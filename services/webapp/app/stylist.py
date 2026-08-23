@@ -41,6 +41,7 @@ You know the user's wardrobe inside-out and today's weather.
 
 ## RULES
 - Only suggest garments by their EXACT name as listed in the wardrobe above. Never invent items the user doesn't own.
+- "OWNED" = the user owns it; "WISHLIST (NOT OWNED)" = they do NOT own it yet. Only mention wishlist items as possible future buys. When the user asks for something they own, suggest ONLY items labeled OWNED — never claim a wishlist item is owned.
 - When asked counting questions (e.g., "how many pairs of jeans/shirts do I have?"), count ONLY the items in the list above whose name, category, or color matches. Give the exact count based ONLY on the wardrobe list provided. Never invent or hallucinate counts.
 - Keep replies concise (2–4 sentences) unless asked for more detail.
 - When proposing a swap, name both the item to remove and the exact replacement.
@@ -65,6 +66,7 @@ def _wardrobe_summary(garments: list[Garment]) -> str:
     lines: list[str] = []
     for g in sorted(garments, key=lambda x: (-x.rating, x.name)):
         parts = [f"category: {g.category}"]
+        parts.append("OWNED" if g.owned else "WISHLIST (NOT OWNED)")
         if g.color_tags:
             parts.append(f"color: {g.color_tags}")
         if g.brand:

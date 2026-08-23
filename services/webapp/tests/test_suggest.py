@@ -26,13 +26,13 @@ OFFICE_WEATHER = {
 }
 
 
-def _login(c: TestClient) -> tuple[dict, int]:
+def _login(c: TestClient, email: str = "suggest@example.com") -> tuple[dict, int]:
     # tests in this module share one DATA_DIR, so the user may already exist
     try:
-        auth.create_user("suggest@example.com", "password123")
+        auth.create_user(email, "password123")
     except auth.AuthError:
         pass
-    r = c.post("/api/auth/login", json={"email": "suggest@example.com", "password": "password123"})
+    r = c.post("/api/auth/login", json={"email": email, "password": "password123"})
     h = {"Authorization": "Bearer " + r.json()["token"]}
     return h, auth.get_user_by_token(r.json()["token"])["id"]
 
@@ -93,6 +93,32 @@ def test_re_suggest_appends_to_same_thread():
     assert all(m["kind"] == "recommend" for m in hist["messages"])
     # context now reflects the latest suggestion
     assert hist["context"]["activity"] == "casual"
+
+
+def test_suggest_defaults_to_owned_only_and_flags_wishlist():
+    c = TestClient(app)
+    h, uid = _login(c, "ownfilter@example.com")
+    # wishlist top scores higher (matches target warmth) than the owned top
+    wardrobe.create(uid, "Owned Warm Top", "top", warmth=4, formality="business",
+                    occasions="office", owned=1)
+    wardrobe.create(uid, "Wishlist Perfect Top", "top", warmth=2, formality="business",
+                    occasions="office", owned=0)
+    wardrobe.create(uid, "Owned Bottom", "bottom", warmth=3, formality="business",
+                    occasions="office", owned=1)
+
+    # default (owned_only omitted -> True): only owned items recommended
+    j = c.post("/api/suggest", headers=h, json={
+        "activity": "office", "weather": OFFICE_WEATHER,
+    }).json()
+    assert j["outfit"]["top"]["name"] == "Owned Warm Top", "default should be owned-only"
+
+    # explicit owned_only=false: wishlist item can win and is flagged in the message
+    j2 = c.post("/api/suggest", headers=h, json={
+        "activity": "office", "owned_only": False, "weather": OFFICE_WEATHER,
+    }).json()
+    assert j2["outfit"]["top"]["name"] == "Wishlist Perfect Top"
+    assert "wishlist" in j2["intro"].lower()
+    assert "Wishlist Perfect Top" in j2["intro"]
 
 
 def test_suggest_auth_guard():

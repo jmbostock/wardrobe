@@ -172,17 +172,36 @@ def _recommend_intro(activity: str, weather_used: dict, outfit: dict, prompt: st
 
     why = _join_clauses(clauses)
     why = why[:1].upper() + why[1:] + "."  # uppercase 1st char only (keep 71°F etc.)
-    return (
+    intro = (
         f"Here's your {label} look — {', '.join(slot_names)}. "
         f"{why} Ask me to swap anything — color, layers, or vibe — and I'll adjust."
     )
+    # Flag any wishlist picks so the user knows what's owned vs aspirational
+    unowned: list[str] = [
+        g["name"]
+        for slot in ("top", "bottom", "outerwear", "footwear")
+        if (g := outfit.get(slot)) and not g.get("owned")
+    ]
+    for a in outfit.get("accessories") or []:
+        if not a.get("owned"):
+            unowned.append(a["name"])
+    if unowned:
+        unowned = list(dict.fromkeys(unowned))  # de-dupe
+        plural = len(unowned) > 1
+        intro += (
+            f" Heads up: {', '.join(unowned)} {'are' if plural else 'is'} "
+            "on your wishlist, not owned yet."
+        )
+    return intro
 
 
 class SuggestRequest(BaseModel):
     session_id: str | None = Field(None, description="Existing chat session to append to; None = new session")
     activity: str = Field("casual", description="office, date, hiking, ...")
     prompt: str | None = Field(None, description="free-form style hint")
-    owned_only: bool = Field(False, description="only recommend garments you own")
+    # Default to OWNED-only: suggesting things you don't own yet is confusing.
+    # Unchecking "Owned only" in the UI sends owned_only=false to include wishlist.
+    owned_only: bool = Field(True, description="only recommend garments you own")
     weather: WeatherIn | None = Field(None, description="omit to auto-fetch")
 
 
