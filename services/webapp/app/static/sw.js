@@ -1,7 +1,7 @@
 /* Clueless Closet service worker — app-shell cache, API stays network-only.
    Only activates on a secure context (HTTPS or localhost); over plain LAN HTTP
    the browser ignores it and the app works exactly as before. */
-const CACHE = 'closet-v24'; // bump on every JS/CSS release so phones fetch fresh assets
+const CACHE = 'closet-v25'; // bump on every JS/CSS release so phones fetch fresh assets
 const SHELL = [
   '/suggest', '/tryon', '/wardrobe', '/outfits', '/account', '/login',
   '/static/css/app.css',

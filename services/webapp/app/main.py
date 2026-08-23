@@ -33,6 +33,17 @@ app = FastAPI(title="altacloset", version=__version__)
 STATIC_DIR = Path(__file__).parent / "static"
 
 
+class NoCacheStaticFiles(StaticFiles):
+    """Serve static assets with `Cache-Control: no-cache` so CSS/JS updates reach
+    phones immediately. Without a cache header browsers heuristic-cache
+    app.css/suggest.js for a long time and users keep seeing the old UI."""
+
+    def file_response(self, full_path, stat_result, scope, status_code=200):
+        resp = super().file_response(full_path, stat_result, scope, status_code)
+        resp.headers["Cache-Control"] = "no-cache, must-revalidate"
+        return resp
+
+
 @app.get("/health")
 def health() -> dict:
     return {"ok": True, "service": "clueless-closet", "version": __version__}
@@ -47,4 +58,4 @@ app.include_router(routes.outfits_routes.router)
 app.include_router(routes.tryon_routes.router)
 app.include_router(routes.recommend_routes.router)
 app.include_router(routes.image_routes.router)
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+app.mount("/static", NoCacheStaticFiles(directory=STATIC_DIR), name="static")
