@@ -148,7 +148,8 @@ def test_resolve_outfit_items():
     wardrobe.create(uid, "Jeans", "bottom", owned=1)
     items = _resolve_outfit_items(uid, ["Navy peplum top", "Jeans", "Nope", "Jeans"])
     assert [i["name"] for i in items] == ["Navy peplum top", "Jeans"], items
-    assert all("id" in i and "name" in i for i in items)
+    assert all("id" in i and "name" in i and "category" in i for i in items)
+    assert items[0]["category"] == "top" and items[1]["category"] == "bottom"
     assert _resolve_outfit_items(uid, []) == []
 
 

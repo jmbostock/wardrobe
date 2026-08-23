@@ -84,7 +84,25 @@ function _stripOutfitMarker(text) {
   return i === -1 ? text : text.slice(0, i).replace(/[ \t]+$/, '');
 }
 
-// Render Cher's marked main picks as garment photos inside a chat bubble.
+// Map Cher's marked main picks (by category) to an outfit for the Try-on page.
+function _chatItemsToOutfit(items) {
+  const FULL = ['dress', 'swimsuit', 'jumpsuit', 'overall'];
+  const outfit = { top: null, bottom: null, outerwear: null, footwear: null, accessories: [] };
+  for (const it of items || []) {
+    const cat = it.category;
+    const g = { id: it.id, name: it.name, category: cat };
+    if (FULL.includes(cat)) outfit.top = g;                 // one-piece fills the top slot
+    else if (cat === 'top') outfit.top = g;
+    else if (cat === 'bottom') outfit.bottom = g;
+    else if (cat === 'outerwear') outfit.outerwear = g;
+    else if (cat === 'footwear') outfit.footwear = g;
+    else outfit.accessories.push(g);
+  }
+  return outfit;
+}
+
+// Render Cher's marked main picks as garment photos inside a chat bubble,
+// with a Try it on → button that sends the look to the Try-on page.
 function _renderChatGarments(bubble, items) {
   if (!items || !items.length) return;
   let grid = bubble.querySelector('.recommend-outfit');
@@ -108,6 +126,12 @@ function _renderChatGarments(bubble, items) {
     authImageUrl('/api/wardrobe/' + img.dataset.gid + '/image')
       .then((u) => { img.src = u; }).catch(() => {});
   });
+  // Try on the main picks right from the chat
+  const btn = document.createElement('button');
+  btn.className = 'recommend-tryon';
+  btn.textContent = 'Try it on →';
+  btn.addEventListener('click', () => _goTryOn(_chatItemsToOutfit(items)));
+  bubble.appendChild(btn);
   _scrollChat();
 }
 

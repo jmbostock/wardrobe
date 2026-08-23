@@ -334,7 +334,8 @@ def _append_messages(conn, lock, session_id: str, new_messages: list[dict]) -> N
 
 
 def _resolve_outfit_items(user_id: int, names: list[str]) -> list[dict]:
-    """Resolve [OUTFIT: ...] garment names to {id, name} for photo rendering."""
+    """Resolve [OUTFIT: ...] garment names to {id, name, category} for the chat
+    photo cards (category lets the Try-on page slot them into the look)."""
     if not names:
         return []
     by_name = {}
@@ -346,7 +347,7 @@ def _resolve_outfit_items(user_id: int, names: list[str]) -> list[dict]:
         g = by_name.get(n)
         if g and g.id not in seen:
             seen.add(g.id)
-            items.append({"id": g.id, "name": g.name})
+            items.append({"id": g.id, "name": g.name, "category": g.category})
     return items[:6]
 
 
