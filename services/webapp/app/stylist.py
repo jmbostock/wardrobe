@@ -30,26 +30,27 @@ _SYSTEM_TEMPLATE = """\
 You are Cher, a sharp and friendly personal fashion stylist. \
 You know the user's wardrobe inside-out and today's weather.
 
-## TODAY'S WEATHER
-{weather_summary}
-
 ## USER'S WARDROBE ({garment_count} garments)
 {wardrobe_summary}
+
+## TODAY'S WEATHER
+{weather_summary}
 
 ## CURRENT OUTFIT SUGGESTION
 {outfit_summary}
 
 ## RULES
-- Only suggest garments by their EXACT name as listed in the wardrobe above. \
-  Never invent items the user doesn't own.
-- Keep replies concise (3–5 sentences) unless asked for more detail.
-- When proposing a swap, name both the item to remove and the replacement.
+- Only suggest garments by their EXACT name as listed in the wardrobe above. Never invent items the user doesn't own.
+- When asked counting questions (e.g., "how many pairs of jeans/shirts do I have?"), count ONLY the items in the list above whose name, category, or color matches. Give the exact count based ONLY on the wardrobe list provided. Never invent or hallucinate counts.
+- Keep replies concise (2–4 sentences) unless asked for more detail.
+- When proposing a swap, name both the item to remove and the exact replacement.
 - If asked anything unrelated to fashion or this wardrobe, politely redirect.
 - Do not repeat the weather or wardrobe data back verbatim.
 """
 
 
 def _weather_summary(weather: dict) -> str:
+    """Format weather dictionary into a concise single-line text summary."""
     return (
         f"{weather.get('temp_f', '?')}°F "
         f"(feels {weather.get('feels_like_f', '?')}°F), "
@@ -60,21 +61,28 @@ def _weather_summary(weather: dict) -> str:
 
 
 def _wardrobe_summary(garments: list[Garment]) -> str:
-    """Compact text list sorted by rating descending, capped at 50 items."""
+    """Detailed text list of all garments sorted by rating descending."""
     lines: list[str] = []
-    for g in sorted(garments, key=lambda x: (-x.rating, x.name))[:50]:
-        parts = [g.category, g.formality, f"warmth {g.warmth}/5"]
+    for g in sorted(garments, key=lambda x: (-x.rating, x.name)):
+        parts = [f"category: {g.category}"]
+        if g.color_tags:
+            parts.append(f"color: {g.color_tags}")
+        if g.brand:
+            parts.append(f"brand: {g.brand}")
+        if g.sizes:
+            parts.append(f"size: {g.sizes}")
+        parts.append(f"formality: {g.formality}")
+        parts.append(f"warmth: {g.warmth}/5")
         if g.rating:
             parts.append(f"★{g.rating}/10")
         if g.wear_count:
             parts.append(f"worn {g.wear_count}×")
-        if g.color_tags:
-            parts.append(g.color_tags.split(",")[0].strip())  # dominant color tag
         lines.append(f"- {g.name} [{', '.join(parts)}]")
     return "\n".join(lines) if lines else "(empty wardrobe)"
 
 
 def _outfit_summary(outfit: dict) -> str:
+    """Format suggested outfit dictionary into a slot-by-slot text summary."""
     parts: list[str] = []
     for slot in ("top", "bottom", "outerwear", "footwear"):
         g = outfit.get(slot)
@@ -92,6 +100,7 @@ def build_system_prompt(
     garments: list[Garment],
     outfit: dict,
 ) -> str:
+    """Assemble the system prompt for Cher with wardrobe, weather, and active outfit context."""
     return _SYSTEM_TEMPLATE.format(
         weather_summary=_weather_summary(weather),
         garment_count=len(garments),
