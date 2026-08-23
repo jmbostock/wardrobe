@@ -185,6 +185,11 @@ Full write-up: **`docs/wardrobe-v0.12.md`** (metadata / dedup / dropdowns / size
   into a `.body` wrapper) so the sticky bar (grab + title + ✕ + None) sits
   exactly at the top edge (y=0) and garments slide up right behind it. The grab
   handle is a thin 4px line.
+- **Rotate 180° shows immediately** (v0.21.0): the rotate endpoint already
+  rewrote the file, but the browser served the same-URL image from cache, so the
+  detail card looked unchanged. Garment + person photo image endpoints now send
+  `Cache-Control: no-store`, and the frontend cache-busts every garment image
+  fetch (`?v=timestamp`), so clicking ↻ Rotate 180° updates the photo right away.
 
 ---
 

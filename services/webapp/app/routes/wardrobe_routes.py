@@ -222,7 +222,9 @@ def garment_image(garment_id: int, user: dict = Depends(get_current_user)) -> Fi
         ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
         ".webp": "image/webp", ".gif": "image/gif",
     }.get(path.suffix.lower(), "application/octet-stream")
-    return FileResponse(path, media_type=media)
+    # no-store: rotate / upload rewrite the same file & URL — without this the
+    # browser serves the stale image and the detail card looks unchanged.
+    return FileResponse(path, media_type=media, headers={"Cache-Control": "no-store"})
 
 
 @router.post("/api/wardrobe/{garment_id}/rotate")

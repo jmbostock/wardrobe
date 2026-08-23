@@ -99,4 +99,5 @@ def photo_image(photo_id: int, user: dict = Depends(get_current_user)) -> FileRe
         path = photos.photo_path(user["id"], photo_id)
     except photos.PhotoError as ex:
         raise HTTPException(404, str(ex)) from ex
-    return FileResponse(path, media_type="image/jpeg")
+    return FileResponse(path, media_type="image/jpeg",
+                        headers={"Cache-Control": "no-store"})

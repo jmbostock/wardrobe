@@ -3,6 +3,10 @@
 let editingItem = null;   // garment being edited in the detail card
 let wardrobeFilter = 'all';
 let wardrobeSort = 'newest';
+// cache-busting garment image URL — rotate/upload rewrite the same file/URL, so
+// a ?v= param forces the browser to fetch the fresh image (otherwise the detail
+// card keeps showing the old cached photo after Rotate 180°).
+function gimg(id) { return '/api/wardrobe/' + id + '/image?v=' + Date.now(); }
 
 // ---------- grid ----------
 async function loadWardrobe() {
@@ -28,7 +32,7 @@ async function loadWardrobe() {
     const card = document.createElement('div'); card.className = 'photo';
     const img = document.createElement('img'); img.alt = g.name;
     if (g.has_image) {
-      const url = await authImageUrl('/api/wardrobe/' + g.id + '/image');
+      const url = await authImageUrl(gimg(g.id));
       img.src = url;
     } else {
       img.style.background = g.color_hex || '#333';
@@ -209,7 +213,7 @@ function openGarmentDetail(g) {
   const img = $('gd-img');
   img.style.background = g.color_hex || '#333'; img.src = '';
   if (g.has_image) {
-    authImageUrl('/api/wardrobe/' + g.id + '/image').then((u) => { img.src = u; }).catch(() => {});
+    authImageUrl(gimg(g.id)).then((u) => { img.src = u; }).catch(() => {});
   }
   $('gd-near').textContent = g.near_dup_of
     ? '⚠ looks similar to "' + g.near_dup_of.name + '" — possible duplicate'
@@ -223,7 +227,7 @@ function openGarmentDetail(g) {
 function closeGarmentDetail() { closeSheet($('garment-detail')); editingItem = null; }
 function refreshDetailImage() {
   if (editingItem && editingItem.has_image) {
-    authImageUrl('/api/wardrobe/' + editingItem.id + '/image').then((u) => { $('gd-img').src = u; }).catch(() => {});
+    authImageUrl(gimg(editingItem.id)).then((u) => { $('gd-img').src = u; }).catch(() => {});
   }
 }
 $('gd-close').addEventListener('click', closeGarmentDetail);

@@ -25,6 +25,8 @@ function roleMatches(role, category) {
   return role === 'full' ? FULL_CATEGORIES.includes(category) : category === role;
 }
 let lookPickingRole = null;  // which category the look picker modal is open for
+// cache-busting garment image URL (rotate/upload rewrite the same file/URL).
+function gimg(id) { return '/api/wardrobe/' + id + '/image?v=' + Date.now(); }
 
 async function photoBaseUrl(pid) {
   const p = savedPhotos.find((x) => String(x.id) === String(pid));
@@ -105,7 +107,7 @@ function syncLookRows() {
       thumb.innerHTML = '';
       if (g && g.has_image) {
         const img = document.createElement('img'); img.alt = g.name;
-        authImageUrl('/api/wardrobe/' + g.id + '/image').then((u) => { img.src = u; }).catch(() => {});
+        authImageUrl(gimg(g.id)).then((u) => { img.src = u; }).catch(() => {});
         thumb.appendChild(img);
       }
     }
@@ -142,7 +144,7 @@ function openLookPicker(role) {
     const card = document.createElement('div'); card.className = 'photo';
     const img = document.createElement('img'); img.alt = g.name;
     img.style.cursor = 'pointer';
-    authImageUrl('/api/wardrobe/' + g.id + '/image').then((u) => { img.src = u; }).catch(() => {});
+    authImageUrl(gimg(g.id)).then((u) => { img.src = u; }).catch(() => {});
     const meta = document.createElement('div'); meta.className = 'meta';
     const name = document.createElement('div'); name.textContent = g.name; name.style.fontSize = '13px';
     meta.appendChild(name);
