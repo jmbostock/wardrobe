@@ -368,6 +368,14 @@ async function sendChat(message) {
             textSpan.textContent = _stripOutfitMarker(replyText);
             textSpan.appendChild(cursor);
             _scrollChat();
+          } else if (evt.type === 'recommend') {
+            // user asked about a different city/zip → show a look built for it
+            if (evt.outfit) {
+              _lastOutfit = evt.outfit;
+              if (evt.activity) _lastActivity = evt.activity;
+              const card = _renderRecommendBubble({ intro: evt.intro, outfit: evt.outfit });
+              assistantBubble.parentNode.insertBefore(card, assistantBubble);
+            }
           } else if (evt.type === 'garments') {
             // Render Cher's main picks as garment photos in the bubble
             if (evt.items) _renderChatGarments(assistantBubble, evt.items);

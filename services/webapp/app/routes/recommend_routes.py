@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -132,6 +133,47 @@ def _location_label(user: dict) -> str:
     if user.get("lat") is None:
         return weather.DEFAULT_LOCATION["name"]
     return f"{user['lat']:.4f}, {user['lon']:.4f}"
+
+
+_ZIP_RE = re.compile(r"\b(\d{5})\b")
+# only trigger on an explicit travel/weather/wear question so "in the office"
+# or "going to work" never get geocoded by accident
+_PLACE_RE = re.compile(
+    r"\b(?:weather|wear|going|heading|visiting|flying|driving|travel(?:ing|ling)?|trip)"
+    r"\s+(?:in|to|at|for)\s+([A-Za-z][A-Za-z .'-]{1,40})",
+    re.I,
+)
+_LOCATION_STOPWORDS = {"work", "home", "office", "gym", "school", "bed",
+                       "beach", "party", "store", "mall", "the", "a", "an"}
+
+
+def _detect_location(message: str, user: dict) -> dict | None:
+    """If the user asks about a DIFFERENT city/zip, resolve it and fetch its
+    weather so the recommendation is built for where they're GOING, not where
+    they are. Returns {name, lat, lon, weather} or None."""
+    m = _ZIP_RE.search(message)
+    query = m.group(1) if m else None
+    if query is None:
+        pm = _PLACE_RE.search(message)
+        if not pm:
+            return None
+        query = pm.group(1).strip()
+        if len(query) < 3 or query.lower() in _LOCATION_STOPWORDS:
+            return None
+    loc = weather.geocode(query)
+    if not loc or not loc.get("name"):
+        return None
+    if user.get("lat") is not None and user.get("lon") is not None:
+        try:  # same place they're in → fall back to normal behavior
+            if abs(loc["lat"] - user["lat"]) < 0.02 and abs(loc["lon"] - user["lon"]) < 0.02:
+                return None
+        except Exception:  # noqa: BLE001
+            pass
+    try:
+        w = weather.fetch(loc["lat"], loc["lon"])
+    except Exception:  # noqa: BLE001
+        return None
+    return {"name": loc.get("name") or query, "lat": loc["lat"], "lon": loc["lon"], "weather": w}
 
 
 _ACTIVITY_LABELS = {
@@ -434,11 +476,41 @@ async def stylist_chat(
     ctx_outfit = context.get("outfit", {})
     history: list[dict] = json.loads(session["messages"])
 
+    # If the user asks about a DIFFERENT city/zip, build the recommendation for
+    # where they're GOING: fetch that weather and post a look card into the chat.
+    location_recommend = None
+    target = _detect_location(req.message, user)
+    prompt_weather = ctx_weather
+    prompt_outfit = ctx_outfit
+    if target:
+        prompt_weather = target["weather"].to_dict()
+        prompt_weather["location"] = target["name"]
+        result = recommender.recommend(
+            target["weather"], req.activity, None, wardrobe=wardrobe,
+            user_id=user_id, owned_only=True,
+        )
+        result["outfit"] = _with_image_flags(user_id, result["outfit"])
+        intro = _recommend_intro(req.activity, result["weather_used"], result["outfit"],
+                                 None, location=target["name"])
+        _append_messages(conn, lock, session_id, [{
+            "role": "assistant", "kind": "recommend", "content": intro,
+            "data": {"activity": req.activity, "prompt": None,
+                      "outfit": result["outfit"], "reasoning": result["reasoning"],
+                      "weather_used": result["weather_used"]},
+        }])
+        _update_context(conn, lock, session_id, {
+            "weather": result["weather_used"], "outfit": result["outfit"],
+            "activity": req.activity,
+        })
+        prompt_outfit = result["outfit"]
+        location_recommend = {"intro": intro, "outfit": result["outfit"],
+                              "activity": req.activity}
+
     garments = wardrobe.all(user_id)
     system_prompt = stylist.build_system_prompt(
-        weather=ctx_weather,
+        weather=prompt_weather,
         garments=garments,
-        outfit=ctx_outfit,
+        outfit=prompt_outfit,
         derived=user.get("derived_profile"),
     )
 
@@ -447,6 +519,8 @@ async def stylist_chat(
 
     # --- stream response as SSE ---
     async def event_stream():
+        if location_recommend:
+            yield f"data: {json.dumps({'type': 'recommend', 'intro': location_recommend['intro'], 'outfit': location_recommend['outfit'], 'activity': location_recommend['activity']})}\n\n"
         full_reply: list[str] = []
         async for token in stylist.stream_chat(
             system_prompt=system_prompt,

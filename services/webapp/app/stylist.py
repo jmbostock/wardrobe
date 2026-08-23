@@ -80,12 +80,14 @@ You know the user's wardrobe inside-out and today's weather.
 
 def _weather_summary(weather: dict) -> str:
     """Format weather dictionary into a concise single-line text summary."""
+    loc = weather.get("location")
     return (
         f"{weather.get('temp_f', '?')}°F "
         f"(feels {weather.get('feels_like_f', '?')}°F), "
         f"{weather.get('condition', 'unknown')}, "
         f"wind {weather.get('wind_kph', 0)} km/h, "
         f"humidity {weather.get('humidity', 0)}%"
+        + (f" — {loc}" if loc else "")
     )
 
 
