@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from .. import auth, weather
+from .. import auth, profile, weather
 from ..deps import get_current_user
 
 router = APIRouter()
@@ -19,10 +19,17 @@ class LocationRequest(BaseModel):
     location: str = Field(..., min_length=1, max_length=120)
 
 
+class ProfileRequest(BaseModel):
+    profile: dict = Field(default_factory=dict)
+
+
 @router.get("/api/account")
 def account(user: dict = Depends(get_current_user)) -> dict:
     return {
-        "user": user,
+        "user": auth.public_user(user),
+        # optional style bio + its computed derived profile (simple schema, exposed)
+        "profile": user.get("profile", {}),
+        "derived_profile": user.get("derived_profile", {}),
         "location": {
             "lat": user["lat"] if user["lat"] is not None else weather.DEFAULT_LOCATION["lat"],
             "lon": user["lon"] if user["lon"] is not None else weather.DEFAULT_LOCATION["lon"],
@@ -30,6 +37,13 @@ def account(user: dict = Depends(get_current_user)) -> dict:
         },
         "default_location": weather.DEFAULT_LOCATION,
     }
+
+
+@router.post("/api/account/profile")
+def save_profile(req: ProfileRequest, user: dict = Depends(get_current_user)) -> dict:
+    """Save the optional style bio; recompute the computed derived profile."""
+    saved = profile.save_profile(user["id"], req.profile)
+    return {"ok": True, "profile": saved}
 
 
 @router.post("/api/account/password")

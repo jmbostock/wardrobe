@@ -22,7 +22,7 @@ def register(req: AuthRequest) -> dict:
     except auth.AuthError as ex:
         raise HTTPException(400, str(ex)) from ex
     token = auth.create_session(user["id"])
-    return {"token": token, "user": user}
+    return {"token": token, "user": auth.public_user(user)}
 
 
 @router.post("/api/auth/login")
@@ -31,7 +31,7 @@ def login(req: AuthRequest) -> dict:
     if user is None:
         raise HTTPException(401, "invalid email or password")
     token = auth.create_session(user["id"])
-    return {"token": token, "user": user}
+    return {"token": token, "user": auth.public_user(user)}
 
 
 @router.post("/api/auth/logout")
@@ -44,4 +44,4 @@ def logout(
 
 @router.get("/api/auth/me")
 def me(user: dict = Depends(get_current_user)) -> dict:
-    return {"user": user}
+    return {"user": auth.public_user(user)}

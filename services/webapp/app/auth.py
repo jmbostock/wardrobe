@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import os
 import re
 import secrets
@@ -78,13 +79,36 @@ def create_user(email: str, password: str) -> dict[str, Any]:
     return get_user(user_id)  # type: ignore[return-value]
 
 
+def _json_col(value: str | None) -> dict:
+    """Parse a JSON text column, tolerating NULL/empty/malformed."""
+    if not value:
+        return {}
+    try:
+        return json.loads(value)
+    except (json.JSONDecodeError, TypeError):
+        return {}
+
+
+def public_user(user: dict[str, Any]) -> dict[str, Any]:
+    """User dict to send to the browser — includes the raw `profile` bio AND the
+    computed `derived_profile`. The derived schema is simple and harmless, so it
+    goes out everywhere a user dict is returned (account, auth/me, login, ...).
+    """
+    return dict(user)
+
 def get_user(user_id: int) -> dict[str, Any] | None:
     conn = db.init()
     with db.lock():
         row = conn.execute(
-            "SELECT id, email, lat, lon, created_at FROM users WHERE id=?", (user_id,)
+            "SELECT id, email, lat, lon, profile, derived_profile, created_at FROM users WHERE id=?",
+            (user_id,),
         ).fetchone()
-    return dict(row) if row else None
+    if not row:
+        return None
+    u = dict(row)
+    u["profile"] = _json_col(u.get("profile"))
+    u["derived_profile"] = _json_col(u.get("derived_profile"))
+    return u
 
 
 def authenticate(email: str, password: str) -> dict[str, Any] | None:
@@ -99,6 +123,7 @@ def authenticate(email: str, password: str) -> dict[str, Any] | None:
     return {
         "id": row["id"], "email": row["email"],
         "lat": row["lat"], "lon": row["lon"], "created_at": row["created_at"],
+        "profile": _json_col(row["profile"]), "derived_profile": _json_col(row["derived_profile"]),
     }
 
 
@@ -120,7 +145,8 @@ def get_user_by_token(token: str | None) -> dict[str, Any] | None:
     conn = db.init()
     with db.lock():
         row = conn.execute(
-            """SELECT u.id, u.email, u.lat, u.lon, u.created_at, s.expires_at
+            """SELECT u.id, u.email, u.lat, u.lon, u.profile, u.derived_profile,
+                      u.created_at, s.expires_at
                FROM sessions s JOIN users u ON u.id = s.user_id
                WHERE s.token = ?""",
             (token,),
@@ -133,6 +159,7 @@ def get_user_by_token(token: str | None) -> dict[str, Any] | None:
     return {
         "id": row["id"], "email": row["email"],
         "lat": row["lat"], "lon": row["lon"], "created_at": row["created_at"],
+        "profile": _json_col(row["profile"]), "derived_profile": _json_col(row["derived_profile"]),
     }
 
 

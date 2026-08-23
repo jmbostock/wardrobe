@@ -121,6 +121,12 @@ def init() -> sqlite3.Connection:
 
 def _migrate(conn: sqlite3.Connection) -> None:
     """Additive migrations for DBs created by older schemas (no reset needed)."""
+    # users profile (optional bio) + hidden derived profile (added 2026-08-23)
+    ucols = {r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()}
+    if "profile" not in ucols:
+        conn.execute("ALTER TABLE users ADD COLUMN profile TEXT NOT NULL DEFAULT '{}'")
+    if "derived_profile" not in ucols:
+        conn.execute("ALTER TABLE users ADD COLUMN derived_profile TEXT NOT NULL DEFAULT '{}'")
     cols = {r[1] for r in conn.execute("PRAGMA table_info(photos)").fetchall()}
     if "description" not in cols:
         conn.execute("ALTER TABLE photos ADD COLUMN description TEXT NOT NULL DEFAULT ''")

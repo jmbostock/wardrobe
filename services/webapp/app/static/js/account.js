@@ -4,8 +4,40 @@ async function loadAccount() {
     const a = await apiJson('/api/account');
     $('acct-email').textContent = a.user.email;
     $('loc-input').value = a.location.label ? '' : `${a.location.lat}, ${a.location.lon}`;
+    loadProfile(a.profile);
   } catch (e) { /* ignore */ }
 }
+
+// ---------- optional style profile (bio) ----------
+// element id -> profile key (see app/profile.py BIO_FIELDS)
+const PF_MAP = {
+  bio: 'bio', sex: 'sex', height: 'height', top: 'top_size', bottom: 'bottom_size',
+  shoe: 'shoe_size', warmth: 'warmth_bias', fmin: 'formality_min', fmax: 'formality_max',
+  never: 'never_wear', style: 'style_keywords', occ: 'occasions',
+  favcol: 'fav_colors', avoidcol: 'colors_avoid', age: 'age_range',
+};
+function loadProfile(p) {
+  p = p || {};
+  for (const [id, key] of Object.entries(PF_MAP)) {
+    const el = $(id); if (!el) continue;
+    el.value = p[key] ?? '';
+  }
+}
+$('pf-save').addEventListener('click', async () => {
+  const prof = {};
+  for (const [id, key] of Object.entries(PF_MAP)) {
+    const el = $(id); if (!el) continue;
+    prof[key] = el.value.trim();
+  }
+  const status = $('pf-status'); status.textContent = 'saving…';
+  try {
+    await apiJson('/api/account/profile', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profile: prof }),
+    });
+    status.textContent = 'saved'; toast('style profile saved');
+  } catch (e) { status.textContent = e.message; }
+});
 async function saveLocationFrom(inputId, statusId) {
   const status = $(statusId); status.textContent = 'resolving…';
   try {

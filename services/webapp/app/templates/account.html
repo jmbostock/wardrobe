@@ -28,6 +28,104 @@
   </div>
 
   <div class="card" style="margin-top:20px">
+    <h2>Style profile <span class="muted" style="text-transform:none;font-size:12px">(optional)</span></h2>
+    <p class="muted">Optional details that make recommendations better from day one — sizes matter for shared clothes, and your style/color preferences act as guardrails. Skip anything you don't want to share.</p>
+    <div class="block">
+      <label>Bio</label>
+      <textarea id="pf-bio" class="field" rows="2" placeholder="anything to tell the stylist…"></textarea>
+    </div>
+    <div class="pf-grid">
+      <div class="block">
+        <label>Sex</label>
+        <select id="pf-sex" class="field">
+          <option value="">prefer not to say</option>
+          <option value="m">Male (M)</option>
+          <option value="f">Female (F)</option>
+        </select>
+      </div>
+      <div class="block">
+        <label>Height</label>
+        <input type="text" id="pf-height" class="field" placeholder="e.g. 5'10&quot; or 178cm" />
+      </div>
+      <div class="block">
+        <label>Top size</label>
+        <input type="text" id="pf-top" class="field" placeholder="S / M / L / XL" />
+      </div>
+      <div class="block">
+        <label>Bottom size</label>
+        <input type="text" id="pf-bottom" class="field" placeholder="e.g. 30W x 32L" />
+      </div>
+      <div class="block">
+        <label>Shoe size</label>
+        <input type="text" id="pf-shoe" class="field" placeholder="e.g. 10.5" />
+      </div>
+      <div class="block">
+        <label>Temperature</label>
+        <select id="pf-warmth" class="field">
+          <option value="0">I'm usually comfortable</option>
+          <option value="1">I usually run cold</option>
+          <option value="-1">I usually run hot</option>
+        </select>
+      </div>
+      <div class="block">
+        <label>Least formal I'd wear</label>
+        <select id="pf-fmin" class="field">
+          <option value="">not sure</option>
+          <option value="casual">casual</option>
+          <option value="smart-casual">smart-casual</option>
+          <option value="business">business</option>
+          <option value="formal">formal</option>
+        </select>
+      </div>
+      <div class="block">
+        <label>Most formal I'd wear</label>
+        <select id="pf-fmax" class="field">
+          <option value="">not sure</option>
+          <option value="casual">casual</option>
+          <option value="smart-casual">smart-casual</option>
+          <option value="business">business</option>
+          <option value="formal">formal</option>
+        </select>
+      </div>
+      <div class="block">
+        <label>Never wear</label>
+        <input type="text" id="pf-never" class="field" placeholder="shorts, patterns, yellow" />
+      </div>
+      <div class="block">
+        <label>Style keywords</label>
+        <input type="text" id="pf-style" class="field" placeholder="minimal, preppy, athleisure" />
+      </div>
+      <div class="block">
+        <label>Typical week</label>
+        <input type="text" id="pf-occ" class="field" placeholder="office 5x/wk, gym 3x/wk" />
+      </div>
+      <div class="block">
+        <label>Favorite colors</label>
+        <input type="text" id="pf-favcol" class="field" placeholder="navy, black, olive" />
+      </div>
+      <div class="block">
+        <label>Colors to avoid</label>
+        <input type="text" id="pf-avoidcol" class="field" placeholder="yellow, pink" />
+      </div>
+      <div class="block">
+        <label>Age range</label>
+        <select id="pf-age" class="field">
+          <option value="">—</option>
+          <option value="under20">under 20</option>
+          <option value="20s">20s</option>
+          <option value="30s">30s</option>
+          <option value="40s">40s</option>
+          <option value="50+">50+</option>
+        </select>
+      </div>
+    </div>
+    <div class="row" style="margin-top:6px">
+      <button id="pf-save">Save style profile</button>
+      <span class="muted" id="pf-status"></span>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:20px">
     <h2>My photos</h2>
     <p class="muted">These are the person photos used for try-on. Mark one as default. Each card shows a suitability chip for use as a base image — red means low quality, skip it for try-on.</p>
     <div class="row" style="margin-bottom:12px">
