@@ -181,6 +181,10 @@ Full write-up: **`docs/wardrobe-v0.12.md`** (metadata / dedup / dropdowns / size
   in the look picker) that stays frozen while the garment list scrolls, so you
   can always close or clear without scrolling back up. The None button is now a
   real bordered button with a red ✕, clearly separated from the first photo.
+- **Flush-at-top sticky bar** (v0.20.0): the sheet panel lost its padding (moved
+  into a `.body` wrapper) so the sticky bar (grab + title + ✕ + None) sits
+  exactly at the top edge (y=0) and garments slide up right behind it. The grab
+  handle is a thin 4px line.
 
 ---
 
