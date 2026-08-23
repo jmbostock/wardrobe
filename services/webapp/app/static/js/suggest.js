@@ -12,20 +12,8 @@ async function loadWeather() {
 }
 loadWeather();
 
-async function saveLocationFrom(inputId, statusId) {
-  const status = $(statusId);
-  status.textContent = 'resolving…';
-  try {
-    const r = await apiJson('/api/account/location', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ location: $(inputId).value }),
-    });
-    status.textContent = `saved: ${r.location.name}${r.location.country ? ', ' + r.location.country : ''}`;
-    loadWeather();
-  } catch (e) { status.textContent = e.message; }
-}
-$('outfit-loc-save').addEventListener('click', () => saveLocationFrom('outfit-loc', 'outfit-loc-status'));
+// Location is handled in the chat itself — ask Cher about another city/zip and
+// the recommendation is built for that destination's live weather.
 
 // ------------------------------------------------------------------ //
 // Outfit recommendation → posted INTO the chat thread                  //
@@ -151,14 +139,8 @@ function _renderRecommendBubble({ intro, outfit }) {
     grid.querySelectorAll('.slot-img').forEach((img) => {
       authImageUrl('/api/wardrobe/' + img.dataset.gid + '/image').then((u) => { img.src = u; }).catch(() => {});
     });
-    // Try it on action on the card itself
-    const btn = document.createElement('button');
-    btn.className = 'recommend-tryon';
-    btn.textContent = 'Try it on →';
-    btn.addEventListener('click', () => _goTryOn(outfit));
-    wrap.appendChild(btn);
-    // feedback: teach the engine — thumbs up/down logs liked/disliked for the
-    // whole outfit with the activity context (feeds L2 style + L3 ALS learning)
+    // thumbs up/down under the photos — logs liked/disliked for the whole
+    // outfit with the activity context (feeds L2 style + L3 ALS learning)
     const fb = document.createElement('div');
     fb.className = 'recommend-feedback';
     const fbBtn = (label, kind) => {
@@ -183,6 +165,12 @@ function _renderRecommendBubble({ intro, outfit }) {
     fb.appendChild(fbBtn('👍 Looks good', 'liked'));
     fb.appendChild(fbBtn('👎 Not right', 'disliked'));
     wrap.appendChild(fb);
+    // Try it on action below the thumbs
+    const btn = document.createElement('button');
+    btn.className = 'recommend-tryon';
+    btn.textContent = 'Try it on →';
+    btn.addEventListener('click', () => _goTryOn(outfit));
+    wrap.appendChild(btn);
   }
 
   $('chat-messages').appendChild(wrap);

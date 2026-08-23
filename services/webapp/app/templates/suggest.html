@@ -9,24 +9,19 @@
   <div class="card chat-card suggest-chat-card">
     <div class="chat-header">
       <span class="chat-title">✦ Cher <span class="badge">AI Stylist</span></span>
-      <div class="suggest-loc-row">
-        <input type="text" id="outfit-loc" placeholder="location…" class="field small-field" />
-        <button id="outfit-loc-save" class="ghost small">Update</button>
-        <span class="muted small" id="outfit-loc-status"></span>
-      </div>
+      <select id="activity" class="field header-activity" title="Occasion / dress code">
+        <option value="office" selected>Office / work</option>
+        <option value="casual">Casual</option>
+        <option value="date">Date / dinner</option>
+        <option value="hiking">Hiking</option>
+        <option value="beach">Beach</option>
+        <option value="formal">Formal</option>
+      </select>
       <button id="chat-clear" class="ghost small" title="New conversation">↺ New chat</button>
     </div>
 
-    <!-- Compose: occasion controls that feed the stylist -->
+    <!-- Compose: style hint + owned-only + go (occasion lives in the header) -->
     <div class="suggest-compose">
-      <select id="activity" class="field">
-        <option value="casual">Casual / errands</option>
-        <option value="office" selected>Office / work</option>
-        <option value="date">Date / dinner</option>
-        <option value="hiking">Hiking / active</option>
-        <option value="beach">Beach</option>
-        <option value="formal">Wedding / formal</option>
-      </select>
       <input type="text" id="prompt" placeholder="style hint (navy, wool, casual…)" class="field" />
       <label class="owned-label">
         <input type="checkbox" id="owned-only" checked /> Owned only
