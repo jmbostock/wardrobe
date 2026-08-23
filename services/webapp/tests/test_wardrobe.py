@@ -719,6 +719,10 @@ def test_infer_formality_occasions():
     assert infer_formality("Black dress pants", "bottom") == "business"
     assert infer_formality("Navy blouse", "top") == "business"
     assert infer_formality("Wool blazer", "outerwear") == "business"
+    assert infer_formality("Grey suit", "outerwear") == "business"
+    # a bodysuit/jumpsuit is NOT a suit
+    assert infer_formality("Black one-piece bodysuit", "top") == "casual"
+    assert infer_formality("Red jumpsuit", "bottom") == "casual"
     assert infer_formality("Mint shorts", "bottom") == "casual"
     assert infer_formality("Blue jeans", "bottom") == "casual"
     assert infer_formality("White t-shirt", "top") == "casual"

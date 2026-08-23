@@ -368,8 +368,10 @@ _CONFUSABLE = frozenset({"top", "outerwear"})
 # dressier items (dress pants, blouses, blazers, button-ups) would otherwise keep
 # the 'casual' default and be no more likely for the office than shorts. These
 # keyword hints upgrade that default conservatively (never downgrade).
-_FORMAL_KW = ("dress pants", "dress trousers", "trousers", "slacks", "suit",
+_FORMAL_KW = ("dress pants", "dress trousers", "trousers", "slacks",
               "blazer", "blouse", "button-up", "button up", "dress shirt", "oxford")
+# a bare 'suit' is business, but a bodysuit/jumpsuit/swimsuit is NOT
+_SUIT_EXCLUDE = ("bodysuit", "jumpsuit", "swimsuit", "sweatsuit")
 _SMART_KW = ("cardigan", "sweater vest", "peplum", "wide-leg", "flare",
              "chambray", "polo", "turtleneck", "midi skirt")
 
@@ -381,6 +383,8 @@ def infer_formality(name: str, category: str, current: str = "casual") -> str:
         return current
     n = (name or "").lower()
     if any(k in n for k in _FORMAL_KW):
+        return "business"
+    if "suit" in n and not any(s in n for s in _SUIT_EXCLUDE):
         return "business"
     if category == "outerwear" or any(k in n for k in _SMART_KW):
         return "smart-casual"
