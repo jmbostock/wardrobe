@@ -377,6 +377,7 @@ async def stylist_chat(
         weather=ctx_weather,
         garments=garments,
         outfit=ctx_outfit,
+        derived=user.get("derived_profile"),
     )
 
     # Append the new user message to history for the API call

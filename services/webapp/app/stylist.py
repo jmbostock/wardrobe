@@ -36,11 +36,15 @@ You know the user's wardrobe inside-out and today's weather.
 ## TODAY'S WEATHER
 {weather_summary}
 
+## YOUR STYLE PROFILE
+{style_summary}
+
 ## CURRENT OUTFIT SUGGESTION
 {outfit_summary}
 
 ## RULES
 - Only suggest garments by their EXACT name as listed in the wardrobe above. Never invent items the user doesn't own.
+- The STYLE PROFILE is your personalization signal: honor its guardrails (e.g., avoid patterns / certain colors / formal wear above their range) and warmth bias when picking, but never quote the profile fields back verbatim.
 - "OWNED" = the user owns it; "WISHLIST (NOT OWNED)" = they do NOT own it yet. Only mention wishlist items as possible future buys. When the user asks for something they own, suggest ONLY items labeled OWNED — never claim a wishlist item is owned.
 - When asked counting questions (e.g., "how many pairs of jeans/shirts do I have?"), count ONLY the items in the list above whose name, category, or color matches. Give the exact count based ONLY on the wardrobe list provided. Never invent or hallucinate counts.
 - Keep replies concise (2–4 sentences) unless asked for more detail.
@@ -96,18 +100,64 @@ def _outfit_summary(outfit: dict) -> str:
     return ", ".join(parts) if parts else "No outfit suggested yet."
 
 
+def _derived_summary(d: dict) -> str:
+    """Human-readable style-profile summary for the system prompt (server-side)."""
+    if not d:
+        return "(not set yet — keep suggestions neutral)"
+    bits: list[str] = []
+    if d.get("sex"):
+        bits.append(f"sex: {d['sex']}")
+    if d.get("height_cm"):
+        bits.append(f"height: {d['height_cm']:.0f}cm")
+    if d.get("body_build"):
+        bits.append(f"build: {d['body_build']}")
+    sb = d.get("size_buckets") or {}
+    sizes = []
+    if sb.get("top"):
+        sizes.append(f"top {sb['top']}")
+    if sb.get("waist_in"):
+        sizes.append(f"waist {sb['waist_in']}\"")
+    if sb.get("shoe"):
+        sizes.append(f"shoe {sb['shoe']}")
+    if sizes:
+        bits.append("sizes: " + ", ".join(sizes))
+    wb = d.get("warmth_bias")
+    if wb:
+        bits.append("runs " + ("cold (prefers warmer)" if wb > 0 else "hot (prefers lighter)"))
+    fz = d.get("formality_zone") or {}
+    if fz.get("min") or fz.get("max"):
+        bits.append(f"formality range: {fz.get('min', 'casual')} to {fz.get('max', 'formal')}")
+    for g in d.get("guardrails") or []:
+        bits.append("avoid " + g.replace("no_", "").replace("avoid_color:", "color ").replace("_", " "))
+    if d.get("style_tags"):
+        bits.append("style: " + ", ".join(d["style_tags"]))
+    ow = d.get("occasion_weights") or {}
+    if ow:
+        ordered = sorted(ow.items(), key=lambda kv: -kv[1])
+        bits.append("typical week: " + ", ".join(f"{k} {v:g}x" for k, v in ordered))
+    pal = d.get("palette") or {}
+    if pal.get("fav"):
+        bits.append("likes colors: " + ", ".join(pal["fav"]))
+    if pal.get("avoid"):
+        bits.append("avoids colors: " + ", ".join(pal["avoid"]))
+    return "; ".join(bits) if bits else "(not set yet — keep suggestions neutral)"
+
+
 def build_system_prompt(
     *,
     weather: dict,
     garments: list[Garment],
     outfit: dict,
+    derived: dict | None = None,
 ) -> str:
-    """Assemble the system prompt for Cher with wardrobe, weather, and active outfit context."""
+    """Assemble the system prompt for Cher with wardrobe, weather, the active
+    outfit, and the user's hidden style profile (personalization signal)."""
     return _SYSTEM_TEMPLATE.format(
         weather_summary=_weather_summary(weather),
         garment_count=len(garments),
         wardrobe_summary=_wardrobe_summary(garments),
         outfit_summary=_outfit_summary(outfit),
+        style_summary=_derived_summary(derived or {}),
     )
 
 

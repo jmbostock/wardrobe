@@ -1,12 +1,12 @@
-"""User style profile (optional "bio") + computed derived profile.
+"""User style profile (optional "bio") + hidden derived profile.
 
 The Account UI collects a handful of OPTIONAL fields ("bio") that give the
 recommender a cold-start picture of the person. `derive_profile()` turns those
-raw answers into a computed profile (size buckets, formality zone, guardrails,
-occasion weights, ...) that the recommendation engine consumes. The schema is
-simple, so it is also returned to the client wherever a user/account is exposed
-(`derived_profile`), so the UI can show it if useful. Recomputed on every
-profile save (later also on feedback).
+raw answers into a HIDDEN, computed profile (size buckets, formality zone,
+guardrails, occasion weights, ...) that the recommendation engine and stylist
+consume to build responses. It is intentionally NOT returned to the browser
+(the user wants it tracked but not shown); `auth.public_user()` strips it.
+Recomputed on every profile save (later also on feedback).
 
 Everything here is optional; most is also learned from feedback over time — the
 bio just accelerates cold start and encodes hard guardrails learning can't fix
@@ -14,7 +14,7 @@ bio just accelerates cold start and encodes hard guardrails learning can't fix
 
 Storage: two JSON columns on `users`:
   - `profile`         raw normalized bio answers (editable, returned to the UI)
-  - `derived_profile` computed profile (returned to the UI wherever appropriate)
+  - `derived_profile` computed profile (server-side only — stylist/recommender)
 """
 from __future__ import annotations
 
