@@ -227,9 +227,14 @@ button.small { font-size:12px; padding:7px 10px; }
 .chat-send-btn svg { color:#0f1216; }
 .chat-status { padding:0 16px 8px; flex:none; }
 
-/* recommendation card rendered INSIDE the chat (Cher's suggested look) */
-.recommend-bubble { max-width:100%; }
-.recommend-bubble .bubble-text { background:#1a2230; border:1px solid #2a3550; }
+/* recommendation card rendered INSIDE the chat (Cher's suggested look).
+   .chat-bubble is display:flex (row) which crushed text/photos/thumbs/try-on
+   side-by-side; a recommendation must stack like a real chat message. */
+.recommend-bubble { max-width:100%; flex-direction:column; align-items:stretch; }
+.recommend-bubble > .bubble-text { align-self:flex-start; background:#1a2230; border:1px solid #2a3550; }
+/* assistant chat replies that carry inline garment photos stack too */
+.chat-bubble.assistant:has(.chat-garments) { flex-direction:column; align-items:stretch; }
+.chat-bubble.assistant:has(.chat-garments) > .bubble-text { align-self:flex-start; }
 .recommend-outfit { display:grid; gap:8px; margin-top:10px; background:#0f1216;
   border:1px solid var(--line); border-radius:12px; padding:10px; }
 .recommend-tryon { margin-top:10px; width:100%; padding:13px; border-radius:10px;
@@ -284,6 +289,10 @@ button.small { font-size:12px; padding:7px 10px; }
 @media (min-width: 641px) {
   .sheet .panel { border-left:1px solid var(--line); border-right:1px solid var(--line); }
   .sheet .grab { display:none; }
+  /* desktop: a proper chat window — not a full-width slab */
+  .suggest-chat-card { max-width:840px; margin:0 auto; height:min(80vh, 760px); }
+  .recommend-outfit { grid-template-columns:repeat(2, 1fr); }
+  .recommend-feedback { max-width:360px; }
 }
 
 /* ---- PWA standalone (iPhone): clear the notch + home indicator ---- */
