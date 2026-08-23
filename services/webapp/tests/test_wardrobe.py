@@ -330,6 +330,40 @@ def test_ai_fill_parse():
     assert aifill.parse_ai_fill("") is None
 
 
+def test_aifill_llamacpp_vision_path():
+    """VISION_ENGINE=llamacpp posts to the OpenAI-compatible /v1/chat/completions
+    (image as a data URI) and parses the reply — the homelab-standard backend."""
+    from unittest import mock
+    from app import aifill
+
+    class FakeResp:
+        status_code = 200
+
+        def json(self):
+            return {"choices": [{"message": {"content": (
+                "NAME: Navy Tee\nBRAND: Old Navy\nCOLOR: navy\n"
+                "CATEGORY: top\nSIZES: S, M, L")}}]}
+
+    old_engine, old_url = aifill.settings.vision_engine, aifill.settings.vision_url
+    aifill.settings.vision_engine = "llamacpp"
+    aifill.settings.vision_url = "http://vision:1234"
+    try:
+        with mock.patch.object(aifill.httpx, "post", return_value=FakeResp()) as post:
+            got = aifill.ai_fill_garment(b"\x89PNG fake")
+    finally:
+        aifill.settings.vision_engine, aifill.settings.vision_url = old_engine, old_url
+
+    assert got and got["name"] == "Navy Tee" and got["brand"] == "Old Navy"
+    assert got["color"] == "navy" and got["category"] == "top" and got["sizes"] == "S,M,L"
+    url = post.call_args[0][0]
+    payload = post.call_args.kwargs["json"]
+    assert url == "http://vision:1234/v1/chat/completions", url
+    content = payload["messages"][0]["content"]
+    assert content[0]["type"] == "text"
+    assert content[1]["type"] == "image_url"
+    assert content[1]["image_url"]["url"].startswith("data:image/jpeg;base64,")
+
+
 def test_phash_similarity():
     """dHash: identical → same hash, near-identical → tiny distance, different
     garments → large distance."""

@@ -12,6 +12,11 @@ class Settings:
         self.ha_weather_entity = os.getenv("HA_WEATHER_ENTITY", "weather.home")
         self.comfyui_url = os.getenv("COMFYUI_URL", "http://comfyui:8188").rstrip("/")
         self.ollama_url = os.getenv("OLLAMA_URL", "http://ollama:11434").rstrip("/")
+        # vision backend for AI tag-reading: "llamacpp" (homelab standard —
+        # llama.cpp llama-server OpenAI-compatible endpoint) or "ollama" (legacy).
+        # VISION_URL defaults to the ollama URL so either engine works out of the box.
+        self.vision_engine = os.getenv("VISION_ENGINE", "ollama").lower()
+        self.vision_url = os.getenv("VISION_URL", self.ollama_url).rstrip("/")
         # image-editor engine for the try-on chat: "ip2p" (resident, fast) or a
         # future "swap" engine (e.g. fluxkontext) that can't sit alongside CatVTON
         self.editor_engine = os.getenv("EDITOR_ENGINE", "ip2p").lower()

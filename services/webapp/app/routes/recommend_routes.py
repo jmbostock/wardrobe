@@ -73,7 +73,7 @@ def recommend_outfit(req: RecommendRequest, user: dict = Depends(get_current_use
 # --------------------------------------------------------------------------- #
 
 class ChatRequest(BaseModel):
-    message: str = Field(..., description="User's chat message to Alta")
+    message: str = Field(..., description="User's chat message to Cher")
     session_id: str | None = Field(None, description="Existing session UUID; None = new session")
     # Context for bootstrapping a new session (passed by the frontend after /api/recommend)
     activity: str = Field("casual")

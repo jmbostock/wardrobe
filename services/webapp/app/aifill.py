@@ -159,19 +159,52 @@ _ORIENT_READ_PROMPT = (
 )
 
 
-def _vlm_read(image_bytes: bytes, prompt: str) -> str:
+def _vision_generate(image_bytes: bytes, prompt: str) -> str:
+    """Ask the configured vision model a question about an image and return the
+    raw text reply ('' on any error). Backend is env-driven:
+      - VISION_ENGINE=llamacpp (homelab standard): llama.cpp llama-server's
+        OpenAI-compatible /v1/chat/completions (image as a data URI)
+      - VISION_ENGINE=ollama (legacy): Ollama /api/generate (base64 image)
+    """
+    b64 = base64.b64encode(image_bytes).decode("ascii")
+    if settings.vision_engine == "llamacpp":
+        url = f"{settings.vision_url}/v1/chat/completions"
+        payload = {
+            "messages": [{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url",
+                     "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
+                ],
+            }],
+            "stream": False,
+            "temperature": 0,
+        }
+        try:
+            r = httpx.post(url, json=payload, timeout=AI_FILL_TIMEOUT)
+            if r.status_code != 200:
+                return ""
+            data = r.json()
+            return (data.get("choices") or [{}])[0].get("message", {}).get("content", "")
+        except Exception:  # noqa: BLE001 — vision down / timeout / unreachable
+            return ""
+    # legacy Ollama backend
     model = os.getenv("OLLAMA_VISION_MODEL", DEFAULT_VISION_MODEL).strip()
     url = f"{settings.ollama_url}/api/generate"
     payload = {
         "model": model, "prompt": prompt,
-        "images": [base64.b64encode(image_bytes).decode("ascii")],
-        "stream": False, "options": {"temperature": 0},
+        "images": [b64], "stream": False, "options": {"temperature": 0},
     }
     try:
         r = httpx.post(url, json=payload, timeout=AI_FILL_TIMEOUT)
         return (r.json() or {}).get("response", "") if r.status_code == 200 else ""
     except Exception:  # noqa: BLE001
         return ""
+
+
+def _vlm_read(image_bytes: bytes, prompt: str) -> str:
+    return _vision_generate(image_bytes, prompt)
 
 
 def ai_orientation(image_bytes: bytes) -> int:
@@ -209,27 +242,11 @@ def ai_orientation(image_bytes: bytes) -> int:
 
 
 def ai_fill_garment(image_bytes: bytes) -> dict[str, str] | None:
-    """Read a garment photo with a vision LLM (Ollama) and return metadata.
+    """Read a garment photo with a vision LLM and return metadata (backend is
+    env-driven — llama.cpp by default on the homelab, Ollama the legacy option).
     Returns None whenever the AI can't help (service down / no model / parse
     failure) so callers degrade gracefully."""
-    model = os.getenv("OLLAMA_VISION_MODEL", DEFAULT_VISION_MODEL).strip()
-    url = f"{settings.ollama_url}/api/generate"
-    payload = {
-        "model": model,
-        "prompt": PROMPT,
-        "images": [base64.b64encode(image_bytes).decode("ascii")],
-        "stream": False,
-        # NOTE: no `format:"json"` — moondream hallucinates its own schema there.
-        "options": {"temperature": 0},
-    }
-    try:
-        r = httpx.post(url, json=payload, timeout=AI_FILL_TIMEOUT)
-        if r.status_code != 200:
-            return None
-        data = r.json()
-    except Exception:  # noqa: BLE001 — ollama down / timeout / unreachable
-        return None
-    text = (data or {}).get("response", "")
+    text = _vision_generate(image_bytes, PROMPT)
     parsed = parse_ai_fill(text)
     if parsed is None or not any(parsed.values()):
         return None

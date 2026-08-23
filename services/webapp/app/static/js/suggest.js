@@ -1,4 +1,4 @@
-// suggest.js — weather + rule-based recommendation + Alta stylist chat (DeepSeek)
+// suggest.js — weather + rule-based recommendation + Cher stylist chat (DeepSeek)
 
 // ------------------------------------------------------------------ //
 // Weather                                                              //
@@ -131,7 +131,7 @@ $('try-on-btn').addEventListener('click', () => {
 });
 
 // ------------------------------------------------------------------ //
-// Alta stylist chat                                                    //
+// Cher stylist chat                                                    //
 // ------------------------------------------------------------------ //
 let _sessionId = sessionStorage.getItem('alta_session') || null;
 let _chatStreaming = false;
@@ -155,7 +155,7 @@ function _addBubble(role, text, id) {
 }
 
 function _startNewSession(recommendData) {
-  // Clears history UI and resets session; primes Alta with context
+  // Clears history UI and resets session; primes Cher with context
   _sessionId = null;
   sessionStorage.removeItem('alta_session');
   // Clear old messages except the intro bubble
@@ -181,7 +181,7 @@ async function sendChat(message) {
   if (_chatStreaming || !message.trim()) return;
   _chatStreaming = true;
   $('chat-send').disabled = true;
-  _setStatus('Alta is typing…');
+  _setStatus('Cher is typing…');
 
   _addBubble('user', message);
 

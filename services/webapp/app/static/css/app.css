@@ -189,7 +189,7 @@ button.small { font-size:12px; padding:7px 10px; }
 .reasoning-card ul { margin:0; padding-left:18px; color:var(--mut); font-size:13px; }
 .reasoning-card li { margin-bottom:4px; }
 
-/* ---- Alta stylist chat panel ---- */
+/* ---- Cher stylist chat panel ---- */
 .chat-card { display:flex; flex-direction:column; height:520px; padding:0; overflow:hidden; }
 .chat-header { display:flex; align-items:center; justify-content:space-between;
   padding:14px 16px 12px; border-bottom:1px solid var(--line); flex:none; }
