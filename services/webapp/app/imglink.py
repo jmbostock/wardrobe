@@ -15,11 +15,12 @@ MAX_PRODUCT_IMAGES = 16
 
 # common color words (longer phrases first so "navy blue" wins over "navy")
 COLOR_WORDS = [
-    "navy blue", "olive green", "charcoal gray", "charcoal grey", "navy", "black",
+    "navy blue", "olive green", "charcoal gray", "charcoal grey", "light blue",
+    "navy", "indigo", "denim blue", "black",
     "white", "blue", "gray", "grey", "red", "green", "beige", "brown", "tan",
     "pink", "burgundy", "purple", "yellow", "orange", "teal", "cream", "khaki",
     "olive", "charcoal", "heather", "maroon", "coral", "lilac", "mustard", "rust",
-    "slate", "indigo", "camel", "plaid", "striped", "floral", "denim", "washed",
+    "slate", "camel", "plaid", "striped", "floral", "denim", "washed",
 ]
 
 CATEGORY_KEYWORDS: dict[str, list[str]] = {

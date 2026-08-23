@@ -17,8 +17,10 @@ from ..media import (
     fetch_url_bytes,
     garment_dict,
     garment_image_path,
+    detect_color,
     normalize_color,
     normalize_orientation,
+    refine_color,
     save_garment_image,
     validate_image,
 )
@@ -168,8 +170,11 @@ async def ai_fill(
     if fields is None:
         return {"available": False, "fields": None,
                 "error": "AI not available (Ollama/vision model down) — fill manually."}
-    if fields.get("color"):
-        fields["color"] = normalize_color(fields["color"])
+    # machine-driven color: refine the tag color with the photo's pixels within
+    # the same family ("blue" → "light blue"/"indigo" for denim); if no color
+    # was readable, derive one straight from the pixels.
+    color = refine_color(fields.get("color") or "", data) or detect_color(data)
+    fields["color"] = color
     return {"available": True, "fields": fields, "error": None}
 
 

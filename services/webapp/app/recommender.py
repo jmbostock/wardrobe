@@ -172,6 +172,7 @@ def rotation_bonus(g: Garment) -> float:
 
 PROMPT_KEYWORDS = {
     "blue": "blue", "navy": "navy", "black": "black", "white": "white",
+    "light blue": "light blue", "indigo": "indigo",
     "gray": "gray", "grey": "gray", "green": "green", "red": "red",
     "brown": "brown", "tan": "tan", "beige": "tan", "pink": "pink",
     "formal": "formal", "casual": "casual", "dressy": "formal",

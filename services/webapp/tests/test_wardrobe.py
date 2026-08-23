@@ -546,7 +546,54 @@ def test_normalize_color():
     assert normalize_color("black&white") == "black"
     assert normalize_color("black and white") == "black"
     assert normalize_color("forest green") == "green"
+    # the blue family is split into shades so a light-wash jean ≠ a navy one
+    assert normalize_color("light blue") == "light blue"
+    assert normalize_color("sky blue") == "light blue"
+    assert normalize_color("baby blue") == "light blue"
+    assert normalize_color("powder blue") == "light blue"
+    assert normalize_color("indigo") == "indigo"
+    assert normalize_color("denim blue") == "indigo"
+    assert normalize_color("denim") == "indigo"
+    assert normalize_color("royal blue") == "blue"
+    assert normalize_color("dark blue") == "blue"
     assert normalize_color("unknowncolor") == "unknowncolor"  # kept as-is (still an option)
+
+
+def test_detect_color_and_refine():
+    """detect_color re-derives a specific shade from the photo's pixels;
+    refine_color only refines a coarse color within the same family and never
+    overrides a specific tag color (navy/black/white)."""
+    from app.media import detect_color, refine_color
+    from PIL import Image
+    import io as _io
+
+    def png(rgb):
+        buf = _io.BytesIO()
+        Image.new("RGB", (300, 400), rgb).save(buf, "PNG")
+        return buf.getvalue()
+
+    # neutral fallback by overall lightness
+    assert detect_color(png((25, 25, 28))) == "black"
+    assert detect_color(png((120, 120, 120))) == "gray"
+    assert detect_color(png((245, 245, 245))) == "white"
+    # blue family shades (the split that matters most)
+    assert detect_color(png((40, 100, 200))) == "blue"         # bright / royal
+    assert detect_color(png((180, 200, 230))) == "light blue"  # pale / sky
+    assert detect_color(png((140, 170, 210))) == "light blue"  # light-wash denim
+    assert detect_color(png((40, 50, 95))) == "indigo"         # dark-wash denim
+    assert detect_color(png((25, 32, 60))) == "navy"
+    # other families
+    assert detect_color(png((180, 60, 60))) == "red"
+    assert detect_color(png((110, 120, 60))) == "olive"
+    # refine: coarse blue → specific shade, same family only
+    assert refine_color("blue", png((40, 50, 95))) == "indigo"
+    assert refine_color("blue", png((140, 170, 210))) == "light blue"
+    assert refine_color("blue", png((180, 60, 60))) == "blue"  # red can't refine blue
+    # specific tag colors are never overridden by the photo
+    assert refine_color("navy", png((180, 200, 230))) == "navy"
+    assert refine_color("black", png((40, 50, 95))) == "black"
+    assert refine_color("white", png((180, 200, 230))) == "white"
+    assert refine_color("", png((180, 60, 60))) == ""
 
 
 def test_color_class():

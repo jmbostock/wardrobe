@@ -6,6 +6,8 @@ and the public garment dict so routers stay thin and consistent.
 from __future__ import annotations
 
 import io
+import math
+import statistics
 from pathlib import Path
 from urllib.parse import urljoin
 
@@ -67,7 +69,8 @@ def size_schema(category: str) -> dict:
     return SIZE_SCHEMAS.get(category or "", SIZE_SCHEMAS["top"])
 COLOR_HEX = {
     "white": "#f2f2f2", "black": "#1a1a1a", "gray": "#8a8f98",  # 'grey' collapses to gray via COLOR_SYNONYMS
-    "navy": "#1f2a44", "blue": "#3b5ba8", "red": "#a33333", "green": "#2e4a3a",
+    "navy": "#1f2a44", "indigo": "#3b4a6b", "blue": "#3b5ba8", "light blue": "#9db8d9",
+    "red": "#a33333", "green": "#2e4a3a",
     "beige": "#d9c9a3", "brown": "#6b4a2f", "tan": "#c8b98a", "pink": "#d9b3a0",
     "burgundy": "#6d2332", "purple": "#5b3a6d", "yellow": "#d9c04a", "orange": "#c96a2e",
     "teal": "#2c4f46", "cream": "#f2efe6", "khaki": "#c8b98a", "olive": "#6b7a3a",
@@ -84,8 +87,10 @@ COLOR_SYNONYMS = {
     "navy blue": "navy", "dark navy": "navy", "midnight": "navy", "midnight blue": "navy",
     "olive green": "olive", "army green": "olive", "sage": "olive",
     "forest green": "green", "emerald": "green", "dark green": "green", "lime": "green",
-    "sky blue": "blue", "light blue": "blue", "dark blue": "blue", "royal blue": "blue",
-    "baby blue": "blue", "denim blue": "blue", "ice blue": "blue", "steel blue": "blue",
+    "royal blue": "blue", "dark blue": "blue", "steel blue": "blue", "cobalt": "blue",
+    "sky blue": "light blue", "light blue": "light blue", "baby blue": "light blue",
+    "ice blue": "light blue", "powder blue": "light blue", "pastel blue": "light blue",
+    "denim blue": "indigo", "dark denim": "indigo", "indigo": "indigo", "denim": "indigo",
     "crimson": "red", "scarlet": "red", "dark red": "burgundy", "maroon": "burgundy",
     "wine": "burgundy", "bordeaux": "burgundy", "magenta": "pink", "hot pink": "pink",
     "rose": "pink", "fuchsia": "pink", "blush": "pink", "salmon": "pink",
@@ -113,6 +118,125 @@ def normalize_color(name: str) -> str:
         if len(parts) >= 2 and parts[0] in COLOR_HEX:
             return parts[0]
     return n
+
+
+# ---- machine-driven color (photo pixels) -----------------------------------
+# The palette splits blues into navy / indigo / blue / light blue etc., but the
+# AI tag-reader often returns just a coarse "blue" (denim has no color tag), and
+# COLOR_SYNONYMS used to flatten every shade onto "blue". These helpers re-derive
+# the specific shade from the garment PHOTO's pixels so a light-wash jean and a
+# dark-wash jean don't both land on "blue". Pixels may only REFINE a coarse color
+# within the same family (COLOR_REFINE_FAMILIES) — they never override a specific
+# tag color ("navy" tag stays navy even if the photo reads brighter).
+
+# blue-family shade boundaries (dominant-hue value → shade). Tuned against the
+# real wardrobe photos: light-wash jeans ~v0.42–0.50, dark denim ~v0.31–0.35,
+# tag-navy garments ~v0.26–0.35, bright/royal blue ~v0.68+.
+_BLUE_SHADES = (
+    (0.66, "blue"),        # bright / royal
+    (0.40, "light blue"),  # pale sky / light-wash denim
+    (0.27, "indigo"),      # dark-wash denim
+    (0.0, "navy"),         # very dark blue
+)
+
+# coarse canonical color → the specific shades pixels are allowed to refine it to
+COLOR_REFINE_FAMILIES = {
+    "blue": {"light blue", "blue", "indigo", "navy"},
+    "green": {"olive", "green", "teal"},
+    "red": {"red", "burgundy"},
+    "brown": {"brown", "tan", "beige", "khaki", "orange"},
+    "purple": {"purple", "pink", "burgundy"},
+    "yellow": {"yellow", "olive", "cream"},
+}
+
+
+def _hsv(r: int, g: int, b: int) -> tuple[float, float, float]:
+    r, g, b = r / 255.0, g / 255.0, b / 255.0
+    mx, mn = max(r, g, b), min(r, g, b)
+    d = mx - mn
+    v = mx
+    s = 0.0 if mx == 0 else d / mx
+    if d == 0:
+        h = 0.0
+    elif mx == r:
+        h = 60 * (((g - b) / d) % 6)
+    elif mx == g:
+        h = 60 * (((b - r) / d) + 2)
+    else:
+        h = 60 * (((r - g) / d) + 4)
+    return h % 360, s, v
+
+
+def _shade_from_hsv(h: float, s: float, v: float) -> str:
+    """Map a dominant (hue, sat, value) to the closest canonical palette key."""
+    h = h % 360
+    if 200 <= h < 260:  # blues — the fine split that matters most
+        if v > 0.78 and s < 0.55:
+            return "light blue"  # pale / sky
+        for th, shade in _BLUE_SHADES:
+            if v >= th:
+                return shade
+        return "navy"
+    if 160 <= h < 200:
+        return "teal"
+    if 80 <= h < 160:
+        return "olive" if s < 0.35 or v < 0.45 else "green"
+    if 62 <= h < 80:
+        return "olive" if v < 0.55 or s < 0.35 else "yellow"
+    if 40 <= h < 62:
+        return "olive" if v < 0.55 or s < 0.4 else "yellow"
+    if 15 <= h < 40:
+        return "orange" if v > 0.62 else "brown"
+    if 290 <= h < 345:
+        return "pink" if v > 0.5 else "burgundy"
+    if 260 <= h < 290:
+        return "purple"
+    return "red" if v > 0.5 else "burgundy"  # h < 15 or h >= 345
+
+
+def detect_color(data: bytes, crop_frac: float = 0.6) -> str:
+    """Machine-driven canonical color from the garment PHOTO's pixels.
+
+    Uses the same CENTER crop as the phash / near-dup gate. Achromatic garments
+    resolve to white/gray/black by overall lightness; otherwise the dominant hue
+    of the colorful pixels picks a specific palette shade. '' if unreadable."""
+    try:
+        img = Image.open(io.BytesIO(data)).convert("RGB")
+        w, h = img.size
+        cw, ch = max(1, int(w * crop_frac)), max(1, int(h * crop_frac))
+        left, top = (w - cw) // 2, (h - ch) // 2
+        img = img.crop((left, top, left + cw, top + ch)).resize((48, 48))
+        hsvs = [_hsv(*px) for px in img.getdata()]
+        colorful = [(h, s, v) for h, s, v in hsvs if s >= 0.15 and 0.25 <= v <= 0.95]
+        if len(colorful) < max(2, int(len(hsvs) * 0.12)):
+            med = statistics.median(v for _, _, v in hsvs)
+            if med > 0.85:
+                return "white"
+            if med < 0.30:
+                return "black"
+            return "gray"
+        cos = sum(math.cos(math.radians(h)) for h, _, _ in colorful)
+        sin = sum(math.sin(math.radians(h)) for h, _, _ in colorful)
+        dom = (math.degrees(math.atan2(sin, cos)) + 360) % 360
+        med_s = statistics.median(s for _, s, _ in colorful)
+        med_v = statistics.median(v for _, _, v in colorful)
+        return _shade_from_hsv(dom, med_s, med_v)
+    except Exception:  # noqa: BLE001 — unreadable → no color
+        return ""
+
+
+def refine_color(coarse: str, data: bytes) -> str:
+    """Refine a coarse canonical color using the photo's pixels, within the same
+    family only. 'blue' → 'light blue' / 'indigo' / 'navy' when the pixels say so;
+    a specific tag color ('navy', 'black', 'white', …) is never overridden."""
+    base = normalize_color(coarse)
+    if not base or base in ("black", "white"):
+        return base
+    family = COLOR_REFINE_FAMILIES.get(base)
+    if not family:
+        return base
+    px = detect_color(data)
+    return px if px in family else base
 
 
 def garment_image_path(user_id: int, garment_id: int) -> Path | None:

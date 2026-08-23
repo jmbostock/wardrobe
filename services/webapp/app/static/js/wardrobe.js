@@ -150,10 +150,16 @@ renderSizeInputs('g-sizes-wrap', $('g-category').value, '');
 // 'navy blue' / 'dark navy' etc. and silently mismatch in the recommender.
 const COLOR_HEX_FALLBACK = {
   white:'#f2f2f2', black:'#1a1a1a', gray:'#8a8f98', navy:'#1f2a44',
-  blue:'#3b5ba8', red:'#a33333', green:'#2e4a3a', beige:'#d9c9a3', brown:'#6b4a2f',
+  blue:'#3b5ba8', 'light blue':'#9db8d9', indigo:'#3b4a6b',
+  red:'#a33333', green:'#2e4a3a', beige:'#d9c9a3', brown:'#6b4a2f',
   tan:'#c8b98a', pink:'#d9b3a0', burgundy:'#6d2332', purple:'#5b3a6d', yellow:'#d9c04a',
   orange:'#c96a2e', teal:'#2c4f46', cream:'#f2efe6', khaki:'#c8b98a', olive:'#6b7a3a'
 };
+// Colors are stored as lowercase canonical keys (what the API/recommender compare),
+// but shown Title Case in the dropdown ("Navy", "Light Blue") like every other label.
+function titleCaseColor(c) {
+  return (c || '').split(/[\s_]+/).map((w) => w ? w[0].toUpperCase() + w.slice(1) : w).join(' ');
+}
 let COLOR_HEX_MAP = COLOR_HEX_FALLBACK;
 function populateColorSelects(colors, hexMap) {
   if (hexMap) COLOR_HEX_MAP = hexMap;
@@ -162,7 +168,7 @@ function populateColorSelects(colors, hexMap) {
     sel.innerHTML = '';
     const ph = document.createElement('option'); ph.value = ''; ph.textContent = '— color —'; sel.appendChild(ph);
     (colors || Object.keys(COLOR_HEX_FALLBACK)).forEach((c) => {
-      const o = document.createElement('option'); o.value = c; o.textContent = c; sel.appendChild(o);
+      const o = document.createElement('option'); o.value = c; o.textContent = titleCaseColor(c); sel.appendChild(o);
     });
   });
 }
@@ -175,7 +181,7 @@ function setColorValue(selId, value, swatchId) {
   const sel = $(selId); if (!sel) return;
   const v = (value || '').trim();
   if (v && ![...sel.options].some((o) => o.value === v)) {
-    const o = document.createElement('option'); o.value = v; o.textContent = v; sel.appendChild(o);
+    const o = document.createElement('option'); o.value = v; o.textContent = titleCaseColor(v); sel.appendChild(o);
   }
   sel.value = v;
   setSwatch(selId, swatchId);
