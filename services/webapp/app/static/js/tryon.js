@@ -18,9 +18,9 @@ let manualPhotoPick = false; // user hand-picked the base photo → don't auto-o
 let lookGarments = [];       // cached /api/wardrobe list — drives the look photo pickers
 // Look-builder roles. 'full' = one-piece garments (dresses, swimsuits, jumpsuits)
 // that don't need a separate top + bottom.
-const LOOK_ROLES = ['top', 'bottom', 'full'];
+const LOOK_ROLES = ['top', 'bottom', 'full', 'outerwear', 'footwear'];
 const FULL_CATEGORIES = ['dress', 'swimsuit'];
-const LOOK_LABELS = { top: 'top', bottom: 'bottom', full: 'one-piece' };
+const LOOK_LABELS = { top: 'top', bottom: 'bottom', full: 'one-piece', outerwear: 'outerwear', footwear: 'shoes' };
 function roleMatches(role, category) {
   return role === 'full' ? FULL_CATEGORIES.includes(category) : category === role;
 }
@@ -133,7 +133,7 @@ function setLookRole(role, g) {
 // category to pick from; the chosen image then shows in the look row.
 function openLookPicker(role) {
   lookPickingRole = role;
-  const titles = { top: 'Pick a top', bottom: 'Pick a bottom', full: 'Pick a full (one-piece)' };
+  const titles = { top: 'Pick a top', bottom: 'Pick a bottom', full: 'Pick a full (one-piece)', outerwear: 'Pick an outerwear / jacket', footwear: 'Pick shoes' };
   $('lp-title').textContent = titles[role] || 'Pick';
   const grid = $('lp-grid'); grid.innerHTML = '';
   const ownedOnly = $('owned-only-look') ? $('owned-only-look').checked : false;
@@ -185,6 +185,8 @@ function applyOutfitToLook(outfit) {
   } else {
     setRole('top', top); setRole('bottom', outfit.bottom || null); setRole('full', null);
   }
+  setRole('outerwear', outfit.outerwear || null);
+  setRole('footwear', outfit.footwear || null);
   syncLookRows();
 }
 function currentLookIds() {

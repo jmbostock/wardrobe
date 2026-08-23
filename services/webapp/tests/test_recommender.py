@@ -107,6 +107,24 @@ def test_cold_hiking_layers():
     assert out["outerwear"] is not None, "cold hike should layer an outerwear piece"
 
 
+def test_cold_day_layers_lighter_top_under_jacket():
+    """On a cold day with a jacket available, prefer a lighter top (the jacket
+    adds the warmth) instead of a heavy top AND a heavy jacket."""
+    _COUNTER[0] += 1
+    w = wardrobe_mod.Wardrobe()
+    uid = auth.create_user(f"reco_layer{_COUNTER[0]}@example.com", "password123")["id"]
+    mk = lambda name, cat, **kw: w.create(uid, name, cat, **kw)  # noqa: E731
+    mk("Light tee", "top", warmth=2, formality="casual", occasions="casual")
+    mk("Heavy sweater", "top", warmth=5, formality="casual", occasions="casual")
+    mk("Denim jacket", "outerwear", warmth=3, formality="casual", occasions="casual")
+    mk("Jeans", "bottom", warmth=3, formality="casual", occasions="casual")
+    out = recommend(
+        Weather(temp_c=2, feels_like_c=0), "casual", wardrobe=w, user_id=uid,
+    )["outfit"]
+    assert out["outerwear"] is not None, "cold day should include a jacket"
+    assert out["top"]["warmth"] <= 3, f"expected a lighter top under the jacket, got {out['top']}"
+
+
 def test_formal_picks_dress_and_no_bottom():
     w, uid = _make_wardrobe()
     out = recommend(

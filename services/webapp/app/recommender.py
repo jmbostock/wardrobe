@@ -241,10 +241,13 @@ def recommend(
     # `_top` is set after the first picks but referenced inside `best()`/`score()`
     # for color harmony — initialize it so those early calls see None.
     _top: Garment | None = None
+    # mutable warmth target: dropped ~0.7 when we'll layer (a lighter top under
+    # a jacket) and reset before the outer layers / footwear are scored
+    _target = target
 
     def score(g: Garment, top: Garment | None = None) -> float:
         s = (
-            40.0 * warmth_match(g, target)
+            40.0 * warmth_match(g, _target)
             + 20.0 * formality_match(g, formality)
             + 10.0 * occasion_match(g, occasion_tags)
             + 6.0 * rotation_bonus(g)
@@ -270,6 +273,16 @@ def recommend(
             return None
         return max(candidates, key=lambda g: score(g, top=_top))
 
+    # Decide outerwear FIRST so the top can layer under it — on a cold/wet day
+    # with a jacket available we prefer a LIGHTER top (the jacket adds warmth).
+    needs_outer = target >= 4.0 or precipitating
+    outer_candidates = [
+        g for g in items
+        if g.category == "outerwear" and (not precipitating or g.waterproof == 1)
+    ]
+    if needs_outer and outer_candidates:
+        _target = max(1.0, target - 0.7)
+
     # 1. top (a dress or swimsuit can fill the top slot; if chosen, bottom is optional)
     top = best("top")
     dress = best("dress")
@@ -280,8 +293,8 @@ def recommend(
     # 2. bottom (skip if we picked a dress/swimsuit — it covers both)
     bottom = None if (_top and _top.category in ("dress", "swimsuit")) else best("bottom")
 
-    # 3. outerwear — needed when cold (target>=4) or when precipitating
-    needs_outer = target >= 4.0 or precipitating
+    # back to the real target for the outer layer, footwear and accessories
+    _target = target
     outerwear = best("outerwear", require=(1 if precipitating else None)) if needs_outer else None
 
     # 4. footwear
