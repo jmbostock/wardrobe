@@ -405,9 +405,10 @@ def test_normalize_orientation():
     assert normalize_orientation(b"not an image") == (b"not an image", "")
 
 
-def test_normalize_orientation_ai_rotate():
-    """An explicit AI rotation (90/180/270 clockwise) is trusted over the
-    landscape guess, so untagged sideways/upside-down photos come out right."""
+def test_normalize_orientation_never_horizontal():
+    """Garment photos are NEVER horizontal (landscape). Only the portrait-
+    preserving 180 flip (upside-down garment) is accepted; 90/270 are ignored;
+    any landscape input is rotated back to portrait."""
     from app.media import normalize_orientation
     from PIL import Image
     import io as _io
@@ -417,122 +418,34 @@ def test_normalize_orientation_ai_rotate():
         img.save(buf, "PNG")
         return buf.getvalue()
 
+    def size(d):
+        return Image.open(_io.BytesIO(d)).size
+
     land = Image.new("RGB", (1200, 800), (120, 120, 120))
     port = Image.new("RGB", (800, 1200), (120, 120, 120))
 
-    # AI: rotate 270 clockwise on a landscape → portrait
-    d, e = normalize_orientation(data_of(land), rotate=270)
-    assert e == "jpg"
-    w, h = Image.open(_io.BytesIO(d)).size
-    assert h > w, (w, h)
-
-    # AI: rotate 180 on a portrait → still portrait dimensions (flipped in place)
+    # 180 flip on a portrait → stays portrait (flipped in place)
     d, e = normalize_orientation(data_of(port), rotate=180)
-    w, h = Image.open(_io.BytesIO(d)).size
-    assert w == 800 and h == 1200, (w, h)
+    assert size(d) == (800, 1200), size(d)
 
-    # AI: rotate 90 clockwise on a portrait → landscape (AI is trusted)
+    # 90 rotate on a portrait → IGNORED (would make it landscape) → stays portrait
     d, e = normalize_orientation(data_of(port), rotate=90)
-    w, h = Image.open(_io.BytesIO(d)).size
-    assert w > h, (w, h)
+    assert e == "", e  # untouched
+    assert size(d) == (800, 1200), size(d)
 
-    # invalid rotate value is ignored → falls back to deterministic behaviour
+    # 270 rotate on a portrait → IGNORED → stays portrait
+    d, e = normalize_orientation(data_of(port), rotate=270)
+    assert size(d) == (800, 1200), size(d)
+
+    # landscape + any rotate → NEVER landscape: forced back to portrait
+    for r in (0, 45, 90, 180, 270):
+        d, e = normalize_orientation(data_of(land), rotate=r)
+        w, h = size(d)
+        assert h > w, (r, w, h)
+
+    # invalid rotate is ignored (deterministic portrait behavior)
     d, e = normalize_orientation(data_of(land), rotate=45)
-    w, h = Image.open(_io.BytesIO(d)).size
-    assert h > w, (w, h)  # landscape → portrait default
-
-
-def test_top_edge_votes():
-    """_top_edge takes a majority of up to 3 model votes and gives up cleanly
-    when the small vision model can't decide."""
-    from app import aifill
-
-    def fake(vals):
-        it = iter(vals)
-        def _read(img_bytes, prompt):
-            return next(it, "")
-        return _read
-
-    real = aifill._vlm_read
-    try:
-        # 3 agreeing → that edge (no early-exit signal, but consistent)
-        aifill._vlm_read = fake(["top", "top", "top"])
-        assert aifill._top_edge(b"x") == "top"
-        # early exit: first two agree → stops asking (only 2 reads consumed)
-        aifill._vlm_read = fake(["left", "left"])
-        assert aifill._top_edge(b"x") == "left"
-        # 2-of-3 majority
-        aifill._vlm_read = fake(["top", "left", "top"])
-        assert aifill._top_edge(b"x") == "top"
-        # split 1/1/1 → can't decide
-        aifill._vlm_read = fake(["top", "left", "bottom"])
-        assert aifill._top_edge(b"x") == ""
-        # nonsense replies → empty
-        aifill._vlm_read = fake(["I don't know", "yes"])
-        assert aifill._top_edge(b"x") == ""
-    finally:
-        aifill._vlm_read = real
-
-
-def test_ai_upright_rotation_mapping():
-    """ai_upright_rotation maps the detected top-edge to the clockwise rotation
-    that brings it to the TOP edge (0=top, 90=left, 180=bottom, 270=right)."""
-    from app import aifill
-    from PIL import Image
-    import io as _io
-
-    def png():
-        buf = _io.BytesIO()
-        Image.new("RGB", (64, 96), (120, 120, 120)).save(buf, "PNG")
-        return buf.getvalue()
-
-    real = aifill._top_edge
-    try:
-        aifill._top_edge = lambda b: "top"
-        assert aifill.ai_upright_rotation(png()) == 0
-        aifill._top_edge = lambda b: "left"
-        assert aifill.ai_upright_rotation(png()) == 90
-        aifill._top_edge = lambda b: "bottom"
-        assert aifill.ai_upright_rotation(png()) == 180
-        aifill._top_edge = lambda b: "right"
-        assert aifill.ai_upright_rotation(png()) == 270
-        # model can't tell → None (caller falls back)
-        aifill._top_edge = lambda b: ""
-        assert aifill.ai_upright_rotation(png()) is None
-    finally:
-        aifill._top_edge = real
-
-
-def test_normalize_orientation_ai_decided():
-    """When the AI looked and said 'already upright' (rotate=0, ai_decided=True)
-    we trust it — no landscape→portrait guess is applied, even on a landscape
-    frame (so an upright garment in a wide frame isn't knocked sideways)."""
-    from app.media import normalize_orientation
-    from PIL import Image
-    import io as _io
-
-    def data_of(img):
-        buf = _io.BytesIO()
-        img.save(buf, "PNG")
-        return buf.getvalue()
-
-    land = Image.new("RGB", (1200, 800), (120, 120, 120))
-    port = Image.new("RGB", (800, 1200), (120, 120, 120))
-
-    # AI decided upright on a portrait → untouched, no re-encode
-    d, e = normalize_orientation(data_of(port), rotate=0, ai_decided=True)
-    assert e == "", e
-    w, h = Image.open(_io.BytesIO(d)).size
-    assert w == 800 and h == 1200
-
-    # AI decided upright on a landscape → NOT forced to portrait
-    d, e = normalize_orientation(data_of(land), rotate=0, ai_decided=True)
-    w, h = Image.open(_io.BytesIO(d)).size
-    assert w > h, (w, h)  # stays landscape
-
-    # without ai_decided, landscape still gets the deterministic portrait guess
-    d, e = normalize_orientation(data_of(land))
-    w, h = Image.open(_io.BytesIO(d)).size
+    w, h = size(d)
     assert h > w, (w, h)
 
 
@@ -634,7 +547,5 @@ if __name__ == "__main__":
     test_extract_product_page_color_from_text()
     test_extract_product_page_expanded_images()
     test_clean_image_url()
-    test_top_edge_votes()
-    test_ai_upright_rotation_mapping()
-    test_normalize_orientation_ai_decided()
+    test_normalize_orientation_never_horizontal()
     print("wardrobe tests OK")

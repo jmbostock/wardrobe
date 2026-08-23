@@ -147,28 +147,16 @@ def _heic_to_jpeg(data: bytes) -> bytes:
     return buf.getvalue()
 
 
-# clockwise degrees -> PIL transpose op (used for AI-determined orientation)
-_ROTATE_CW = {
-    90: Image.Transpose.ROTATE_270,
-    180: Image.Transpose.ROTATE_180,
-    270: Image.Transpose.ROTATE_90,
-}
-
-
-def normalize_orientation(data: bytes, rotate: int = 0,
-                          ai_decided: bool = False) -> tuple[bytes, str]:
+def normalize_orientation(data: bytes, rotate: int = 0) -> tuple[bytes, str]:
     """Right-side-up + portrait (vertical) for consistent display.
 
-    Pipeline (deterministic unless the AI looked at the photo):
+    Hard rules (deterministic, no exceptions):
       1. apply EXIF orientation (fixes sideways / upside-down phone photos)
-      2. if `rotate` (90/180/270 clockwise, from the AI orientation look) is
-         given, trust it — it tells us which way is up for images with no
-         metadata
-      3. otherwise, rotate landscape shots to portrait (counter-clockwise)
-
-    When `ai_decided` is True the AI actually looked and decided the upright
-    rotation (possibly 0 = already upright), so the landscape->portrait guess
-    is skipped — we never fight the AI's answer.
+      2. `rotate` may only be 180 — a portrait-preserving flip from the tag
+         reader (an upside-down garment with a readable tag). 90/270 are never
+         accepted because they'd turn a portrait frame horizontal.
+      3. NEVER output a landscape (horizontal) image — if the result is wider
+         than tall it is rotated back to portrait.
 
     Returns (normalized bytes, new ext) or (data, '') when nothing needed
     changing / the image can't be decoded (caller keeps it)."""
@@ -184,12 +172,12 @@ def normalize_orientation(data: bytes, rotate: int = 0,
             changed = True
     except Exception:  # noqa: BLE001 — no/odd EXIF → treat as upright
         pass
-    if rotate in _ROTATE_CW:
-        # AI-determined direction takes precedence over the landscape guess
-        img = img.transpose(_ROTATE_CW[rotate])
+    if rotate == 180:
+        img = img.transpose(Image.Transpose.ROTATE_180)
         changed = True
-    elif not ai_decided and img.width > img.height:
-        img = img.transpose(Image.Transpose.ROTATE_90)  # landscape → portrait
+    if img.width > img.height:
+        # never horizontal — force landscape images back to portrait
+        img = img.transpose(Image.Transpose.ROTATE_90)
         changed = True
     if not changed:
         return data, ""
@@ -204,10 +192,10 @@ def normalize_orientation(data: bytes, rotate: int = 0,
 def save_garment_image(user_id: int, garment_id: int, data: bytes, ext: str,
                        ai_orient: bool = False) -> Path:
     """Store a garment photo. Orientation is normalized on EVERY save (no
-    exceptions): EXIF righting + portrait. When `ai_orient` is set (file
-    uploads), we first run 'look at it, then rotate' via the vision model to
-    pick the correct way up — the model reports which image edge the garment's
-    top is on and we rotate it upright (works even when no tag is readable)."""
+    exceptions): EXIF righting + portrait — the result is never horizontal.
+    When `ai_orient` is set (file uploads), the tag-reader may add a 180° flip
+    for an upside-down garment with a readable tag; 90/270 rotations are never
+    applied because they'd make the frame horizontal."""
     d = WARDROBE_DIR / str(user_id)
     d.mkdir(parents=True, exist_ok=True)
     for old in d.glob(f"{garment_id}.*"):
@@ -218,12 +206,10 @@ def save_garment_image(user_id: int, garment_id: int, data: bytes, ext: str,
     if ext == "heic":  # normalize iPhone photos to JPEG on ingest
         data = _heic_to_jpeg(data)
         ext = "jpg"
-    ai_rotate = aifill.ai_upright_rotation(data) if ai_orient else None
-    rotate = ai_rotate if ai_rotate is not None else 0
-    # upright (AI) + portrait; ai_decided skips the landscape guess when the AI
-    # answered (even with 0 = already upright)
-    data, norm_ext = normalize_orientation(data, rotate=rotate,
-                                           ai_decided=ai_rotate is not None)
+    rotate = aifill.ai_orientation(data) if ai_orient else 0
+    # ai_orientation returns only 0 or 180 (portrait-preserving); 90/270 are
+    # never produced — they'd make a horizontal frame, which is forbidden.
+    data, norm_ext = normalize_orientation(data, rotate=rotate)  # upright + portrait
     if norm_ext:
         ext = norm_ext
     path = d / f"{garment_id}.{ext}"

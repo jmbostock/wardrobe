@@ -22,10 +22,10 @@ onto a **photo of a person** (stored image, upload, or live webcam), à la Alta 
   sizes) on upload + product-link parse; **brand & color dropdowns** backed by the
   DB; **type-aware sizes** (pants waist×length, bra band×cup); near-duplicate
   detection (dHash + color + category); HEIC → JPEG
-- ✅ **Garment orientation "look, then rotate"** (v0.14.0): on every upload the
-  vision model reports which edge the garment's top is on and the photo is rotated
-  so the top is up — consistent upright photos even for folded flat-lays with no
-  readable tag
+- ✅ **Garment orientation — never horizontal** (v0.14.0): every upload is
+  EXIF-righted, only a portrait-preserving 180° flip (tag-reader) is ever applied,
+  and the saved photo is hard-guaranteed **portrait** — a landscape frame is never
+  produced
 - ⬜ Phase 3 (LLM stylist) and Phase 5 (migration) — not started
 
 **What's next:** `docs/product.md §7` (prioritized roadmap). **Full plan:** `PLAN.md`.

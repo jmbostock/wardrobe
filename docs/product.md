@@ -71,10 +71,10 @@ Clueless Closet (repo name `altacloset`) is a **self-hosted, Dockerized AI perso
 - **Near-duplicate detection**: 64-bit dHash + dominant color from the center crop
   + same category gate (dHash ≤ 12 bits) → `⚠ similar to X`. This killed the
   false positives like "olive joggers ≈ black swimsuit".
-- **Orientation (automatic, no exceptions)**: every upload is EXIF-righted, then the
-  vision model reports which edge the garment's top is on and the photo is rotated
-  so the top is up — consistent upright photos even for folded flat-lays with no
-  readable tag. (No manual rotate button.)
+- **Orientation — never horizontal (automatic, no exceptions)**: every upload is
+  EXIF-righted, only a portrait-preserving 180° flip (from the tag-reader) is ever
+  applied, and the saved photo is **hard-guaranteed portrait** — a landscape frame
+  is never produced. (No manual rotate button.)
 - **Clear** button on the add form resets it when a link fetch fails or picks the
   wrong thing.
 
@@ -136,11 +136,11 @@ Full write-up: **`docs/wardrobe-v0.12.md`** (metadata / dedup / dropdowns / size
 - **Account fix** — all imported photos moved to `bostock@gmail.com` (user 3); the
   test account `me@example.com` (user 2) was **deleted**. Rule: do **not** create
   users or use demo/test accounts without permission.
-- **Orientation "look, then rotate"** (v0.14.0, replaces the tag-read approach):
-  the vision model answers "which edge is the garment's top on?" (stable 3/3
-  agreement on every existing photo) and the photo is rotated so that edge is the
-  top. Works for folded flat-lays with no readable tag; runs on every upload. All
-  20 existing photos were backfilled → all upright and consistent.
+- **Orientation — deterministic, never horizontal** (v0.14.0): EXIF righting +
+  an optional 180° flip from the tag-reader + a hard guarantee the saved photo is
+  portrait. An earlier "look, then rotate" edge-detection pass was reverted — the
+  small VLM's up/down/sideways answers were unreliable and its 90° rotations made
+  some photos landscape (forbidden). All 20 photos are portrait + upright.
 
 ---
 
