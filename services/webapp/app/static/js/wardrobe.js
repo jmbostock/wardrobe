@@ -8,6 +8,39 @@ let wardrobeSort = 'newest';
 // card keeps showing the old cached photo after Rotate 180°).
 function gimg(id) { return '/api/wardrobe/' + id + '/image?v=' + Date.now(); }
 
+// 64-bit dHash Hamming distance (hex-string phash). Lower = more similar.
+function phashHamming(a, b) {
+  let n = 0;
+  for (let i = 0; i < a.length && i < b.length; i++) {
+    const x = parseInt(a[i], 16) ^ parseInt(b[i], 16);
+    n += (x & 1) + ((x >> 1) & 1) + ((x >> 2) & 1) + ((x >> 3) & 1);
+  }
+  return n;
+}
+
+// "Similarity" sort: greedily walk nearest perceptual neighbours so near-
+// duplicate garments (the same item re-photographed) cluster together and are
+// easy to spot. Items without a phash trail at the end, newest first.
+function similarOrder(items) {
+  const have = items.filter((g) => g.phash);
+  const rest = items.filter((g) => !g.phash);
+  if (have.length < 2) return [...items].sort((a, b) => b.id - a.id);
+  const pool = have.slice()
+    .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || '') || b.id - a.id);
+  const out = [pool.shift()];
+  while (pool.length) {
+    let bi = 0, bd = Infinity;
+    const cur = out[out.length - 1];
+    for (let i = 0; i < pool.length; i++) {
+      const d = phashHamming(cur.phash, pool[i].phash);
+      if (d < bd) { bd = d; bi = i; }
+    }
+    out.push(pool.splice(bi, 1)[0]);
+  }
+  rest.sort((a, b) => b.id - a.id);
+  return out.concat(rest);
+}
+
 // ---------- grid ----------
 async function loadWardrobe() {
   const grid = $('wardrobe');
@@ -17,12 +50,16 @@ async function loadWardrobe() {
   catch (e) { grid.innerHTML = '<p class="muted">failed to load wardrobe</p>'; return; }
   if (wardrobeFilter === 'owned') items = items.filter((g) => g.owned);
   else if (wardrobeFilter === 'want') items = items.filter((g) => !g.owned);
-  // sort: newest (date added) / top rated / most used (in saved outfits)
-  items = [...items].sort((a, b) => {
-    if (wardrobeSort === 'rating') return (b.rating || 0) - (a.rating || 0) || b.id - a.id;
-    if (wardrobeSort === 'used') return (b.used_count || 0) - (a.used_count || 0) || b.id - a.id;
-    return (b.created_at || '').localeCompare(a.created_at || '') || b.id - a.id;
-  });
+  // sort: newest (date added) / top rated / most used / similarity (phash)
+  if (wardrobeSort === 'similar') {
+    items = similarOrder(items);
+  } else {
+    items = [...items].sort((a, b) => {
+      if (wardrobeSort === 'rating') return (b.rating || 0) - (a.rating || 0) || b.id - a.id;
+      if (wardrobeSort === 'used') return (b.used_count || 0) - (a.used_count || 0) || b.id - a.id;
+      return (b.created_at || '').localeCompare(a.created_at || '') || b.id - a.id;
+    });
+  }
   if (!items.length) {
     grid.innerHTML = '<p class="muted">no garments' + (wardrobeFilter === 'all' ? '' : ' in this filter') + ' — add one above</p>';
     return;
