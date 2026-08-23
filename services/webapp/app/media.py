@@ -280,11 +280,10 @@ def normalize_orientation(data: bytes, rotate: int = 0) -> tuple[bytes, str]:
       1. apply EXIF orientation (fixes sideways / upside-down phone photos)
       2. `rotate` ∈ {0, 90, 180, 270} from the tag reader — 180 flips an
          upside-down garment, 90/270 correct a sideways one.
-      3. When NO rotation was chosen by the tag reader, never output a
-         landscape (horizontal) image — a wide frame is rotated back to
-         portrait. A 90/270 chosen by the tag reader is trusted even if it
-         makes the frame horizontal (the garment is upright, which is what
-         matters).
+      3. Portrait-preserving rotations (0/180) or no rotation never leave a
+         horizontal frame — a wide result is rotated back to portrait. A
+         90/270 chosen by the tag reader is trusted even if it makes the frame
+         horizontal (the garment is upright, which is what matters).
 
     Returns (normalized bytes, new ext) or (data, '') when nothing needed
     changing / the image can't be decoded (caller keeps it)."""
@@ -309,9 +308,10 @@ def normalize_orientation(data: bytes, rotate: int = 0) -> tuple[bytes, str]:
     elif rotate == 270:
         img = img.transpose(Image.Transpose.ROTATE_270)
         changed = True
-    if rotate == 0 and img.width > img.height:
-        # heuristic fallback only when the tag reader found no rotation: never
-        # leave a horizontal frame (phone shot sideways with no tag signal).
+    if rotate not in (90, 270) and img.width > img.height:
+        # only a deliberate 90/270 (sideways fix from the tag reader) may leave
+        # a horizontal frame; any 0/180/unknown result that's landscape is
+        # rotated back to portrait for the upright 3:4 grid
         img = img.transpose(Image.Transpose.ROTATE_90)
         changed = True
     if not changed:

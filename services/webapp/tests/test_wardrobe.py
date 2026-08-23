@@ -528,10 +528,10 @@ def test_normalize_orientation():
     assert normalize_orientation(b"not an image") == (b"not an image", "")
 
 
-def test_normalize_orientation_never_horizontal():
-    """Garment photos are NEVER horizontal (landscape). Only the portrait-
-    preserving 180 flip (upside-down garment) is accepted; 90/270 are ignored;
-    any landscape input is rotated back to portrait."""
+def test_normalize_orientation_rotations():
+    """Orientation: 180 flips an upside-down garment in place (portrait); 90/270
+    correct a sideways one (the tag reader chose it, so the frame may go
+    horizontal); any other rotation on a landscape frame is forced to portrait."""
     from app.media import normalize_orientation
     from PIL import Image
     import io as _io
@@ -551,25 +551,21 @@ def test_normalize_orientation_never_horizontal():
     d, e = normalize_orientation(data_of(port), rotate=180)
     assert size(d) == (800, 1200), size(d)
 
-    # 90 rotate on a portrait → IGNORED (would make it landscape) → stays portrait
-    d, e = normalize_orientation(data_of(port), rotate=90)
-    assert e == "", e  # untouched
-    assert size(d) == (800, 1200), size(d)
+    # 90/270 on a portrait → sideways garment corrected (frame goes landscape)
+    for r, out in ((90, (1200, 800)), (270, (1200, 800))):
+        d, e = normalize_orientation(data_of(port), rotate=r)
+        assert size(d) == out, (r, size(d))
 
-    # 270 rotate on a portrait → IGNORED → stays portrait
-    d, e = normalize_orientation(data_of(port), rotate=270)
-    assert size(d) == (800, 1200), size(d)
-
-    # landscape + any rotate → NEVER landscape: forced back to portrait
-    for r in (0, 45, 90, 180, 270):
+    # landscape + portrait-preserving/no/invalid rotation → forced to portrait
+    for r in (0, 180, 45):
         d, e = normalize_orientation(data_of(land), rotate=r)
         w, h = size(d)
         assert h > w, (r, w, h)
 
-    # invalid rotate is ignored (deterministic portrait behavior)
-    d, e = normalize_orientation(data_of(land), rotate=45)
-    w, h = size(d)
-    assert h > w, (w, h)
+    # landscape + a deliberate 90/270 → trusted (stays horizontal, garment upright)
+    for r in (90, 270):
+        d, e = normalize_orientation(data_of(land), rotate=r)
+        assert size(d) == (1200, 800), (r, size(d))
 
 
 def test_normalize_color():
@@ -718,6 +714,6 @@ if __name__ == "__main__":
     test_extract_product_page_color_from_text()
     test_extract_product_page_expanded_images()
     test_clean_image_url()
-    test_normalize_orientation_never_horizontal()
+    test_normalize_orientation_rotations()
     test_near_duplicates_canonical_color_gate()
     print("wardrobe tests OK")
