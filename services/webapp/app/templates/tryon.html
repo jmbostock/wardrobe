@@ -88,12 +88,14 @@
 {% block modals %}
 <div id="look-picker" class="sheet" hidden>
   <div class="panel">
-    <div class="grab"></div>
-    <div class="head">
-      <h2 id="lp-title">Pick</h2>
-      <button id="lp-close" class="ghost close" aria-label="Close">✕</button>
+    <div class="top">
+      <div class="grab"></div>
+      <div class="head">
+        <h2 id="lp-title">Pick</h2>
+        <button id="lp-close" class="ghost close" aria-label="Close">✕</button>
+      </div>
+      <button type="button" id="lp-none" class="ghost none-btn"><span class="none-x">✕</span> None — clear this slot</button>
     </div>
-    <button type="button" id="lp-none" class="ghost">None — clear this slot</button>
     <p class="muted" id="lp-empty" hidden>No garments with photos in this category yet — add one in the Wardrobe tab.</p>
     <div id="lp-grid" class="photos"></div>
   </div>

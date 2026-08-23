@@ -176,6 +176,11 @@ Full write-up: **`docs/wardrobe-v0.12.md`** (metadata / dedup / dropdowns / size
   jumpsuits) that don't need a separate top/bottom. Picking a Full garment
   clears top/bottom. Sheet CSS hardened for older iOS (explicit offsets, flex
   stretch instead of `dvh`).
+- **Sticky sheet header + prominent None** (v0.19.0): every sheet has a sticky
+  top bar (grab, title, big ✕ close — plus the **None — clear this slot** button
+  in the look picker) that stays frozen while the garment list scrolls, so you
+  can always close or clear without scrolling back up. The None button is now a
+  real bordered button with a red ✕, clearly separated from the first photo.
 
 ---
 
