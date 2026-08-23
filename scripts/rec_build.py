@@ -38,7 +38,7 @@ from app import db, embeddings  # noqa: E402
 from app.config import settings  # noqa: E402
 from app.media import garment_image_path  # noqa: E402
 
-MODEL_NAME = "fashion-clip-v2"
+MODEL_NAME = "fashion-clip"  # the package's valid name (FashionCLIP 2.0, LAION ckpt)
 ALS_DIM = 64
 MIN_TRAIN_INTERACTIONS = 20  # don't bother training a model on a trickle of data
 
