@@ -15,14 +15,26 @@ import io
 from PIL import Image
 
 # Hamming distance below which we call two garments "similar". Real duplicates
-# are usually ≤ 6 bits; the same item at a slightly different angle/hang can be
-# up to ~16. 12 is a good "worth flagging" line.
-SIMILAR_THRESHOLD = 12
+# (same garment re-photographed) are usually <= 6 bits on the center-crop hash;
+# the same item at a slightly different angle/hang can be up to ~8. We hash the
+# CENTER CROP (see image_phash), so unrelated garments land well above this.
+SIMILAR_THRESHOLD = 8
 
 
-def image_phash(data: bytes) -> str:
-    """64-bit dHash of an image's bytes, as 16 lowercase hex chars."""
+def image_phash(data: bytes, crop_frac: float = 0.6) -> str:
+    """64-bit dHash of a garment image's CENTER CROP, as 16 lowercase hex chars.
+
+    We hash the center crop — not the whole frame — because garment photos
+    (flat-lays especially) are dominated by the background (bed/sheet), so a
+    whole-frame dHash makes every similarly-shot garment look "similar" (a red
+    one-piece and a pink polka-dot swimsuit were matching at dist 11). The
+    garment is centered, so the center crop captures it — the same region the
+    color gate uses."""
     img = Image.open(io.BytesIO(data)).convert("L")
+    w, h = img.size
+    cw, ch = max(1, int(w * crop_frac)), max(1, int(h * crop_frac))
+    left, top = (w - cw) // 2, (h - ch) // 2
+    img = img.crop((left, top, left + cw, top + ch))
     img = img.resize((9, 8), Image.LANCZOS)
     px = list(img.getdata())
     bits: list[str] = []

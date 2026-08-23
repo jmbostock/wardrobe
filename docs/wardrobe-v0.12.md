@@ -64,13 +64,18 @@ Sizes now adapt to the garment type (`media.SIZE_SCHEMAS`, returned in `/api/war
 
 "Did I already scan this?" detection:
 
-- **`app/phash.py`** — 64-bit **dHash** (Hamming distance) + a **coarse dominant-color
-  class** computed from the **center crop** of the photo (the garment, not the white
-  backdrop).
+- **`app/phash.py`** — 64-bit **dHash** (Hamming distance) computed on the garment's
+  **center crop** (not the whole frame — flat-lay backgrounds are otherwise dominant
+  and make every similarly-shot garment look "similar"). Plus a coarse dominant-color
+  class (also center crop) stored as `garments.color_sig`.
 - Stored per garment: `garments.phash` and `garments.color_sig` (computed on image save).
 - A garment is flagged as a near-duplicate only when **all three** match an existing
-  garment: **same category**, **same color class**, **dHash ≤ 12 bits**.
-  - This killed the false positives like "olive joggers ≈ black swimsuit".
+  garment: **same category**, **color compatible**, **center-crop dHash ≤ 8 bits**.
+  - **Color gate:** if both garments carry a canonical color tag (e.g. the dropdown's
+    red vs pink) those must match — otherwise fall back to the coarse photo color
+    class. This killed the false positives: "olive joggers ≈ black swimsuit" AND
+    "red one-piece ≈ pink polka-dot swimsuit" (both had photo-centers classifying as
+    red, but their canonical colors red ≠ pink).
 - Surfaced as: `⚠ similar to X` on the grid card, a note in the detail card, and a toast
   on add/upload.
 
@@ -119,8 +124,10 @@ saving the image** or `near_dup_of` is always null.
 
 ## 10. Known follow-ups / review
 
-- **Jeans cluster #120–124** are flagged as near-duplicates (dist 9–12) — review and
-  merge/delete the ones you don't want.
+- ~~**Jeans cluster #120–124** flagged as near-duplicates (dist 9–12)~~ — after the
+  near-dup tightening (center-crop dHash ≤ 8 + canonical-color gate) these are no
+  longer flagged; the earlier flags were background-dominated full-frame matches.
+  If some of them genuinely are the same pair, merge/delete manually.
 - #118 ("Black one-piece swimsuit") was re-categorized to **top** per your call.
 - `scripts/tryon-test.sh` still references the deleted `me@example.com` account — needs a
   fix or removal.

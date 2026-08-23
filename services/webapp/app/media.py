@@ -220,6 +220,15 @@ def save_garment_image(user_id: int, garment_id: int, data: bytes, ext: str,
     return path
 
 
+def _canonical_color(color_tags: str) -> str:
+    """First canonical color tag, normalized ('navy,dark' -> 'navy'). Empty
+    string when no canonical color is set (caller falls back to the photo-based
+    coarse color class)."""
+    if not color_tags:
+        return ""
+    return normalize_color(color_tags.split(",")[0].strip())
+
+
 def near_duplicates(
     user_id: int,
     phash_hex: str,
@@ -227,27 +236,38 @@ def near_duplicates(
     exclude_id: int | None = None,
     threshold: int = phash.SIMILAR_THRESHOLD,
     category: str | None = None,
+    color_tags: str = "",
 ) -> list[dict]:
     """Existing garments for this user that are likely the same (or nearly the
-    same) item as one with `phash_hex` + `color_sig`. Sorted by closest first.
+    same) item as one with `phash_hex`. Sorted by closest first.
     Empty list = no near-duplicate.
 
     Three gates (all must pass):
     - same `category` (a top vs. a pair of pants shot the same way isn't a dup)
-    - same coarse `color_sig` (an olive jogger vs a black swimsuit isn't a dup)
-    - dHash Hamming distance <= threshold
+    - color: when BOTH garments carry a canonical color tag, those must match
+      (so a red one-piece is never "similar to" a pink polka-dot one even when
+      their photo-based coarse color class collides); otherwise fall back to
+      matching the coarse photo `color_sig`
+    - center-crop dHash Hamming distance <= threshold
     """
     if not phash_hex:
         return []
+    my_color = _canonical_color(color_tags)
     out: list[dict] = []
     for g in wardrobe.all(user_id):
         if not g.phash or g.id == exclude_id:
             continue
         if category is not None and g.category != category:
             continue
-        # both need a color fingerprint; if either lacks one, don't match (safe)
-        if not color_sig or not g.color_sig or g.color_sig != color_sig:
-            continue
+        g_color = _canonical_color(g.color_tags)
+        if my_color and g_color:
+            # both canonical → must be the same color (red != pink)
+            if my_color != g_color:
+                continue
+        else:
+            # no canonical colors → fall back to coarse photo color match
+            if not color_sig or not g.color_sig or g.color_sig != color_sig:
+                continue
         d = phash.hamming(phash_hex, g.phash)
         if d <= threshold:
             out.append({"id": g.id, "name": g.name, "distance": d})
@@ -258,11 +278,12 @@ def near_duplicates(
 def nearest_dup(
     user_id: int, phash_hex: str, color_sig: str = "", exclude_id: int | None = None,
     threshold: int = phash.SIMILAR_THRESHOLD, category: str | None = None,
+    color_tags: str = "",
 ) -> dict | None:
     """Closest match only (for the wardrobe grid's "similar to X" note)."""
     dups = near_duplicates(user_id, phash_hex, color_sig=color_sig,
                            exclude_id=exclude_id, threshold=threshold,
-                           category=category)
+                           category=category, color_tags=color_tags)
     return dups[0] if dups else None
 
 
@@ -314,6 +335,7 @@ def garment_dict(user_id: int, g) -> dict:
     # X" notes) — only within the same category AND same dominant color, so an
     # olive jogger is never flagged against a black swimsuit
     nd = (nearest_dup(user_id, g.phash, g.color_sig, exclude_id=g.id,
-                      category=g.category) if g.phash else None)
+                      category=g.category, color_tags=g.color_tags)
+          if g.phash else None)
     d["near_dup_of"] = nd
     return d

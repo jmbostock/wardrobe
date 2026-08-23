@@ -358,6 +358,42 @@ def test_near_duplicates():
     assert media.garment_dict(ua["id"], w.get(ua["id"], g2.id))["near_dup_of"] is None
 
 
+def test_near_duplicates_canonical_color_gate():
+    """A red garment is never 'similar to' a pink one, even when their photos
+    give the same coarse color class — the canonical color tags gate the match
+    (the user's exact complaint: red one-piece ~ pink polka-dot swimsuit)."""
+    from app import media, phash
+    from PIL import Image, ImageDraw
+    import io as _io
+
+    def make(color):
+        img = Image.new("RGB", (240, 240), color)
+        ImageDraw.Draw(img).rectangle([40, 40, 200, 200], fill=color)
+        buf = _io.BytesIO()
+        img.save(buf, "PNG")
+        return buf.getvalue()
+
+    ua = auth.create_user("wDupC@example.com", "password123")
+    gred = w.create(ua["id"], "One Piece Red", "dress",
+                    color_hex="#a33333", color_tags="red")
+    media.save_garment_image(ua["id"], gred.id, make((120, 50, 50)), "png")
+    gpin = w.create(ua["id"], "Pink Polka Swim", "dress",
+                    color_hex="#d9b3a0", color_tags="pink")
+    media.save_garment_image(ua["id"], gpin.id, make((217, 179, 160)), "png")
+
+    red = make((120, 50, 50))
+    # same category; pink garment (canonical pink) must NOT match a red photo
+    assert media.near_duplicates(ua["id"], phash.image_phash(red),
+                                 phash.image_color_class(red),
+                                 exclude_id=gred.id, color_tags="red") == []
+    # a near-identical RED re-shoot still flags the red one (canonical red == red)
+    red2 = make((124, 52, 52))
+    dups = media.near_duplicates(ua["id"], phash.image_phash(red2),
+                                 phash.image_color_class(red2), color_tags="red")
+    assert any(x["id"] == gred.id for x in dups), dups
+    assert not any(x["id"] == gpin.id for x in dups), dups
+
+
 def test_size_schemas():
     """size_schema drives type-aware size capture: pants = waist×length, bras =
     band×cup, shirts/dresses = size list, footwear = numeric."""
@@ -548,4 +584,5 @@ if __name__ == "__main__":
     test_extract_product_page_expanded_images()
     test_clean_image_url()
     test_normalize_orientation_never_horizontal()
+    test_near_duplicates_canonical_color_gate()
     print("wardrobe tests OK")

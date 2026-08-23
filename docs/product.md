@@ -68,9 +68,11 @@ Clueless Closet (repo name `altacloset`) is a **self-hosted, Dockerized AI perso
   category/color (with swatch), photo upload / set-from-link, owned checkbox,
   **rating 0–10 step-1 slider**, near-dup note, used-in-N-outfits, and Delete.
   The old per-card **Edit** button was removed.
-- **Near-duplicate detection**: 64-bit dHash + dominant color from the center crop
-  + same category gate (dHash ≤ 12 bits) → `⚠ similar to X`. This killed the
-  false positives like "olive joggers ≈ black swimsuit".
+- **Near-duplicate detection**: 64-bit dHash of the garment **center crop** (not
+  the background) + same category gate + a **canonical-color gate** (dHash ≤ 8 bits,
+  and if both garments carry a canonical color tag they must match) → `⚠ similar to
+  X`. Kills the false positives: olive joggers ≈ black swimsuit, red one-piece ≈
+  pink polka-dot swimsuit.
 - **Orientation — never horizontal (automatic, no exceptions)**: every upload is
   EXIF-righted, only a portrait-preserving 180° flip (from the tag-reader) is ever
   applied, and the saved photo is **hard-guaranteed portrait** — a landscape frame
@@ -130,8 +132,8 @@ Full write-up: **`docs/wardrobe-v0.12.md`** (metadata / dedup / dropdowns / size
   navy, grey→gray, olive green→olive…).
 - **Type-aware sizes** — pants waist×length, bra band×cup, per-category schemas
   (see Wardrobe feature tour above).
-- **Near-duplicate detection** — dHash + center-crop color class + same category
-  gate; surfaced as `⚠ similar to X`.
+- **Near-duplicate detection** — center-crop dHash (≤ 8 bits) + same category
+  + canonical-color gate (red ≠ pink) so only genuinely identical re-scans flag
 - **HEIC support** — pillow-heif converts iPhone photos to JPEG on save.
 - **Account fix** — all imported photos moved to `bostock@gmail.com` (user 3); the
   test account `me@example.com` (user 2) was **deleted**. Rule: do **not** create
