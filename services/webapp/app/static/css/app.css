@@ -158,18 +158,20 @@ body.auth-page .app-version { display:none; }  /* login screen is a centered car
   background:#000; border:1px solid var(--line); border-radius:10px; }
 #savedimg-row .muted { text-align:center; max-width:380px; }
 
-/* ---- suggest page: two-panel layout ---- */
+/* ---- suggest page: consolidated — the chat IS the surface ---- */
 .suggest-weather-card { margin-bottom:0; }
 .suggest-weather-row { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap; }
 .suggest-loc-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .small-field { max-width:180px; font-size:13px; padding:7px 10px; }
 button.small { font-size:12px; padding:7px 10px; }
-.suggest-panels { display:grid; grid-template-columns:1fr 1fr; gap:16px; align-items:start; }
-.suggest-left { display:grid; gap:14px; }
-.suggest-right { position:sticky; top:72px; }
-.suggest-controls { display:grid; gap:10px; margin-top:0; }
-.suggest-controls select,
-.suggest-controls .field { width:100%; }
+/* occasion compose bar feeds the stylist; the chat card fills the page */
+.suggest-chat-card { height:min(78vh, 720px); }
+.suggest-compose { display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  padding:10px 12px; border-bottom:1px solid var(--line); background:#10151c; flex:none; }
+.suggest-compose select.field { flex:1 1 150px; min-width:150px; width:auto; }
+.suggest-compose input.field { flex:1 1 180px; }
+.suggest-compose .owned-label { flex:none; white-space:nowrap; }
+.suggest-compose #recommend-btn { flex:none; }
 .owned-label { display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer; text-transform:none; }
 .owned-label input[type=checkbox] { accent-color:var(--acc); width:16px; height:16px; }
 .full-width { width:100%; margin-top:4px; }
@@ -188,11 +190,6 @@ button.small { font-size:12px; padding:7px 10px; }
 .slot-img { width:88px; height:112px; object-fit:contain; background:#000;
   border-radius:8px; border:1px solid var(--line); flex:none; }
 .garment-rating { font-size:12px; color:var(--acc); flex:none; }
-
-.reasoning-card { margin-top:0; }
-.reasoning-card h3 { margin:0 0 8px; font-size:13px; color:var(--mut); text-transform:uppercase; letter-spacing:.5px; }
-.reasoning-card ul { margin:0; padding-left:18px; color:var(--mut); font-size:13px; }
-.reasoning-card li { margin-bottom:4px; }
 
 /* ---- Cher stylist chat panel ---- */
 .chat-card { display:flex; flex-direction:column; height:520px; padding:0; overflow:hidden; }
@@ -221,6 +218,20 @@ button.small { font-size:12px; padding:7px 10px; }
 .chat-send-btn svg { color:#0f1216; }
 .chat-status { padding:0 16px 8px; flex:none; }
 
+/* recommendation card rendered INSIDE the chat (Cher's suggested look) */
+.recommend-bubble { max-width:100%; }
+.recommend-bubble .bubble-text { background:#1a2230; border:1px solid #2a3550; }
+.recommend-outfit { display:grid; gap:8px; margin-top:10px; background:#0f1216;
+  border:1px solid var(--line); border-radius:12px; padding:10px; }
+.recommend-why { margin-top:10px; background:#0f1216; border:1px solid var(--line);
+  border-radius:12px; padding:10px 12px; }
+.recommend-why h4 { margin:0 0 6px; font-size:11px; color:var(--mut);
+  text-transform:uppercase; letter-spacing:.5px; }
+.recommend-why ul { margin:0; padding-left:16px; color:var(--mut); font-size:13px; }
+.recommend-why li { margin-bottom:3px; }
+.recommend-tryon { margin-top:10px; width:100%; padding:13px; border-radius:10px;
+  background:var(--acc); color:#0f1216; font-weight:700; font-size:15px; }
+
 /* ---- iPhone-first responsive ---- */
 @media (max-width: 640px) {
   main { padding:14px; }
@@ -247,10 +258,12 @@ button.small { font-size:12px; padding:7px 10px; }
   #look-picker .photos { grid-template-columns:1fr; gap:12px; }
   .compare { grid-template-columns:1fr; }
   #savedimg-preview { max-width:100%; }
-  /* suggest page: stack panels vertically on mobile */
-  .suggest-panels { grid-template-columns:1fr; }
-  .suggest-right { position:static; }
-  .chat-card { height:420px; }
+  /* suggest page: compose bar stacks, chat fills most of the screen */
+  .suggest-compose select.field { flex-basis:100%; min-width:0; }
+  .suggest-compose input.field { flex-basis:100%; }
+  .suggest-compose .owned-label { flex:1 1 auto; }
+  .suggest-compose #recommend-btn { flex:1 1 100%; }
+  .suggest-chat-card { height:74vh; }
 }
 
 /* ---- full-page sheets on desktop: centered full-height panel ---- */

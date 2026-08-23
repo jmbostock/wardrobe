@@ -93,6 +93,133 @@ def _with_image_flags(user_id: int, outfit: dict) -> dict:
 
 
 # --------------------------------------------------------------------------- #
+# Consolidated suggest → chat (recommendation posts into the stylist thread)   #
+# --------------------------------------------------------------------------- #
+
+_ACTIVITY_LABELS = {
+    "office": "work", "work": "work", "interview": "interview",
+    "date": "date", "dinner": "dinner", "night": "night out",
+    "casual": "casual day", "errands": "errands", "home": "day at home",
+    "hiking": "hike", "gym": "workout", "beach": "beach day",
+    "wedding": "wedding", "gala": "gala", "formal": "formal event",
+}
+
+
+def _recommend_intro(activity: str, weather_used: dict, outfit: dict, prompt: str | None) -> str:
+    """Short natural-language opener for Cher's recommendation message."""
+    slot_names: list[str] = []
+    for slot in ("top", "bottom", "outerwear", "footwear"):
+        g = outfit.get(slot)
+        if g:
+            slot_names.append(g["name"])
+    for a in outfit.get("accessories") or []:
+        slot_names.append(a["name"])
+
+    label = _ACTIVITY_LABELS.get(activity, activity)
+    temp = weather_used.get("temp_f")
+    cond = weather_used.get("condition", "clear")
+    weather_bit = f"it's {temp}°F and {cond} out" if temp is not None else f"it's {cond} out"
+
+    if slot_names:
+        intro = (
+            f"Here's your look for a {label} — {', '.join(slot_names)}. "
+            f"Since {weather_bit}, I balanced warmth, formality, and color. "
+            "Ask me to swap anything and I'll adjust."
+        )
+    else:
+        intro = (
+            f"I couldn't put together a full look for a {label} right now. "
+            "Add a few more pieces in the Wardrobe tab and hit Suggest again — "
+            "or tell me what vibe you're going for."
+        )
+    if prompt:
+        intro += f" (Style hint “{prompt}” factored in.)"
+    return intro
+
+
+class SuggestRequest(BaseModel):
+    session_id: str | None = Field(None, description="Existing chat session to append to; None = new session")
+    activity: str = Field("casual", description="office, date, hiking, ...")
+    prompt: str | None = Field(None, description="free-form style hint")
+    owned_only: bool = Field(False, description="only recommend garments you own")
+    weather: WeatherIn | None = Field(None, description="omit to auto-fetch")
+
+
+def _update_context(conn, lock, session_id: str, context: dict) -> None:
+    """Replace the stored snapshot of {weather, outfit, activity} for a session."""
+    with lock:
+        conn.execute(
+            "UPDATE chat_sessions SET context=?, updated_at=datetime('now') WHERE id=?",
+            (json.dumps(context), session_id),
+        )
+        conn.commit()
+
+
+@router.post("/api/suggest")
+def suggest_outfit(req: SuggestRequest, user: dict = Depends(get_current_user)) -> dict:
+    """Run the rule-based recommendation and post it INTO the stylist chat.
+
+    The recommendation is persisted as a `recommend`-kind assistant message so
+    it renders as a rich card in the chat thread (garment photos + reasoning),
+    and the conversation can continue from there with Cher.
+    """
+    conn, lock = _get_conn()
+    user_id = user["id"]
+
+    # 1. weather + recommendation (identical picks to /api/recommend)
+    if req.weather:
+        w = Weather(**req.weather.__dict__)
+    else:
+        lat, lon = _user_coords(user)
+        w = weather.fetch(lat, lon)
+    result = recommender.recommend(
+        w, req.activity, req.prompt, wardrobe=wardrobe, user_id=user_id,
+        owned_only=req.owned_only,
+    )
+    result["outfit"] = _with_image_flags(user_id, result["outfit"])
+
+    # 2. resolve the chat session (append when valid, else start a new one)
+    session_id = req.session_id
+    if session_id and not _load_session(conn, lock, session_id, user_id):
+        session_id = None
+    if not session_id:
+        session_id = _create_session(conn, lock, user_id, {"weather": {}, "outfit": {}, "activity": req.activity})
+
+    # 3. Cher's intro + persist the recommendation message + refresh context
+    intro = _recommend_intro(req.activity, result["weather_used"], result["outfit"], req.prompt)
+    rec_msg = {
+        "role": "assistant",
+        "kind": "recommend",
+        "content": intro,
+        "data": {
+            "activity": req.activity,
+            "prompt": req.prompt,
+            "outfit": result["outfit"],
+            "reasoning": result["reasoning"],
+            "weather_used": result["weather_used"],
+        },
+    }
+    _append_messages(conn, lock, session_id, [rec_msg])
+    _update_context(conn, lock, session_id, {
+        "weather": result["weather_used"],
+        "outfit": result["outfit"],
+        "activity": req.activity,
+    })
+
+    session = _load_session(conn, lock, session_id, user_id)
+    return {
+        "session_id": session_id,
+        "intro": intro,
+        "outfit": result["outfit"],
+        "reasoning": result["reasoning"],
+        "weather_used": result["weather_used"],
+        "activity": req.activity,
+        "prompt": req.prompt,
+        "messages": json.loads(session["messages"]),
+    }
+
+
+# --------------------------------------------------------------------------- #
 # Stylist chat (DeepSeek-v4-flash, SSE streaming)                             #
 # --------------------------------------------------------------------------- #
 

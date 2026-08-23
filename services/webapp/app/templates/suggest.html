@@ -18,70 +18,46 @@
     </div>
   </div>
 
-  <!-- Main two-panel layout -->
-  <div class="suggest-panels">
+  <!-- Consolidated surface: Cher chat + occasion compose bar.
+       Suggest outfit posts the pick (garments + why) straight into the thread,
+       so the recommendation and the conversation live in one place. -->
+  <div class="card chat-card suggest-chat-card">
+    <div class="chat-header">
+      <span class="chat-title">✦ Cher <span class="badge">AI Stylist</span></span>
+      <button id="chat-clear" class="ghost small" title="New conversation">↺ New chat</button>
+    </div>
 
-    <!-- LEFT: outfit controls + result -->
-    <div class="suggest-left">
-      <div class="card">
-        <h2>What's the occasion?</h2>
-        <div class="suggest-controls">
-          <select id="activity">
-            <option value="casual">Casual / errands</option>
-            <option value="office" selected>Office / work</option>
-            <option value="date">Date / dinner</option>
-            <option value="hiking">Hiking / active</option>
-            <option value="beach">Beach</option>
-            <option value="formal">Wedding / formal</option>
-          </select>
-          <input type="text" id="prompt" placeholder="style hint (navy, wool, casual…)" class="field" />
-          <label class="owned-label">
-            <input type="checkbox" id="owned-only" /> Owned only
-          </label>
-          <button id="recommend-btn">✨ Suggest outfit</button>
-        </div>
-      </div>
+    <!-- Compose: occasion controls that feed the stylist -->
+    <div class="suggest-compose">
+      <select id="activity" class="field">
+        <option value="casual">Casual / errands</option>
+        <option value="office" selected>Office / work</option>
+        <option value="date">Date / dinner</option>
+        <option value="hiking">Hiking / active</option>
+        <option value="beach">Beach</option>
+        <option value="formal">Wedding / formal</option>
+      </select>
+      <input type="text" id="prompt" placeholder="style hint (navy, wool, casual…)" class="field" />
+      <label class="owned-label">
+        <input type="checkbox" id="owned-only" /> Owned only
+      </label>
+      <button id="recommend-btn">✨ Suggest outfit</button>
+    </div>
 
-      <!-- Outfit result cards -->
-      <div id="outfit-result" hidden>
-        <div id="outfit" class="outfit-slots"></div>
-        <div class="card reasoning-card" id="reasoning-card" hidden>
-          <h3>Why this outfit</h3>
-          <ul id="reasons"></ul>
-        </div>
-        <button id="try-on-btn" class="ghost full-width" hidden>Try it on →</button>
-      </div>
-
-      <div id="outfit-empty" class="card muted" hidden>
-        Your wardrobe is empty — add some clothes in the Wardrobe tab first.
+    <div id="chat-messages" class="chat-messages">
+      <div class="chat-bubble assistant intro-bubble">
+        <span class="bubble-text">Hi! I'm Cher, your personal stylist. Pick an occasion above and hit <strong>Suggest outfit</strong> — I'll walk you through the picks right here, and you can keep asking me to tweak anything.</span>
       </div>
     </div>
 
-    <!-- RIGHT: Cher stylist chat -->
-    <div class="suggest-right">
-      <div class="card chat-card">
-        <div class="chat-header">
-          <span class="chat-title">✦ Cher <span class="badge">AI Stylist</span></span>
-          <button id="chat-clear" class="ghost small" title="New conversation">↺ New chat</button>
-        </div>
-
-        <div id="chat-messages" class="chat-messages">
-          <div class="chat-bubble assistant intro-bubble">
-            <span class="bubble-text">Hi! I'm Cher, your personal stylist. Hit <strong>Suggest outfit</strong> and I'll walk you through the picks — or just ask me anything about your wardrobe.</span>
-          </div>
-        </div>
-
-        <div class="chat-input-row" id="chat-input-row">
-          <textarea id="chat-input" class="chat-textarea" placeholder="Ask Cher anything…" rows="1"></textarea>
-          <button id="chat-send" class="chat-send-btn" aria-label="Send">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-          </button>
-        </div>
-        <div id="chat-status" class="chat-status muted small"></div>
-      </div>
+    <div class="chat-input-row" id="chat-input-row">
+      <textarea id="chat-input" class="chat-textarea" placeholder="Ask Cher anything…" rows="1"></textarea>
+      <button id="chat-send" class="chat-send-btn" aria-label="Send">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+      </button>
     </div>
-
-  </div><!-- /suggest-panels -->
+    <div id="chat-status" class="chat-status muted small"></div>
+  </div>
 </section>
 {% endblock %}
 {% block scripts %}<script src="/static/js/suggest.js"></script>{% endblock %}

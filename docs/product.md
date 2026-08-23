@@ -34,10 +34,14 @@ Clueless Closet (repo name `altacloset`) is a **self-hosted, Dockerized AI perso
 
 ## 3. Feature tour (by tab)
 
-### Outfit
+### Outfit (Suggest)
 - Live weather in **°F** for the user's location (default San Mateo, CA 94403; per-user override).
-- Occasion dropdown + style prompt → **rule-based recommendation** with reasons & scores.
-- Empty wardrobes return a friendly `empty_wardrobe` note.
+- **Consolidated stylist chat** (v0.28.0): the occasion compose bar (activity /
+  style hint / owned-only / **Suggest outfit**) sits at the top of the Cher chat
+  card. Hitting **Suggest outfit** posts the pick straight into the thread as a
+  rich Cher message — garment photos per slot, a **Why this outfit** reasoning
+  list, and a **Try it on →** button — and you keep chatting with her from there.
+- Empty wardrobes return a friendly note from Cher in the thread.
 
 ### Try on
 - **Person source**: saved photo / upload / webcam.
@@ -209,6 +213,15 @@ Full write-up: **`docs/wardrobe-v0.12.md`** (metadata / dedup / dropdowns / size
   hint/instruction text from the Try-on look builder; the page now just has the
   look rows, Owned-only, and a **full-width horizontal Try on** button.
   (The v0.26.0 Suggest-page declutter was reverted — it was a misdirected edit.)
+- **Suggest + Chat consolidated** (v0.28.0): the segmented left-panel
+  result/reasoning cards are gone — the Suggest page is now a single stylist
+  surface. The occasion compose bar lives at the top of the Cher chat card, and
+  **Suggest outfit** posts the pick INTO the thread as a rich Cher message
+  (garment photos per slot, "Why this outfit" reasoning, and a Try it on →
+  button on the card). You keep talking to Cher from there, and the conversation
+  survives a page refresh (history is restored from the session). New
+  `POST /api/suggest` does the recommend + seeds the chat; `/api/recommend` is
+  unchanged for the Try-on page's "Use recommendation".
 
 ---
 
@@ -303,6 +316,7 @@ Full write-up: **`docs/wardrobe-v0.12.md`** (metadata / dedup / dropdowns / size
 | GET `/api/photos/best-for-garment/{garment_id}` | pick the best saved photo for a garment by outfit match (Ollama vision; heuristic fallback) |
 | POST `/api/image-quality` | score person/garment image (`kind=person\|garment`) |
 | POST `/api/recommend` | rule-based outfit recommendation |
+| POST `/api/suggest` | recommend + post the pick into the stylist chat thread (returns `session_id`) |
 | POST `/api/tryon`, POST `/api/tryon/outfit` | single / chained try-on render |
 | GET `/api/outfits`, POST `/api/outfits`, DELETE `/api/outfits/{id}` | saved looks (with render thumbnails) |
 | GET `/api/uploads/{name}` | private try-on result image (owner-only) |

@@ -40,7 +40,7 @@ async function saveLocationFrom(inputId, statusId) {
 $('outfit-loc-save').addEventListener('click', () => saveLocationFrom('outfit-loc', 'outfit-loc-status'));
 
 // ------------------------------------------------------------------ //
-// Outfit recommendation                                               //
+// Outfit recommendation → posted INTO the chat thread                  //
 // ------------------------------------------------------------------ //
 let _lastOutfit = null;
 let _lastActivity = 'office';
@@ -64,79 +64,113 @@ function _garmentCard(g, slot) {
     </div>`;
 }
 
-function renderOutfit(outfit) {
-  const slots = [['top', 'top'], ['bottom', 'bottom'], ['outerwear', 'outerwear'], ['footwear', 'footwear']];
-  let html = '';
-  for (const [key, slot] of slots) {
-    const g = outfit[key];
-    if (g) html += _garmentCard(g, slot);
-  }
-  (outfit.accessories || []).forEach((g) => { html += _garmentCard(g, 'accessory'); });
-  $('outfit').innerHTML = html || '<p class="muted">No matching outfit found.</p>';
-  // load the garment thumbnails (async; authImageUrl already cache-busts)
-  $('outfit').querySelectorAll('.slot-img').forEach((img) => {
-    authImageUrl('/api/wardrobe/' + img.dataset.gid + '/image').then((u) => { img.src = u; }).catch(() => {});
-  });
-  $('outfit-result').hidden = false;
-  $('outfit-empty').hidden = true;
-  $('try-on-btn').hidden = false;
+function _hasGarments(outfit) {
+  return !!(outfit && Object.values(outfit).some(
+    (v) => (Array.isArray(v) && v.length) || (v && typeof v === 'object')
+  ));
 }
 
-$('recommend-btn').addEventListener('click', async () => {
+function _goTryOn(outfit) {
+  localStorage.setItem(RECO_KEY, JSON.stringify({
+    outfit: outfit || _lastOutfit, activity: _lastActivity, prompt: $('prompt').value || '',
+  }));
+  location.href = '/tryon';
+}
+
+// Render Cher's recommendation as a rich bubble inside the chat:
+// intro text + garment cards (photos) + reasoning + a Try it on action.
+function _renderRecommendBubble({ intro, outfit, reasoning, activity }) {
+  const wrap = document.createElement('div');
+  wrap.className = 'chat-bubble assistant recommend-bubble';
+
+  const text = document.createElement('div');
+  text.className = 'bubble-text';
+  text.textContent = intro || '';
+  wrap.appendChild(text);
+
+  if (_hasGarments(outfit)) {
+    const grid = document.createElement('div');
+    grid.className = 'recommend-outfit';
+    const slots = [['top', 'top'], ['bottom', 'bottom'], ['outerwear', 'outerwear'], ['footwear', 'footwear']];
+    let html = '';
+    for (const [key, slot] of slots) {
+      const g = outfit[key];
+      if (g) html += _garmentCard(g, slot);
+    }
+    (outfit.accessories || []).forEach((g) => { html += _garmentCard(g, 'accessory'); });
+    grid.innerHTML = html;
+    wrap.appendChild(grid);
+    // load the garment thumbnails (async; authImageUrl already cache-busts)
+    grid.querySelectorAll('.slot-img').forEach((img) => {
+      authImageUrl('/api/wardrobe/' + img.dataset.gid + '/image').then((u) => { img.src = u; }).catch(() => {});
+    });
+    // Try it on action on the card itself
+    const btn = document.createElement('button');
+    btn.className = 'recommend-tryon';
+    btn.textContent = 'Try it on →';
+    btn.addEventListener('click', () => _goTryOn(outfit));
+    wrap.appendChild(btn);
+  }
+
+  const reasons = (reasoning || []).filter(Boolean);
+  if (reasons.length) {
+    const why = document.createElement('div');
+    why.className = 'recommend-why';
+    const h = document.createElement('h4'); h.textContent = 'Why this outfit'; why.appendChild(h);
+    const ul = document.createElement('ul');
+    reasons.forEach((r) => { const li = document.createElement('li'); li.textContent = r; ul.appendChild(li); });
+    why.appendChild(ul);
+    wrap.appendChild(why);
+  }
+
+  $('chat-messages').appendChild(wrap);
+  _scrollChat();
+  return wrap;
+}
+
+// Suggest outfit → recommendation posts into the chat as a Cher message.
+async function suggestOutfit() {
   const btn = $('recommend-btn');
   btn.disabled = true;
   btn.textContent = '…';
   try {
     _lastActivity = $('activity').value;
-    const data = await apiJson('/api/recommend', {
+    const data = await apiJson('/api/suggest', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        session_id: _sessionId,
         activity: _lastActivity,
         prompt: $('prompt').value || null,
         owned_only: $('owned-only').checked,
       }),
     });
     _lastOutfit = data.outfit;
-    if (Object.values(data.outfit).every((v) => !v || (Array.isArray(v) && !v.length))) {
-      $('outfit-result').hidden = true;
-      $('outfit-empty').hidden = false;
-    } else {
-      renderOutfit(data.outfit);
-    }
-    const reasons = data.reasoning || [];
-    $('reasons').innerHTML = reasons.map((r) => `<li>${r}</li>`).join('');
-    $('reasoning-card').hidden = reasons.length === 0;
+    _sessionId = data.session_id;
+    sessionStorage.setItem('cher_session', _sessionId);
 
-    // Update weather display with what was actually used
+    _renderRecommendBubble({
+      intro: data.intro,
+      outfit: data.outfit,
+      reasoning: data.reasoning || [],
+      activity: data.activity,
+    });
+
+    // Update the weather bar with what was actually used
     const w = data.weather_used;
-    $('weather').innerHTML =
-      `<b>${w.temp_f}°F</b><span class="cond">feels ${w.feels_like_f}°F</span><span class="cond">${w.condition}</span>`;
-
-    // Remember for Try-on page
-    localStorage.setItem(RECO_KEY, JSON.stringify({
-      outfit: data.outfit, activity: _lastActivity, prompt: $('prompt').value || '',
-    }));
-
-    // Seed a fresh chat session with this outfit context
-    _startNewSession(data);
+    if (w && w.temp_f != null) {
+      $('weather').innerHTML =
+        `<b>${w.temp_f}°F</b><span class="cond">feels ${w.feels_like_f}°F</span><span class="cond">${w.condition}</span>`;
+    }
   } catch (e) {
-    alert('recommend failed: ' + e);
+    _addBubble('assistant', `⚠ Couldn't put together a look: ${e.message}`);
+    _scrollChat();
   } finally {
     btn.disabled = false;
     btn.textContent = '✨ Suggest outfit';
   }
-});
-
-// Try-on button: pre-load garment IDs into localStorage and navigate
-$('try-on-btn').addEventListener('click', () => {
-  if (_lastOutfit) {
-    localStorage.setItem(RECO_KEY, JSON.stringify({
-      outfit: _lastOutfit, activity: _lastActivity, prompt: $('prompt').value || '',
-    }));
-  }
-  location.href = '/tryon';
-});
+}
+$('recommend-btn').addEventListener('click', suggestOutfit);
 
 // ------------------------------------------------------------------ //
 // Cher stylist chat                                                    //
@@ -162,25 +196,49 @@ function _addBubble(role, text, id) {
   return wrap;
 }
 
-function _startNewSession(recommendData) {
-  // Clears history UI and resets session; primes Cher with context
-  _sessionId = null;
-  sessionStorage.removeItem('cher_session');
-  // Clear old messages except the intro bubble
-  const msgs = $('chat-messages');
-  while (msgs.children.length > 1) msgs.removeChild(msgs.lastChild);
+function _clearChat() { $('chat-messages').innerHTML = ''; }
 
-  // Auto-greet with the new outfit
-  const names = [];
-  const o = recommendData?.outfit || {};
-  for (const slot of ['top', 'bottom', 'outerwear', 'footwear']) {
-    if (o[slot]) names.push(o[slot].name);
+function _introBubble(text) {
+  const wrap = document.createElement('div');
+  wrap.className = 'chat-bubble assistant intro-bubble';
+  const span = document.createElement('span');
+  span.className = 'bubble-text';
+  span.innerHTML = text; // intro text is static/trusted
+  wrap.appendChild(span);
+  $('chat-messages').appendChild(wrap);
+  _scrollChat();
+}
+
+// Render one persisted chat message (user / assistant / recommend card).
+function renderMessage(msg) {
+  if (!msg) return;
+  if (msg.role === 'user') { _addBubble('user', msg.content || ''); return; }
+  if (msg.role === 'assistant' && msg.kind === 'recommend' && msg.data) {
+    _renderRecommendBubble({
+      intro: msg.content,
+      outfit: msg.data.outfit,
+      reasoning: msg.data.reasoning || [],
+      activity: msg.data.activity,
+    });
+    return;
   }
-  const greeting = names.length
-    ? `I've picked ${names.slice(0, 3).join(', ')}${names.length > 3 ? '…' : ''} for you. Ask me to adjust anything — occasion, color, warmth, vibe.`
-    : `I've updated your outfit suggestion. What would you like to tweak?`;
+  _addBubble('assistant', msg.content || '');
+}
 
-  _addBubble('assistant', greeting);
+// Reload the current conversation so the thread survives a page refresh.
+async function restoreChat() {
+  if (!_sessionId) return;
+  try {
+    const data = await apiJson(`/api/recommend/chat/${_sessionId}`);
+    const msgs = data.messages || [];
+    if (!msgs.length) return; // empty session → keep the intro bubble
+    _clearChat();
+    msgs.forEach(renderMessage);
+  } catch (e) {
+    // Stale / deleted session — start fresh
+    _sessionId = null;
+    sessionStorage.removeItem('cher_session');
+  }
 }
 
 function _setStatus(txt) { $('chat-status').textContent = txt; }
@@ -307,7 +365,7 @@ $('chat-input').addEventListener('input', function () {
   this.style.height = Math.min(this.scrollHeight, 120) + 'px';
 });
 
-// Clear conversation
+// Clear conversation (start fresh)
 $('chat-clear').addEventListener('click', async () => {
   if (_sessionId) {
     try {
@@ -316,7 +374,10 @@ $('chat-clear').addEventListener('click', async () => {
   }
   _sessionId = null;
   sessionStorage.removeItem('cher_session');
-  const msgs = $('chat-messages');
-  while (msgs.children.length > 1) msgs.removeChild(msgs.lastChild);
-  _addBubble('assistant', 'Fresh start! Ask me anything about your wardrobe.');
+  _lastOutfit = null;
+  _clearChat();
+  _introBubble('Fresh start! Pick an occasion above and hit <strong>Suggest outfit</strong>, or just ask me anything about your wardrobe.');
 });
+
+// On load, restore the existing conversation (if any)
+restoreChat();
