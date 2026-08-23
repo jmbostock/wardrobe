@@ -205,6 +205,9 @@ Full write-up: **`docs/wardrobe-v0.12.md`** (metadata / dedup / dropdowns / size
 - **Bigger recommendation thumbnails** (v0.25.0): the photo on each suggested
   garment card is now 88×112 (2× the original), with a border, so the top/
   bottom/etc are clearly visible.
+- **Suggest page decluttered** (v0.26.0): removed the "Why this outfit" reasoning
+  card (the long instructions at the bottom); the outfit cards are now followed
+  only by a prominent, wide horizontal **Try it on →** CTA (filled accent button).
 
 ---
 

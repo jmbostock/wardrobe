@@ -187,10 +187,9 @@ button.small { font-size:12px; padding:7px 10px; }
   border-radius:8px; border:1px solid var(--line); flex:none; }
 .garment-rating { font-size:12px; color:var(--acc); flex:none; }
 
-.reasoning-card { margin-top:0; }
-.reasoning-card h3 { margin:0 0 8px; font-size:13px; color:var(--mut); text-transform:uppercase; letter-spacing:.5px; }
-.reasoning-card ul { margin:0; padding-left:18px; color:var(--mut); font-size:13px; }
-.reasoning-card li { margin-bottom:4px; }
+/* Suggest page — prominent, wide, horizontal Try-on CTA (reasoning card removed) */
+#try-on-btn { width:100%; padding:14px 18px; font-size:16px; margin-top:10px;
+  background:var(--acc); color:#0f1216; border:none; border-radius:10px; }
 
 /* ---- Cher stylist chat panel ---- */
 .chat-card { display:flex; flex-direction:column; height:520px; padding:0; overflow:hidden; }
