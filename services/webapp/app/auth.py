@@ -23,7 +23,7 @@ from typing import Any
 from . import db, sharing
 
 ITERATIONS = 200_000
-SESSION_TTL_DAYS = int(os.getenv("SESSION_TTL_DAYS", "30"))
+SESSION_TTL_DAYS = int(os.getenv("SESSION_TTL_DAYS", "180"))
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 

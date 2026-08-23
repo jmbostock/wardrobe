@@ -234,6 +234,9 @@ button.small { font-size:12px; padding:7px 10px; }
   border:1px solid var(--line); border-radius:12px; padding:10px; }
 .recommend-tryon { margin-top:10px; width:100%; padding:13px; border-radius:10px;
   background:var(--acc); color:#0f1216; font-weight:700; font-size:15px; }
+/* thumbs-up/down feedback under a recommendation — one tap target per opinion */
+.recommend-feedback { display:flex; gap:8px; margin-top:10px; }
+.recommend-feedback button { flex:1; padding:10px; border-radius:10px; }
 
 /* ---- iPhone-first responsive ---- */
 @media (max-width: 640px) {
@@ -267,6 +270,10 @@ button.small { font-size:12px; padding:7px 10px; }
   .suggest-compose .owned-label { flex:1 1 auto; }
   .suggest-compose #recommend-btn { flex:1 1 100%; }
   .suggest-chat-card { height:74vh; }
+  /* chat recommendations: full-width stacked feedback + smaller/uncut photos */
+  .recommend-feedback { flex-direction:column; }
+  .slot-img { width:60px; height:80px; }
+  .slot-name { white-space:normal; overflow:visible; }
 }
 
 /* ---- full-page sheets on desktop: centered full-height panel ---- */
