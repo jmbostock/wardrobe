@@ -90,14 +90,12 @@ def _json_col(value: str | None) -> dict:
 
 
 def public_user(user: dict[str, Any]) -> dict[str, Any]:
-    """User dict safe to send to the browser — includes the raw `profile` bio
-    but drops the computed `derived_profile`. The derived profile is server-side
-    only (stylist/recommender input); per user request it is tracked but never
-    shown in the UI.
+    """User dict to send to the browser — includes the raw `profile` bio AND the
+    computed `derived_profile`. The derived schema is simple and harmless, so it
+    goes out everywhere a user dict is returned (account, auth/me, login, ...),
+    and is also fed to Cher as a personalization signal server-side.
     """
-    u = dict(user)
-    u.pop("derived_profile", None)
-    return u
+    return dict(user)
 
 def get_user(user_id: int) -> dict[str, Any] | None:
     conn = db.init()

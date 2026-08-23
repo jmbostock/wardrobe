@@ -126,6 +126,32 @@ def test_suggest_auth_guard():
     assert c.post("/api/suggest", json={"activity": "casual"}).status_code == 401
 
 
+def test_parse_outfit_marker():
+    from app import stylist
+
+    text = "Go with your **Navy peplum top** and **Jeans**. [OUTFIT: \"Navy peplum top\", \"Jeans\"]"
+    names, clean = stylist.parse_outfit_marker(text)
+    assert names == ["Navy peplum top", "Jeans"]
+    assert "[OUTFIT" not in clean
+    assert clean == "Go with your **Navy peplum top** and **Jeans**."
+    # no marker / empty → unchanged
+    assert stylist.parse_outfit_marker("just some text") == ([], "just some text")
+    assert stylist.parse_outfit_marker("") == ([], "")
+
+
+def test_resolve_outfit_items():
+    from app.routes.recommend_routes import _resolve_outfit_items
+
+    c = TestClient(app)
+    h, uid = _login(c, "marker@example.com")
+    wardrobe.create(uid, "Navy peplum top", "top", owned=1)
+    wardrobe.create(uid, "Jeans", "bottom", owned=1)
+    items = _resolve_outfit_items(uid, ["Navy peplum top", "Jeans", "Nope", "Jeans"])
+    assert [i["name"] for i in items] == ["Navy peplum top", "Jeans"], items
+    assert all("id" in i and "name" in i for i in items)
+    assert _resolve_outfit_items(uid, []) == []
+
+
 def _run_all():
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failures = 0

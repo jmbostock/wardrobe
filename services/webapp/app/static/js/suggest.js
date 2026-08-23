@@ -77,6 +77,40 @@ function _goTryOn(outfit) {
   location.href = '/tryon';
 }
 
+// Cher flags her MAIN picks with a machine-only [OUTFIT: "name", ...] line at
+// the end of a reply — strip it from what the user sees.
+function _stripOutfitMarker(text) {
+  const i = text.indexOf('[OUTFIT:');
+  return i === -1 ? text : text.slice(0, i).replace(/[ \t]+$/, '');
+}
+
+// Render Cher's marked main picks as garment photos inside a chat bubble.
+function _renderChatGarments(bubble, items) {
+  if (!items || !items.length) return;
+  let grid = bubble.querySelector('.recommend-outfit');
+  if (!grid) {
+    grid = document.createElement('div');
+    grid.className = 'recommend-outfit chat-garments';
+    bubble.appendChild(grid);
+  }
+  let html = '';
+  for (const it of items) {
+    html += `
+      <div class="outfit-slot-card" data-id="${it.id}">
+        <span class="slot-label">Wear</span>
+        <img class="slot-swatch slot-img" data-gid="${it.id}" alt="${it.name}">
+        <div class="slot-info"><span class="slot-name">${it.name}</span></div>
+      </div>`;
+  }
+  grid.insertAdjacentHTML('beforeend', html);
+  grid.querySelectorAll('.slot-img').forEach((img) => {
+    if (img.src) return;
+    authImageUrl('/api/wardrobe/' + img.dataset.gid + '/image')
+      .then((u) => { img.src = u; }).catch(() => {});
+  });
+  _scrollChat();
+}
+
 // Render Cher's recommendation as ONE chat message: the intro prose carries the
 // "why" (no separate reasons card — that duplicated the prose), the garment
 // cards (photos) show the items inside the chat, and a Try it on action.
@@ -202,7 +236,8 @@ function renderMessage(msg) {
     _renderRecommendBubble({ intro: msg.content, outfit: msg.data.outfit });
     return;
   }
-  _addBubble('assistant', msg.content || '');
+  const bubble = _addBubble('assistant', msg.content || '');
+  if (msg.garments && msg.garments.length) _renderChatGarments(bubble, msg.garments);
 }
 
 // Reload the current conversation so the thread survives a page refresh.
@@ -290,10 +325,14 @@ async function sendChat(message) {
           const evt = JSON.parse(raw);
           if (evt.type === 'token') {
             replyText += evt.content;
-            // Replace cursor with text + cursor (keep cursor at end)
-            textSpan.textContent = replyText;
+            // Replace cursor with text + cursor (keep cursor at end); hide the
+            // machine-only [OUTFIT: ...] marker Cher appends at the end.
+            textSpan.textContent = _stripOutfitMarker(replyText);
             textSpan.appendChild(cursor);
             _scrollChat();
+          } else if (evt.type === 'garments') {
+            // Render Cher's main picks as garment photos in the bubble
+            if (evt.items) _renderChatGarments(assistantBubble, evt.items);
           } else if (evt.type === 'error') {
             hadError = true;
             textSpan.textContent = `⚠ ${evt.message}`;
@@ -301,7 +340,7 @@ async function sendChat(message) {
           } else if (evt.type === 'done') {
             cursor.remove();
             // insurance: never leave an empty bubble if the model returned nothing
-            if (!hadError && !replyText.trim()) {
+            if (!hadError && !_stripOutfitMarker(replyText).trim()) {
               textSpan.textContent = 'Hmm, I could not finish that — want to rephrase?';
             }
             if (evt.session_id) {

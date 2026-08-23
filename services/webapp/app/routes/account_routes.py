@@ -27,8 +27,9 @@ class ProfileRequest(BaseModel):
 def account(user: dict = Depends(get_current_user)) -> dict:
     return {
         "user": auth.public_user(user),
-        # optional style bio — the computed derived profile stays server-side
+        # optional style bio + its computed derived profile (simple schema, exposed)
         "profile": user.get("profile", {}),
+        "derived_profile": user.get("derived_profile", {}),
         "location": {
             "lat": user["lat"] if user["lat"] is not None else weather.DEFAULT_LOCATION["lat"],
             "lon": user["lon"] if user["lon"] is not None else weather.DEFAULT_LOCATION["lon"],

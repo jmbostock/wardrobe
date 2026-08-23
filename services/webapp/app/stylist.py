@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING
 
@@ -21,6 +22,28 @@ if TYPE_CHECKING:
     from .wardrobe import Garment
 
 log = logging.getLogger(__name__)
+
+# --------------------------------------------------------------------------- #
+# Outfit marker — Cher flags her MAIN picks so we can render their photos      #
+# --------------------------------------------------------------------------- #
+_OUTFIT_MARKER_RE = re.compile(r"\[OUTFIT:\s*((?:\"[^\"]*\"\s*,?\s*)*)\]")
+
+
+def parse_outfit_marker(text: str) -> tuple[list[str], str]:
+    """Extract [OUTFIT: "name", "name"] + the reply text with the block removed.
+
+    Cher appends this machine-readable line to flag the pieces she actually
+    recommends — alternatives/backups are NOT included. Returns (names, clean).
+    """
+    if not text:
+        return [], text
+    m = _OUTFIT_MARKER_RE.search(text)
+    if not m:
+        return [], text
+    names = [n.strip() for n in re.findall(r"\"([^\"]*)\"", m.group(1)) if n.strip()]
+    clean = (text[: m.start()] + text[m.end():]).strip()
+    return names, clean
+
 
 # --------------------------------------------------------------------------- #
 # System prompt                                                                #
@@ -49,6 +72,7 @@ You know the user's wardrobe inside-out and today's weather.
 - When asked counting questions (e.g., "how many pairs of jeans/shirts do I have?"), count ONLY the items in the list above whose name, category, or color matches. Give the exact count based ONLY on the wardrobe list provided. Never invent or hallucinate counts.
 - Keep replies concise (2–4 sentences) unless asked for more detail.
 - When proposing a swap, name both the item to remove and the exact replacement.
+- When you recommend a specific look to wear now, APPEND one exact machine line at the very END of your reply: [OUTFIT: "Exact Garment Name", "Exact Garment Name"] — using ONLY exact names from the wardrobe above, listing only the pieces you'd actually wear (no alternatives, no backups), and nothing after it. This line is machine-read and hidden from the user.
 - If asked anything unrelated to fashion or this wardrobe, politely redirect.
 - Do not repeat the weather or wardrobe data back verbatim.
 """

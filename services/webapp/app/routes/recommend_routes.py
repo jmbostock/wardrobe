@@ -333,6 +333,23 @@ def _append_messages(conn, lock, session_id: str, new_messages: list[dict]) -> N
         conn.commit()
 
 
+def _resolve_outfit_items(user_id: int, names: list[str]) -> list[dict]:
+    """Resolve [OUTFIT: ...] garment names to {id, name} for photo rendering."""
+    if not names:
+        return []
+    by_name = {}
+    for g in wardrobe.all(user_id):
+        by_name.setdefault(g.name, g)
+    seen = set()
+    items = []
+    for n in names:
+        g = by_name.get(n)
+        if g and g.id not in seen:
+            seen.add(g.id)
+            items.append({"id": g.id, "name": g.name})
+    return items[:6]
+
+
 @router.post("/api/recommend/chat")
 async def stylist_chat(
     req: ChatRequest,
@@ -391,11 +408,16 @@ async def stylist_chat(
             messages=messages_for_api,
         ):
             if token == "__DONE__":
-                # Persist both user message and assistant reply
+                # Parse Cher's [OUTFIT: ...] marker → resolve to real garment
+                # photos so the chat can render her main picks with images.
+                full = "".join(full_reply)
+                names, clean = stylist.parse_outfit_marker(full)
+                items = _resolve_outfit_items(user_id, names)
                 _append_messages(conn, lock, session_id, [
                     {"role": "user", "content": req.message},
-                    {"role": "assistant", "content": "".join(full_reply)},
+                    {"role": "assistant", "content": clean, "garments": items},
                 ])
+                yield f"data: {json.dumps({'type': 'garments', 'items': items})}\n\n"
                 yield f"data: {json.dumps({'type': 'done', 'session_id': session_id})}\n\n"
                 return
             if token.startswith("__ERROR__:"):
