@@ -104,7 +104,7 @@ def get_user(user_id: int) -> dict[str, Any] | None:
     conn = db.init()
     with db.lock():
         row = conn.execute(
-            "SELECT id, email, lat, lon, profile, derived_profile, created_at FROM users WHERE id=?",
+            "SELECT id, email, lat, lon, location, profile, derived_profile, created_at FROM users WHERE id=?",
             (user_id,),
         ).fetchone()
     if not row:
@@ -127,7 +127,8 @@ def authenticate(email: str, password: str) -> dict[str, Any] | None:
     sharing.ensure_family(row["id"])  # keep returning users in the Family group
     return {
         "id": row["id"], "email": row["email"],
-        "lat": row["lat"], "lon": row["lon"], "created_at": row["created_at"],
+        "lat": row["lat"], "lon": row["lon"], "location": row["location"],
+        "created_at": row["created_at"],
         "profile": _json_col(row["profile"]), "derived_profile": _json_col(row["derived_profile"]),
     }
 
@@ -150,8 +151,8 @@ def get_user_by_token(token: str | None) -> dict[str, Any] | None:
     conn = db.init()
     with db.lock():
         row = conn.execute(
-            """SELECT u.id, u.email, u.lat, u.lon, u.profile, u.derived_profile,
-                      u.created_at, s.expires_at
+            """SELECT u.id, u.email, u.lat, u.lon, u.location, u.profile,
+                      u.derived_profile, u.created_at, s.expires_at
                FROM sessions s JOIN users u ON u.id = s.user_id
                WHERE s.token = ?""",
             (token,),
@@ -163,7 +164,8 @@ def get_user_by_token(token: str | None) -> dict[str, Any] | None:
         return None
     return {
         "id": row["id"], "email": row["email"],
-        "lat": row["lat"], "lon": row["lon"], "created_at": row["created_at"],
+        "lat": row["lat"], "lon": row["lon"], "location": row["location"],
+        "created_at": row["created_at"],
         "profile": _json_col(row["profile"]), "derived_profile": _json_col(row["derived_profile"]),
     }
 
@@ -195,8 +197,11 @@ def change_password(user_id: int, current_password: str, new_password: str) -> N
         conn.commit()
 
 
-def set_location(user_id: int, lat: float, lon: float) -> None:
+def set_location(user_id: int, lat: float, lon: float, name: str | None = None) -> None:
     conn = db.init()
     with db.lock():
-        conn.execute("UPDATE users SET lat=?, lon=? WHERE id=?", (lat, lon, user_id))
+        conn.execute(
+            "UPDATE users SET lat=?, lon=?, location=? WHERE id=?",
+            (lat, lon, name, user_id),
+        )
         conn.commit()

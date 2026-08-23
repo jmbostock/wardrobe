@@ -3,27 +3,17 @@
 {% block content %}
 <section id="view-suggest">
 
-  <!-- Weather bar -->
-  <div class="card suggest-weather-card">
-    <div class="suggest-weather-row">
-      <div>
-        <div id="weather"><span class="muted">loading…</span></div>
-        <div class="muted small" id="weather-loc"></div>
-      </div>
-      <div class="suggest-loc-row">
-        <input type="text" id="outfit-loc" placeholder="change location…" class="field small-field" />
-        <button id="outfit-loc-save" class="ghost small">Update</button>
-        <span class="muted small" id="outfit-loc-status"></span>
-      </div>
-    </div>
-  </div>
-
-  <!-- Consolidated surface: Cher chat + occasion compose bar.
-       Suggest outfit posts the pick (garments + why) straight into the thread,
-       so the recommendation and the conversation live in one place. -->
+  <!-- Cher chat IS the suggest tab — the weather/location is folded into Cher's
+       reply text ("Based on San Mateo weather of 87°F …"), so there's no separate
+       weather card to clutter the mobile layout. -->
   <div class="card chat-card suggest-chat-card">
     <div class="chat-header">
       <span class="chat-title">✦ Cher <span class="badge">AI Stylist</span></span>
+      <div class="suggest-loc-row">
+        <input type="text" id="outfit-loc" placeholder="location…" class="field small-field" />
+        <button id="outfit-loc-save" class="ghost small">Update</button>
+        <span class="muted small" id="outfit-loc-status"></span>
+      </div>
       <button id="chat-clear" class="ghost small" title="New conversation">↺ New chat</button>
     </div>
 

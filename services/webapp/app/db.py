@@ -244,6 +244,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
             PRIMARY KEY (user_id, garment_id)
         )"""
     )
+    # users: per-user location display name (set via the account location form)
+    ucols = {r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()}
+    if "location" not in ucols:
+        conn.execute("ALTER TABLE users ADD COLUMN location TEXT")
     gcols = {r[1] for r in conn.execute("PRAGMA table_info(garments)").fetchall()}
     if "share_group_id" not in gcols:
         conn.execute("ALTER TABLE garments ADD COLUMN share_group_id INTEGER")

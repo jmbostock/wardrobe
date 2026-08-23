@@ -125,6 +125,15 @@ def _with_image_flags(user_id: int, outfit: dict) -> dict:
 # Consolidated suggest → chat (recommendation posts into the stylist thread)   #
 # --------------------------------------------------------------------------- #
 
+def _location_label(user: dict) -> str:
+    """Human-readable location name for Cher's recommendation prose."""
+    if user.get("location"):
+        return user["location"]
+    if user.get("lat") is None:
+        return weather.DEFAULT_LOCATION["name"]
+    return f"{user['lat']:.4f}, {user['lon']:.4f}"
+
+
 _ACTIVITY_LABELS = {
     "office": "work", "work": "work", "interview": "interview",
     "date": "date", "dinner": "dinner", "night": "night out",
@@ -153,13 +162,15 @@ def _join_clauses(clauses: list[str]) -> str:
     return f"{', '.join(clauses[:-1])}, and {clauses[-1]}"
 
 
-def _recommend_intro(activity: str, weather_used: dict, outfit: dict, prompt: str | None) -> str:
+def _recommend_intro(activity: str, weather_used: dict, outfit: dict, prompt: str | None,
+                     location: str | None = None) -> str:
     """Cher's recommendation message — ONE natural chat bubble, WHY woven in.
 
     Reads like the stylist actually recommended it: the pieces up front, then the
-    reasoning (weather/warmth, dress code, color harmony, layers, prompt) as
+    reasoning (weather/location, dress code, color harmony, layers, prompt) as
     flowing prose — no separate reasons card duplicating the same info. The user
-    can then just keep talking to Cher about the picks.
+    can then just keep talking to Cher about the picks. `location` (when known)
+    is folded into the lead: "Based on San Mateo weather of 87°F …".
     """
     slot_names: list[str] = []
     for slot in ("top", "bottom", "outerwear", "footwear"):
@@ -182,8 +193,7 @@ def _recommend_intro(activity: str, weather_used: dict, outfit: dict, prompt: st
     clauses: list[str] = []
     temp = weather_used.get("temp_f")
     cond = weather_used.get("condition", "clear")
-    if temp is not None:
-        clauses.append(f"it's {temp:.0f}°F and {cond} out")
+    # (location + temp go in the lead line below, not the trailing why-clauses)
     formality = recommender.ACTIVITY_MAP.get(
         activity.lower(), recommender.ACTIVITY_MAP["casual"]
     )[0]
@@ -201,10 +211,14 @@ def _recommend_intro(activity: str, weather_used: dict, outfit: dict, prompt: st
 
     why = _join_clauses(clauses)
     why = why[:1].upper() + why[1:] + "."  # uppercase 1st char only (keep 71°F etc.)
-    intro = (
-        f"Here's your {label} look — {', '.join(slot_names)}. "
-        f"{why} Ask me to swap anything — color, layers, or vibe — and I'll adjust."
-    )
+    if location and temp is not None:
+        lead = (
+            f"Based on {location} weather of {temp:.0f}°F ({cond}), here's your "
+            f"{label} look — {', '.join(slot_names)}."
+        )
+    else:
+        lead = f"Here's your {label} look — {', '.join(slot_names)}."
+    intro = f"{lead} {why} Ask me to swap anything — color, layers, or vibe — and I'll adjust."
     # Flag any wishlist picks so the user knows what's owned vs aspirational
     unowned: list[str] = [
         g["name"]
@@ -275,7 +289,8 @@ def suggest_outfit(req: SuggestRequest, user: dict = Depends(get_current_user)) 
         session_id = _create_session(conn, lock, user_id, {"weather": {}, "outfit": {}, "activity": req.activity})
 
     # 3. Cher's intro + persist the recommendation message + refresh context
-    intro = _recommend_intro(req.activity, result["weather_used"], result["outfit"], req.prompt)
+    intro = _recommend_intro(req.activity, result["weather_used"], result["outfit"],
+                             req.prompt, location=_location_label(user))
     rec_msg = {
         "role": "assistant",
         "kind": "recommend",

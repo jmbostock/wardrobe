@@ -237,6 +237,9 @@ button.small { font-size:12px; padding:7px 10px; }
 /* thumbs-up/down feedback under a recommendation — one tap target per opinion */
 .recommend-feedback { display:flex; gap:8px; margin-top:10px; }
 .recommend-feedback button { flex:1; padding:10px; border-radius:10px; }
+/* location control lives in the chat header now (no separate weather card) */
+.chat-header .suggest-loc-row { display:flex; align-items:center; gap:6px; }
+.chat-header .suggest-loc-row .small-field { max-width:150px; }
 
 /* ---- iPhone-first responsive ---- */
 @media (max-width: 640px) {
@@ -269,7 +272,10 @@ button.small { font-size:12px; padding:7px 10px; }
   .suggest-compose input.field { flex-basis:100%; }
   .suggest-compose .owned-label { flex:1 1 auto; }
   .suggest-compose #recommend-btn { flex:1 1 100%; }
-  .suggest-chat-card { height:74vh; }
+  .suggest-chat-card { height:86vh; }
+  .chat-header { flex-wrap:wrap; gap:8px; }
+  .chat-header .suggest-loc-row { order:3; flex:1 1 100%; justify-content:flex-start; }
+  .chat-header .suggest-loc-row .small-field { flex:1; max-width:100%; }
   /* chat recommendations: full-width stacked feedback + smaller/uncut photos */
   .recommend-feedback { flex-direction:column; }
   .slot-img { width:60px; height:80px; }

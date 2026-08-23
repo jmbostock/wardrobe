@@ -32,7 +32,10 @@ def account(user: dict = Depends(get_current_user)) -> dict:
         "location": {
             "lat": user["lat"] if user["lat"] is not None else weather.DEFAULT_LOCATION["lat"],
             "lon": user["lon"] if user["lon"] is not None else weather.DEFAULT_LOCATION["lon"],
-            "label": "San Mateo, CA 94403 (default)" if user["lat"] is None else None,
+            "label": (
+                user.get("location")
+                or (weather.DEFAULT_LOCATION["name"] + " (default)" if user.get("lat") is None else None)
+            ),
         },
         "default_location": weather.DEFAULT_LOCATION,
     }
@@ -59,5 +62,5 @@ def set_location(req: LocationRequest, user: dict = Depends(get_current_user)) -
     loc = weather.geocode(req.location)
     if loc is None:
         raise HTTPException(400, f"could not resolve location: {req.location}")
-    auth.set_location(user["id"], loc["lat"], loc["lon"])
+    auth.set_location(user["id"], loc["lat"], loc["lon"], loc.get("name"))
     return {"ok": True, "location": loc}

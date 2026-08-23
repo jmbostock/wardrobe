@@ -7,20 +7,8 @@ let _lastWeather = null;
 
 async function loadWeather() {
   try {
-    const w = await apiJson('/api/weather');
-    _lastWeather = w;
-    $('weather').innerHTML =
-      `<b>${w.temp_f}°F</b>` +
-      `<span class="cond">feels ${w.feels_like_f}°F</span>` +
-      `<span class="cond">${w.condition}</span>` +
-      `<span class="cond">wind ${w.wind_kph} km/h</span>` +
-      `<span class="cond">humidity ${w.humidity}%</span>`;
-    const acct = await apiJson('/api/account');
-    $('weather-loc').textContent =
-      'location: ' + (acct.location.label || `custom (${acct.location.lat}, ${acct.location.lon})`);
-  } catch (e) {
-    $('weather').innerHTML = '<span class="muted">weather unavailable</span>';
-  }
+    _lastWeather = await apiJson('/api/weather');
+  } catch (e) { _lastWeather = null; }
 }
 loadWeather();
 
