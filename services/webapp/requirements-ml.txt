@@ -1,0 +1,13 @@
+# rec-engine batch builder deps (NOT part of the webapp image).
+# Install in a dedicated venv and run scripts/rec_build.py after adding a batch
+# of clothes (or on a schedule). The webapp itself only needs numpy.
+#
+#     python -m venv ~/rec-ml && ~/rec-ml/bin/pip install -r requirements-ml.txt
+#
+fashion-clip>=0.0.4      # FashionCLIP 2.0 (ViT-B/32) — garment embeddings
+implicit>=0.7.2          # ALS collaborative filter (user×garment interactions)
+torch>=2.1               # FashionCLIP backbone
+transformers>=4.40       # FashionCLIP text/image encoders
+open_clip_torch>=2.24    # FashionCLIP backbone (LAION checkpoint)
+scipy>=1.10              # sparse matrix for ALS
+numpy>=1.24

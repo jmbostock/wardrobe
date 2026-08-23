@@ -85,6 +85,24 @@ add **two cheap, battle-tested ML layers** on top, fueled by a new **interaction
   cards deferred until the parallel session's `suggest.js` rewrite settles.
 - Tests: `tests/test_sharing.py` (4/4) + updated `test_profile.py`. v0.34.0, SW v23.
 
+### ✅ Layer 2 + 3 — FashionCLIP style + ALS learning (v0.35.0, committed — not yet deployed)
+- `garment_embeddings` table + `app/embeddings.py` (numpy-only at request time):
+  FashionCLIP 512-d vectors; `user_style_vector()` = weighted, time-decayed
+  (90-day half-life) centroid of the garments the user actually engaged with — the
+  "gets to know your taste" signal. Requires ≥3 engaged garments with embeddings.
+- `app/learner.py` (numpy-only): loads `data/rec/als.npz` (implicit ALS factors) and
+  scores (user, garment) dot products; gated on ≥ MIN_INTERACTIONS (10).
+- `app/personalize.py`: fusion — `Personalizer(user_id, items)` precomputes a
+  {style [0,1], als [0,1]} bonus per candidate (ALS min-max normalized); `recommend()`
+  adds `SCALE*(β·style + γ·als)` to each rule score (β=0.30, γ=0.20). Inert when no
+  data → rules-only output unchanged for cold users.
+- `scripts/rec_build.py` (+ `requirements-ml.txt`, ML venv): FashionCLIP-embeds every
+  garment image (idempotent) and trains/refreshes the ALS model from the interaction
+  log. `build_matrix()`/`save_model()` are scipy-only and unit-tested; real training
+  verified end-to-end (implicit 0.7.3, 48 interactions → factors → load → score).
+- numpy added to the webapp image (embeddings/learner run in-process; no torch).
+- Tests: `tests/test_recengine.py` (8/8). v0.35.0.
+
 ---
 
 ## 1. Evaluation of the current system (why this plan)

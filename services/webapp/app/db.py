@@ -256,6 +256,17 @@ def _migrate(conn: sqlite3.Connection) -> None:
             "INSERT OR IGNORE INTO group_members (group_id, user_id) SELECT ?, id FROM users",
             (frow["id"],),
         )
+    # garment image embeddings (rec-engine Layer 2) — FashionCLIP vectors written
+    # by scripts/rec_build.py, read by the webapp with numpy only
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS garment_embeddings (
+            garment_id INTEGER PRIMARY KEY REFERENCES garments(id) ON DELETE CASCADE,
+            model      TEXT NOT NULL DEFAULT 'fashion-clip-v2',
+            dim        INTEGER NOT NULL DEFAULT 512,
+            vector     BLOB NOT NULL,
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )"""
+    )
 
 
 def lock() -> threading.Lock:

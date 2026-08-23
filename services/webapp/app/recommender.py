@@ -218,6 +218,9 @@ def recommend(
         g for g in items
         if not (g.shared and sharing.state(user_id, g.id).get("fit_ok") == 0)
     ]
+    # rec-engine L2/3: per-user style + ALS bonuses (no-op when no data exists)
+    from . import personalize
+    pers = personalize.Personalizer(user_id, items)
     formality, occasion_tags = ACTIVITY_MAP.get(
         activity.lower(), ACTIVITY_MAP["casual"]
     )
@@ -254,7 +257,7 @@ def recommend(
                 s -= 15.0
         if top and g.category in ("bottom", "outerwear", "footwear", "accessory"):
             s += 8.0 * harmony(top, g)
-        return s
+        return pers.add_to_score(g.id, s)
 
     def best(category: str, exclude: set[int] | None = None, require: int | None = None) -> Garment | None:
         exclude = exclude or set()
@@ -309,11 +312,15 @@ def recommend(
     # log "shown" interactions so the engine can learn from recommendations
     interactions.log_outfit_shown(user_id, outfit, {"activity": activity, "prompt": prompt})
 
+    reasoning = _build_reasoning(
+        w, target, formality, precipitating, _top, bottom, outerwear, prompt
+    )
+    if pers.active:
+        reasoning.append("personalized to your style + wear history")
+
     return {
         "outfit": outfit,
-        "reasoning": _build_reasoning(
-            w, target, formality, precipitating, _top, bottom, outerwear, prompt
-        ),
+        "reasoning": reasoning,
         "weather_used": {
             "temp_c": w.temp_c,
             "temp_f": round(w.temp_f, 1),

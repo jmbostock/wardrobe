@@ -8,6 +8,9 @@ pillow>=10.0
 pillow-heif>=0.16
 beautifulsoup4>=4.12
 playwright>=1.44
+# rec-engine Layers 2/3 (embeddings + ALS scoring) — numpy only at request time;
+# the heavy FashionCLIP/ALS training runs in scripts/rec_build.py (requirements-ml.txt)
+numpy>=1.24
 
 # Phase 2 (optional): garment background removal before try-on
 # rembg[cpu]>=2.0
