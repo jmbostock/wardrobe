@@ -164,13 +164,16 @@ function _renderRecommendBubble({ intro, outfit }) {
     };
     fb.appendChild(fbBtn('👍 Looks good', 'liked'));
     fb.appendChild(fbBtn('👎 Not right', 'disliked'));
-    wrap.appendChild(fb);
-    // Try it on action below the thumbs
+    // one compact action row: thumbs + Try it on (like a chat action bar)
+    const actions = document.createElement('div');
+    actions.className = 'recommend-actions';
+    actions.appendChild(fb);
     const btn = document.createElement('button');
     btn.className = 'recommend-tryon';
     btn.textContent = 'Try it on →';
     btn.addEventListener('click', () => _goTryOn(outfit));
-    wrap.appendChild(btn);
+    actions.appendChild(btn);
+    wrap.appendChild(actions);
   }
 
   $('chat-messages').appendChild(wrap);

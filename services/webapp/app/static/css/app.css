@@ -174,7 +174,17 @@ body.auth-page .app-version { display:none; }  /* login screen is a centered car
 .small-field { max-width:180px; font-size:13px; padding:7px 10px; }
 button.small { font-size:12px; padding:7px 10px; }
 /* occasion compose bar feeds the stylist; the chat card fills the page */
-.suggest-chat-card { height:min(78vh, 720px); }
+/* Suggest page IS a full-screen chat window: the sticky nav stays on top and
+   everything below it is the chat surface — no fixed box, no dead margins. */
+body:has(#view-suggest) { height:100dvh; overflow:hidden; display:flex; flex-direction:column; }
+body:has(#view-suggest) header { flex:none; }
+body:has(#view-suggest) main { flex:1; min-height:0; max-width:none; width:100%; padding:0; gap:0;
+  display:flex; flex-direction:column; }
+body:has(#view-suggest) .app-version { display:none; }
+#view-suggest { flex:1; min-height:0; display:flex; flex-direction:column; }
+#view-suggest .suggest-chat-card { flex:1; min-height:0; height:auto; max-width:none; width:100%;
+  margin:0; border:0; border-radius:0; }
+.suggest-chat-card { height:auto; }
 .suggest-compose { display:flex; align-items:center; gap:8px; flex-wrap:wrap;
   padding:10px 12px; border-bottom:1px solid var(--line); background:#10151c; flex:none; }
 .suggest-compose select.field { flex:1 1 150px; min-width:150px; width:auto; }
@@ -237,11 +247,14 @@ button.small { font-size:12px; padding:7px 10px; }
 .chat-bubble.assistant:has(.chat-garments) > .bubble-text { align-self:flex-start; }
 .recommend-outfit { display:grid; gap:8px; margin-top:10px; background:#0f1216;
   border:1px solid var(--line); border-radius:12px; padding:10px; }
-.recommend-tryon { margin-top:10px; width:100%; padding:13px; border-radius:10px;
-  background:var(--acc); color:#0f1216; font-weight:700; font-size:15px; }
-/* thumbs-up/down feedback under a recommendation — one tap target per opinion */
-.recommend-feedback { display:flex; gap:8px; margin-top:10px; }
-.recommend-feedback button { flex:1; padding:10px; border-radius:10px; }
+.recommend-tryon { margin-top:0; flex:none; padding:9px 16px; border-radius:9px;
+  background:var(--acc); color:#0f1216; font-weight:700; font-size:13px; }
+/* feedback + Try it on share ONE compact row (like a real chat action bar) */
+.recommend-actions { display:flex; align-items:stretch; gap:8px; margin-top:10px; }
+.recommend-feedback { display:flex; gap:8px; flex:1; min-width:0; }
+.recommend-feedback button { flex:1; padding:9px 10px; border-radius:9px; font-size:13px;
+  background:transparent; border:1px solid var(--line); color:var(--txt); }
+.recommend-feedback button:hover { border-color:var(--acc); }
 /* occasion quick-select in the chat header (no separate weather/location card) */
 .chat-header #activity { width:auto; max-width:170px; margin:0 6px; }
 
@@ -276,11 +289,10 @@ button.small { font-size:12px; padding:7px 10px; }
   .suggest-compose input.field { flex-basis:100%; }
   .suggest-compose .owned-label { flex:1 1 auto; }
   .suggest-compose #recommend-btn { flex:1 1 100%; }
-  .suggest-chat-card { height:86vh; }
+  .suggest-chat-card { flex:1; min-height:0; }
   .chat-header { flex-wrap:wrap; gap:8px; }
   .chat-header #activity { order:3; flex:1 1 100%; max-width:100%; }
-  /* chat recommendations: full-width stacked feedback + smaller/uncut photos */
-  .recommend-feedback { flex-direction:column; }
+  /* chat recommendations: compact photos, actions stay on one line */
   .slot-img { width:60px; height:80px; }
   .slot-name { white-space:normal; overflow:visible; }
 }
@@ -289,10 +301,7 @@ button.small { font-size:12px; padding:7px 10px; }
 @media (min-width: 641px) {
   .sheet .panel { border-left:1px solid var(--line); border-right:1px solid var(--line); }
   .sheet .grab { display:none; }
-  /* desktop: a proper chat window — not a full-width slab */
-  .suggest-chat-card { max-width:840px; margin:0 auto; height:min(80vh, 760px); }
   .recommend-outfit { grid-template-columns:repeat(2, 1fr); }
-  .recommend-feedback { max-width:360px; }
 }
 
 /* ---- PWA standalone (iPhone): clear the notch + home indicator ---- */
