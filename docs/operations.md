@@ -70,6 +70,30 @@ Photos are HEIC→JPEG + downscaled to ≤1024px before the vision model reads t
 - HEIC originals from the 2026-08-23 ingest are archived at
   `202:~/altacloset/archive/2026-08-23-wife-photos-158/`.
 
+## Data hygiene — dedup + orientation
+
+- **Duplicate gate (ingest, BEFORE items enter the app):** `ingest_batch.py`
+  orients the photo first, computes its dHash + color class, then:
+  - a **clear duplicate** (dHash distance ≤ `SIMILAR_THRESHOLD`=8, any category,
+    color-matched) is **skipped** — it never creates a garment;
+  - a **debatable match** (≤ `DEBATE_THRESHOLD`=20, cross-category) is **created
+    but flagged** as a "possible duplicate".
+- **Possible-duplicate notes:** the wardrobe grid/detail show "⚠ similar to X —
+  possible duplicate" via `media.garment_dict` (now category-agnostic + debate
+  zone), so a plaid shirt imported once as `top` and once as `outerwear` is
+  caught even when the ingest categories differ.
+- **Orientation:** `aifill.ai_orientation` reads the tag at 0/90/180/270 and
+  returns the fix rotation — upside-down gets 180, sideways gets 90/270.
+  `normalize_orientation` applies it; only a deliberate 90/270 may leave a
+  horizontal frame (0/180 always stay portrait).
+- **Re-process existing photos:** `scripts/fix_orientation.py` re-checks a user's
+  existing garments (optional `--category`) and re-saves + re-tags any that are
+  rotated. Run inside the webapp container on 187:
+  `docker exec -i altacloset-webapp python - < scripts/fix_orientation.py --email <user> [--category bottom] [--dry-run]`
+- **Cleanup 2026-08-23:** removed 3 clear duplicates from user 7 (Maroon blazer,
+  Navy blazer, Plaid skirt — keeping the first-created), cleaned 3 orphaned
+  embeddings. DB backed up at `data/db/altacloset.db.pre-fix-20260823-214847`.
+
 ## Model paths
 
 - Vision: `/mnt/models/altacloset/vision/Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf` + `mmproj-F16.gguf`
