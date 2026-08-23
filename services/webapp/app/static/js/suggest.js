@@ -104,6 +104,10 @@ $('recommend-btn').addEventListener('click', async () => {
     } else {
       renderOutfit(data.outfit);
     }
+    const reasons = data.reasoning || [];
+    $('reasons').innerHTML = reasons.map((r) => `<li>${r}</li>`).join('');
+    $('reasoning-card').hidden = reasons.length === 0;
+
     // Update weather display with what was actually used
     const w = data.weather_used;
     $('weather').innerHTML =

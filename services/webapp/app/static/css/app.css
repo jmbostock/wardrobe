@@ -173,6 +173,8 @@ button.small { font-size:12px; padding:7px 10px; }
 .owned-label { display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer; text-transform:none; }
 .owned-label input[type=checkbox] { accent-color:var(--acc); width:16px; height:16px; }
 .full-width { width:100%; margin-top:4px; }
+/* Try-on page — full-width, horizontal Try on CTA (hint text removed) */
+#tryon-btn { width:100%; padding:14px 18px; font-size:16px; margin-top:10px; }
 
 /* outfit slot cards */
 .outfit-slots { display:grid; gap:10px; padding:4px 0; }
@@ -187,9 +189,10 @@ button.small { font-size:12px; padding:7px 10px; }
   border-radius:8px; border:1px solid var(--line); flex:none; }
 .garment-rating { font-size:12px; color:var(--acc); flex:none; }
 
-/* Suggest page — prominent, wide, horizontal Try-on CTA (reasoning card removed) */
-#try-on-btn { width:100%; padding:14px 18px; font-size:16px; margin-top:10px;
-  background:var(--acc); color:#0f1216; border:none; border-radius:10px; }
+.reasoning-card { margin-top:0; }
+.reasoning-card h3 { margin:0 0 8px; font-size:13px; color:var(--mut); text-transform:uppercase; letter-spacing:.5px; }
+.reasoning-card ul { margin:0; padding-left:18px; color:var(--mut); font-size:13px; }
+.reasoning-card li { margin-bottom:4px; }
 
 /* ---- Cher stylist chat panel ---- */
 .chat-card { display:flex; flex-direction:column; height:520px; padding:0; overflow:hidden; }
@@ -242,8 +245,6 @@ button.small { font-size:12px; padding:7px 10px; }
   .look-thumb { width:54px; height:72px; }  /* bigger 'what's being tried on' thumb on phones */
   /* one full-width image per row on phones — the whole garment is visible */
   #look-picker .photos { grid-template-columns:1fr; gap:12px; }
-  .look-hint-row { align-items:stretch; }
-  .look-hint-row .hint { flex:1; min-width:0; }
   .compare { grid-template-columns:1fr; }
   #savedimg-preview { max-width:100%; }
   /* suggest page: stack panels vertically on mobile */

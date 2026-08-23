@@ -205,9 +205,10 @@ Full write-up: **`docs/wardrobe-v0.12.md`** (metadata / dedup / dropdowns / size
 - **Bigger recommendation thumbnails** (v0.25.0): the photo on each suggested
   garment card is now 88×112 (2× the original), with a border, so the top/
   bottom/etc are clearly visible.
-- **Suggest page decluttered** (v0.26.0): removed the "Why this outfit" reasoning
-  card (the long instructions at the bottom); the outfit cards are now followed
-  only by a prominent, wide horizontal **Try it on →** CTA (filled accent button).
+- **Try-on page decluttered** (v0.27.0): removed the long "Pick a top, a bottom…"
+  hint/instruction text from the Try-on look builder; the page now just has the
+  look rows, Owned-only, and a **full-width horizontal Try on** button.
+  (The v0.26.0 Suggest-page declutter was reverted — it was a misdirected edit.)
 
 ---
 
