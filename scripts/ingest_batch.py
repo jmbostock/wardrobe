@@ -2,9 +2,10 @@
 """Batch garment ingest — run a directory of photos through the app pipeline.
 
 Mirrors exactly what the Wardrobe UI does per upload:
-  validate → vision tag-read (VISION_ENGINE/VISION_URL) → create garment with
-  category-aware defaults → save image (HEIC→JPEG, orientation, phash,
-  color_sig) → near-dup note.
+validate → orient (0/90/180/270) → vision tag-read → DUPLICATE GATE (clear
+    dups are skipped before anything is created; debatable ones are created but
+    flagged) → create garment with category-aware defaults → save image
+    (HEIC→JPEG, phash, color_sig).
 
 Run on the host that owns the data (during the 202→187 transition, that's 202;
 afterwards 187). Point VISION_ENGINE/VISION_URL at the llama.cpp vision server.
@@ -29,7 +30,7 @@ from PIL import Image, ImageOps
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "services" / "webapp"))
 
-from app import aifill, db, media  # noqa: E402
+from app import aifill, db, media, phash  # noqa: E402
 from app.media import (  # noqa: E402
     COLOR_HEX,
     WARDROBE_CATEGORIES,
@@ -88,11 +89,19 @@ def ingest_one(user_id: int, path: Path, use_ai: bool, dry_run: bool = False) ->
         return {"file": path.name, "ok": False, "error": f"not an image: {ex}"}
     data, ext = _prepare_image(data, ext)  # vision needs JPEG ≤1024px, not raw HEIC
 
+    # orientation FIRST so the duplicate gate + phash see the final image
+    rot = aifill.ai_orientation(data) if use_ai else 0
+    oriented, o_ext = media.normalize_orientation(data, rotate=rot)
+    if o_ext:
+        ext = o_ext
+    ph = phash.image_phash(oriented)
+    cs = phash.image_color_class(oriented)
+
     fields: dict = {}
     ai_err = None
     if use_ai:
         try:
-            fields = aifill.ai_fill_garment(data) or {}
+            fields = aifill.ai_fill_garment(oriented) or {}
         except Exception as ex:  # noqa: BLE001 — vision down → degrade
             ai_err = str(ex)
             fields = {}
@@ -102,7 +111,7 @@ def ingest_one(user_id: int, path: Path, use_ai: bool, dry_run: bool = False) ->
     category = aifill.CATEGORY_SYNONYMS.get(category, category)
     if category not in WARDROBE_CATEGORIES:
         category = "top"
-    color = normalize_color(fields.get("color") or "") or detect_color(data)
+    color = normalize_color(fields.get("color") or "") or detect_color(oriented)
     color_hex = COLOR_HEX.get(color, "#8a8f98")
     brand = (fields.get("brand") or "").strip()[:120]
     sizes = (fields.get("sizes") or "").strip()[:200]
@@ -111,6 +120,27 @@ def ingest_one(user_id: int, path: Path, use_ai: bool, dry_run: bool = False) ->
         "file": path.name, "ok": True, "name": name, "category": category,
         "color": color, "brand": brand, "sizes": sizes, "ai_err": ai_err,
     }
+
+    # --- duplicate gate: clear dups never enter the app; debatable ones are
+    #     created but noted (surfaced as "possible duplicate" in the UI) ---
+    clear = media.nearest_dup(
+        user_id, ph, color_sig=cs, threshold=phash.SIMILAR_THRESHOLD,
+        category=None, color_tags=color,
+    )
+    if clear:
+        result.update({
+            "ok": False,
+            "error": f"duplicate of #{clear['id']} '{clear.get('name')}' "
+                     f"(similarity {clear.get('distance')})",
+        })
+        return result
+
+    debate = media.nearest_dup(
+        user_id, ph, color_sig=cs, threshold=phash.DEBATE_THRESHOLD,
+        category=None, color_tags=color,
+    )
+    if debate:
+        result["dup"] = debate.get("name")
     if dry_run:
         return result
 
@@ -120,18 +150,10 @@ def ingest_one(user_id: int, path: Path, use_ai: bool, dry_run: bool = False) ->
     g = wardrobe.create(
         user_id, name, category, color_hex=color_hex, color_tags=color,
         brand=brand, sizes=sizes, owned=1, warmth=warmth,
-        formality=formality, occasions=occasions,
+        formality=formality, occasions=occasions, phash=ph, color_sig=cs,
     )
-    save_garment_image(user_id, g.id, data, ext, ai_orient=use_ai)
-    fresh = wardrobe.get(user_id, g.id)
-    dup = None
-    if fresh and fresh.phash:
-        dup = media.nearest_dup(
-            user_id, fresh.phash, color_sig=fresh.color_sig,
-            exclude_id=fresh.id, category=fresh.category,
-            color_tags=fresh.color_tags,
-        )
-    result.update({"id": g.id, "dup": dup.get("name") if dup else None})
+    save_garment_image(user_id, g.id, oriented, ext, ai_orient=False, pre_oriented=True)
+    result.update({"id": g.id})
     return result
 
 

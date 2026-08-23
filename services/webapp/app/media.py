@@ -325,12 +325,14 @@ def normalize_orientation(data: bytes, rotate: int = 0) -> tuple[bytes, str]:
 
 
 def save_garment_image(user_id: int, garment_id: int, data: bytes, ext: str,
-                       ai_orient: bool = False, rotate: int | None = None) -> Path:
+                       ai_orient: bool = False, rotate: int | None = None,
+                       pre_oriented: bool = False) -> Path:
     """Store a garment photo. Orientation is normalized on EVERY save (no
     exceptions): EXIF righting + portrait (unless the tag reader picked 90/270,
     which is trusted even if it makes the frame horizontal). When `ai_orient`
     is set (file uploads), the tag reader picks the rotation (0/90/180/270); an
-    explicit `rotate` overrides that."""
+    explicit `rotate` overrides that. `pre_oriented=True` skips orientation
+    entirely (caller already normalized and computed phash/color_sig)."""
     d = WARDROBE_DIR / str(user_id)
     d.mkdir(parents=True, exist_ok=True)
     for old in d.glob(f"{garment_id}.*"):
@@ -341,9 +343,11 @@ def save_garment_image(user_id: int, garment_id: int, data: bytes, ext: str,
     if ext == "heic":  # normalize iPhone photos to JPEG on ingest
         data = _heic_to_jpeg(data)
         ext = "jpg"
-    if rotate is None:
-        rotate = aifill.ai_orientation(data) if ai_orient else 0
-    data, norm_ext = normalize_orientation(data, rotate=rotate)
+    norm_ext = ""
+    if not pre_oriented:
+        if rotate is None:
+            rotate = aifill.ai_orientation(data) if ai_orient else 0
+        data, norm_ext = normalize_orientation(data, rotate=rotate)
     if norm_ext:
         ext = norm_ext
     path = d / f"{garment_id}.{ext}"
@@ -475,7 +479,8 @@ def garment_dict(user_id: int, g) -> dict:
     # nearest existing garment this one is a near-duplicate of (for "similar to
     # X" notes) — scoped to the owner's collection, same category + dominant color
     nd = (nearest_dup(g.user_id, g.phash, g.color_sig, exclude_id=g.id,
-                      category=g.category, color_tags=g.color_tags)
+                      threshold=phash.DEBATE_THRESHOLD, category=None,
+                      color_tags=g.color_tags)
           if g.phash else None)
     d["near_dup_of"] = nd
     return d

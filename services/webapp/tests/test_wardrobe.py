@@ -391,8 +391,9 @@ def test_phash_similarity():
 
 
 def test_near_duplicates():
-    """media.near_duplicates flags the same/near-identical item, excludes self,
-    and ignores unrelated garments (different category or different color)."""
+    """media.near_duplicates flags the same/near-identical item (even across
+    categories — the same picture is the same item no matter how it's tagged),
+    excludes self, and ignores unrelated garments (different color)."""
     from app import media, phash
     from PIL import Image, ImageDraw
     import io as _io
@@ -411,7 +412,9 @@ def test_near_duplicates():
     media.save_garment_image(ua["id"], g1.id, make((120, 50, 50), "RED"), "png")
     g2 = w.create(ua["id"], "Blue dress", "dress")
     media.save_garment_image(ua["id"], g2.id, make((60, 60, 140), "BLU"), "png")
-    # a top photographed the same way as g1 (near-identical hash) — NOT a dup
+    # g3 = the same photo under a different category (a top vs the red dress).
+    # A near-identical image is the same item regardless of how it's tagged, so
+    # this IS a cross-category duplicate the user wants flagged.
     g3 = w.create(ua["id"], "Red top", "top")
     media.save_garment_image(ua["id"], g3.id, make((126, 54, 54), "RED"), "png")
 
@@ -425,16 +428,20 @@ def test_near_duplicates():
                                  phash.image_color_class(red2))
     assert any(x["id"] == g1.id for x in dups), dups
     assert not any(x["id"] == g2.id for x in dups), dups  # different color class
-    assert not any(x["id"] == g3.id for x in dups), dups  # different category
+    # g3 is the same picture tagged as a different category — a near-identical
+    # image bypasses the category gate (cross-category duplicate)
+    assert any(x["id"] == g3.id for x in dups), dups
     # a blue near-twin of g2 flags g2 (color gate passes, not g1)
     blue2 = make((66, 66, 146), "BLU")
     dups2 = media.near_duplicates(ua["id"], phash.image_phash(blue2),
                                   phash.image_color_class(blue2))
     assert any(x["id"] == g2.id for x in dups2), dups2
     assert not any(x["id"] == g1.id for x in dups2), dups2
-    # garment_dict exposes near_dup_of for the grid "similar to" note
+    # garment_dict exposes near_dup_of for the grid "similar to" note — now
+    # cross-category + debate zone, so g1 (red dress) notes g3 (red top, same pic)
     g1d = media.garment_dict(ua["id"], w.get(ua["id"], g1.id))
-    assert g1d["phash"] != "" and g1d["near_dup_of"] is None  # no other red item
+    assert g1d["phash"] != ""
+    assert g1d["near_dup_of"] is not None and g1d["near_dup_of"]["id"] == g3.id
     assert media.garment_dict(ua["id"], w.get(ua["id"], g2.id))["near_dup_of"] is None
 
 

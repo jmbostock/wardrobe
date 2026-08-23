@@ -24,6 +24,10 @@ SIMILAR_THRESHOLD = 8
 # a wrong/missing category is still caught (e.g. the same plaid shirt tagged
 # once as 'top' and once as 'outerwear').
 SAME_IMAGE_DISTANCE = 4
+# Distances between SAME_IMAGE_DISTANCE and DEBATE_THRESHOLD are the "debate"
+# zone — plausibly the same item re-photographed (different angle/lighting) but
+# not provably so. These are flagged as 'possible duplicate' instead of blocked.
+DEBATE_THRESHOLD = 20
 
 
 def image_phash(data: bytes, crop_frac: float = 0.6) -> str:
