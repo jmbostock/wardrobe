@@ -621,6 +621,7 @@ def test_clean_image_url():
 if __name__ == "__main__":
     test_create_upload_serve_delete()
     test_cross_user_isolation()
+    test_rotate_180_flips_and_stays_portrait()
     test_update()
     test_imglink_product_gallery_preferred_over_logo()
     test_imglink_jsonld_product_image()
