@@ -199,14 +199,10 @@ async function suggestOutfit() {
     _sessionId = data.session_id;
     sessionStorage.setItem('cher_session', _sessionId);
 
+    // Weather/location is folded into Cher's intro text ("Based on San Mateo
+    // weather of 87°F …") — the old #weather bar element was removed, so don't
+    // try to write to it (would throw on a null node and mask the real outfit).
     _renderRecommendBubble({ intro: data.intro, outfit: data.outfit });
-
-    // Update the weather bar with what was actually used
-    const w = data.weather_used;
-    if (w && w.temp_f != null) {
-      $('weather').innerHTML =
-        `<b>${w.temp_f}°F</b><span class="cond">feels ${w.feels_like_f}°F</span><span class="cond">${w.condition}</span>`;
-    }
   } catch (e) {
     _addBubble('assistant', `⚠ Couldn't put together a look: ${e.message}`);
     _scrollChat();
