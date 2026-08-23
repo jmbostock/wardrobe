@@ -164,6 +164,13 @@ Full write-up: **`docs/wardrobe-v0.12.md`** (metadata / dedup / dropdowns / size
   recommended as a hot-weather one-piece for **beach** (new `beach` occasion tag;
   warmth 1 defaults), never paired with a bottom, and never suggested for the
   office. Try-on look builder gained a **Swimsuit** row.
+- **Full-page sheets + swipe to close + big ✕** (v0.17.0): every overlay — the
+  try-on photo picker, the garment detail card, the outfit detail card, and the
+  lightbox — is now a **full-page sheet** (not a small hover card): it covers the
+  whole screen, the page underneath is scroll-locked while it's open (swiping no
+  longer drags the background), a **swipe down** dismisses it, and the ✕ close
+  button is a big 48px touch target. On phones the look picker shows **one
+  full-width garment image per row** so the whole photo is visible when choosing.
 
 ---
 

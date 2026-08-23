@@ -53,15 +53,62 @@ async function requireAuth() {
   catch (e) { /* api() already redirected on 401 */ }
 }
 
+// ---------- full-page sheets: scroll-lock while open + swipe-down to close ----------
+// Every overlay ("pick a top" / garment / outfit / lightbox) is a `.sheet`: it
+// covers the whole page. While open, the body can't scroll (so swiping never
+// drags the page underneath), and swiping DOWN dismisses it. Page scripts call
+// openSheet/closeSheet so state cleanup stays where it already is.
+let _sheetScrollY = null;
+function lockPageScroll() {
+  if (_sheetScrollY !== null) return;
+  _sheetScrollY = window.scrollY;
+  document.body.style.overflow = 'hidden';
+}
+function unlockPageScroll() {
+  if (_sheetScrollY === null) return;
+  document.body.style.overflow = '';
+  _sheetScrollY = null;
+}
+function openSheet(el) { el.hidden = false; lockPageScroll(); }
+function closeSheet(el) { el.hidden = true; unlockPageScroll(); }
+
+// Swipe DOWN from the top of a sheet to dismiss it. Native scrolling inside the
+// panel is left alone — once you've scrolled down, that gesture scrolls instead
+// of closing (pull-from-top only).
+document.addEventListener('touchstart', (e) => {
+  const sheet = e.target.closest('.sheet');
+  if (!sheet) return;
+  const panel = sheet.querySelector('.panel');
+  sheet._sy = e.touches[0].clientY;
+  sheet._atTop = !panel || panel.scrollTop <= 0;
+}, { passive: true });
+document.addEventListener('touchmove', (e) => {
+  const sheet = e.target.closest('.sheet');
+  if (!sheet || sheet._sy === undefined) return;
+  const panel = sheet.querySelector('.panel');
+  if (panel && panel.scrollTop > 0) sheet._atTop = false;
+  const dy = e.touches[0].clientY - sheet._sy;
+  if (sheet._atTop && dy > 80) closeSheet(sheet);
+}, { passive: true });
+// Escape closes any open sheet (desktop convenience).
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  for (const el of document.querySelectorAll('.sheet')) {
+    if (!el.hidden) closeSheet(el);
+  }
+});
+
 // ---------- lightbox ----------
 function openLightbox(url) {
   $('lightbox-img').src = url;
-  $('lightbox').hidden = false;
+  openSheet($('lightbox'));
 }
-$('lightbox').addEventListener('click', () => {
-  $('lightbox').hidden = true;
+function closeLightbox() {
+  closeSheet($('lightbox'));
   $('lightbox-img').src = '';
-});
+}
+$('lightbox').addEventListener('click', closeLightbox);
+$('lightbox-close').addEventListener('click', closeLightbox);
 
 // ---------- rating widget (0–10, single-line slider) ----------
 // Shared by the wardrobe + outfits detail cards. `bindRating(containerId,

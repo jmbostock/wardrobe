@@ -32,7 +32,16 @@
   <footer class="app-version muted">Clueless Closet v{{ version }}</footer>
 </main>
 <div class="toast" id="toast"></div>
-<div id="lightbox" hidden><img id="lightbox-img" alt="" /></div>
+<div id="lightbox" class="sheet" hidden>
+  <div class="panel">
+    <div class="grab"></div>
+    <div class="head">
+      <h2>Photo</h2>
+      <button id="lightbox-close" class="ghost close" aria-label="Close">✕</button>
+    </div>
+    <div class="img-wrap"><img id="lightbox-img" alt="" /></div>
+  </div>
+</div>
 {% block modals %}{% endblock %}
 <script src="/static/js/common.js"></script>
 {% block scripts %}{% endblock %}

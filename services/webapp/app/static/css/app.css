@@ -54,30 +54,36 @@ body.auth-page .app-version { display:none; }  /* login screen is a centered car
 .photo .meta > button { width:100%; }
 .photo .row { gap:6px; }
 .photo .row button { flex:1 1 0; min-width:0; padding:8px 6px; font-size:12px; }
-/* ---- outfit detail card (click a saved outfit) ---- */
-#outfit-detail { position:fixed; inset:0; background:rgba(0,0,0,.85); display:flex; align-items:flex-start; justify-content:center; overflow-y:auto; z-index:30; padding:20px; }
-#outfit-detail[hidden] { display:none; }
-#outfit-detail .modal { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; width:100%; max-width:440px; display:grid; gap:14px; margin:auto 0; }
-#outfit-detail .modal-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
-#outfit-detail .modal-head h2 { margin:0; font-size:16px; overflow-wrap:anywhere; }
-#outfit-detail img { width:100%; max-height:380px; object-fit:contain; background:#000; border-radius:10px; border:1px solid var(--line); }
-#garment-detail { position:fixed; inset:0; background:rgba(0,0,0,.85); display:flex; align-items:flex-start; justify-content:center; overflow-y:auto; z-index:30; padding:20px; }
-#garment-detail[hidden] { display:none; }
-#garment-detail .modal { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; width:100%; max-width:440px; display:grid; gap:14px; margin:auto 0; }
-#garment-detail .modal-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
-#garment-detail .modal-head h2 { margin:0; font-size:16px; overflow-wrap:anywhere; }
-#garment-detail img { width:100%; max-height:380px; object-fit:contain; background:#000; border-radius:10px; border:1px solid var(--line); }
+/* ---- full-page sheets (pick a top / garment / outfit / lightbox) ----
+   Every overlay is a FULL PAGE on the phone (swipe down to close) and a
+   centered full-height panel on desktop. Body scroll is locked while a sheet
+   is open, so swiping never drags the page underneath. */
+.sheet { position:fixed; inset:0; background:var(--bg); display:flex; align-items:stretch;
+  justify-content:center; z-index:30; }
+.sheet[hidden] { display:none; }
+.sheet .panel { background:var(--bg); width:100%; max-width:560px; height:100dvh;
+  overflow-y:auto; padding:10px 18px 34px; }
+.sheet .grab { width:46px; height:5px; border-radius:3px; background:var(--line);
+  margin:8px auto 12px; flex:none; }
+.sheet .head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px; }
+.sheet .head h2 { margin:0; font-size:17px; overflow-wrap:anywhere; }
+.sheet .close { flex:none; width:48px; height:48px; padding:0; font-size:22px; line-height:1;
+  border-radius:12px; }
+.sheet img.full { width:100%; max-height:56vh; object-fit:contain; background:#000;
+  border-radius:10px; border:1px solid var(--line); }
 /* side-by-side field rows (Brand/Sizes, Category/Color): keep them separated */
 #garment-detail .row { gap:12px; align-items:flex-start; }
 #garment-detail .row .block { flex:1 1 0; min-width:0; margin-bottom:0; }
 #garment-detail .row .field { min-width:0; width:100%; }
+#garment-detail img.full { max-height:48vh; }
 #outfit-detail #od-clip img { max-height:300px; }
 #od-source label { font-size:12px; color:var(--mut); text-transform:uppercase; }
 .od-src-row { display:flex; align-items:center; gap:10px; margin-top:6px; }
 .od-src { width:72px; max-height:96px; object-fit:contain; background:#000; border-radius:8px; border:1px solid var(--line); flex:none; }
-#lightbox { position:fixed; inset:0; background:rgba(0,0,0,.85); display:flex; align-items:center; justify-content:center; z-index:20; cursor:zoom-out; }
-#lightbox[hidden] { display:none; }
-#lightbox img { max-width:92vw; max-height:92vh; border-radius:8px; }
+/* lightbox — full-screen image viewer inside a sheet */
+#lightbox .panel { display:flex; flex-direction:column; }
+#lightbox .img-wrap { flex:1; display:flex; align-items:center; justify-content:center; min-height:0; }
+#lightbox #lightbox-img { max-width:100%; max-height:100%; object-fit:contain; border-radius:8px; }
 .badge { font-size:11px; color:#0f1216; background:var(--acc); border-radius:5px; padding:1px 6px; justify-self:start; }
 .toast { position:fixed; bottom:18px; left:50%; transform:translateX(-50%); background:var(--acc);
   color:#0f1216; padding:10px 16px; border-radius:8px; font-weight:600; display:none; z-index:10; }
@@ -105,21 +111,13 @@ body.auth-page .app-version { display:none; }  /* login screen is a centered car
 .look-thumb:empty::after { content:'＋'; }
 .look-pick-label { flex:1; min-width:0; color:var(--mut); font-size:13px; overflow:hidden;
   text-overflow:ellipsis; white-space:nowrap; }
-.look-clear { flex:none; width:38px; padding:0; font-size:15px; align-self:stretch; }
-#look-picker #lp-none { width:100%; }
+.look-clear { flex:none; width:44px; padding:0; font-size:18px; align-self:stretch; }
 
-#look-picker { position:fixed; inset:0; background:rgba(0,0,0,.85); display:flex; align-items:flex-start;
-  justify-content:center; overflow-y:auto; z-index:30; padding:20px; }
-#look-picker[hidden] { display:none; }
-#look-picker .modal { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px;
-  width:100%; max-width:520px; display:grid; gap:14px; margin:auto 0; }
-#look-picker .modal-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
-#look-picker .modal-head h2 { margin:0; font-size:16px; }
-#look-picker .photos { grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:10px;
-  max-height:60vh; overflow-y:auto; padding-right:4px; }
+#look-picker .photos { grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px; }
 #look-picker .photo { cursor:pointer; }
 #look-picker .photo img { cursor:pointer; }
 #look-picker .photo .meta { padding:8px; gap:5px; }
+#look-picker #lp-none { width:100%; }
 
 /* ---- rating widget (0–10, single-line slider) ---- */
 .rate { display:flex; align-items:center; }
@@ -166,11 +164,18 @@ body.auth-page .app-version { display:none; }  /* login screen is a centered car
   .look-row select { flex:1 1 100%; min-width:0; max-width:100%; }
   .look-pick { flex:1 1 auto; width:auto; min-width:0; }
   .look-clear { flex:0 0 auto; }
-  #look-picker .photos { grid-template-columns:repeat(2,1fr); gap:8px; }
+  /* one full-width image per row on phones — the whole garment is visible */
+  #look-picker .photos { grid-template-columns:1fr; gap:12px; }
   .look-hint-row { align-items:stretch; }
   .look-hint-row .hint { flex:1; min-width:0; }
   .compare { grid-template-columns:1fr; }
   #savedimg-preview { max-width:100%; }
+}
+
+/* ---- full-page sheets on desktop: centered full-height panel ---- */
+@media (min-width: 641px) {
+  .sheet .panel { border-left:1px solid var(--line); border-right:1px solid var(--line); }
+  .sheet .grab { display:none; }
 }
 
 /* ---- PWA standalone (iPhone): clear the notch + home indicator ---- */

@@ -151,9 +151,9 @@ function openLookPicker(role) {
     card.addEventListener('click', () => { setLookRole(role, g); closeLookPicker(); });
     grid.appendChild(card);
   }
-  $('look-picker').hidden = false;
+  openSheet($('look-picker'));
 }
-function closeLookPicker() { $('look-picker').hidden = true; lookPickingRole = null; }
+function closeLookPicker() { closeSheet($('look-picker')); lookPickingRole = null; }
 $('lp-close').addEventListener('click', closeLookPicker);
 $('look-picker').addEventListener('click', (e) => { if (e.target === $('look-picker')) closeLookPicker(); });
 // "None — clear this slot" clears just this category (not the whole look).

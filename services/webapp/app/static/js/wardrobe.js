@@ -218,9 +218,9 @@ function openGarmentDetail(g) {
     ? 'used in ' + g.used_count + ' saved outfit' + (g.used_count === 1 ? '' : 's')
     : '';
   bindRating('gd-rating', g.rating || 0);
-  $('garment-detail').hidden = false;
+  openSheet($('garment-detail'));
 }
-function closeGarmentDetail() { $('garment-detail').hidden = true; editingItem = null; }
+function closeGarmentDetail() { closeSheet($('garment-detail')); editingItem = null; }
 function refreshDetailImage() {
   if (editingItem && editingItem.has_image) {
     authImageUrl('/api/wardrobe/' + editingItem.id + '/image').then((u) => { $('gd-img').src = u; }).catch(() => {});

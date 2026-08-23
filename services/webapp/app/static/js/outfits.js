@@ -98,7 +98,7 @@ async function openDetail(o) {
     }
   }
   bindRating('od-rating', o.rating || 0);
-  $('outfit-detail').hidden = false;
+  openSheet($('outfit-detail'));
 }
 // Poll an existing clip until it's done — used both when starting a new clip
 // and when resuming one that was already running when we opened the card.
@@ -141,7 +141,7 @@ async function makeClip(o, btn) {
   btn.remove();  // the status line takes over from here
   trackClip(o.id, clipId, st);
 }
-function closeDetail() { $('outfit-detail').hidden = true; editingItem = null; }
+function closeDetail() { closeSheet($('outfit-detail')); editingItem = null; }
 $('od-close').addEventListener('click', closeDetail);
 $('outfit-detail').addEventListener('click', (e) => { if (e.target === $('outfit-detail')) closeDetail(); });
 $('od-save').addEventListener('click', async () => {

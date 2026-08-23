@@ -75,13 +75,14 @@
 </section>
 {% endblock %}
 {% block modals %}
-<div id="garment-detail" hidden>
-  <div class="modal">
-    <div class="modal-head">
+<div id="garment-detail" class="sheet" hidden>
+  <div class="panel">
+    <div class="grab"></div>
+    <div class="head">
       <h2 id="gd-title">Garment</h2>
-      <button id="gd-close" class="ghost">✕</button>
+      <button id="gd-close" class="ghost close" aria-label="Close">✕</button>
     </div>
-    <img id="gd-img" alt="" />
+    <img id="gd-img" class="full" alt="" />
     <div class="muted" id="gd-near" style="margin-top:-8px"></div>
     <div class="muted" id="gd-used" style="margin-top:2px"></div>
     <div class="block">
