@@ -43,7 +43,10 @@ async function apiJson(path, opts = {}) {
   return res.json();
 }
 async function authImageUrl(path) {
-  const res = await api(path);
+  // cache:'no-store' + the backend's Cache-Control: no-store means images that
+  // change in place (rotate/upload/edit) always show the fresh version — the
+  // browser can never serve a stale copy of the same URL.
+  const res = await api(path, { cache: 'no-store' });
   return URL.createObjectURL(await res.blob());
 }
 

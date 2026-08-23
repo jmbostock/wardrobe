@@ -225,9 +225,10 @@ function openGarmentDetail(g) {
   openSheet($('garment-detail'));
 }
 function closeGarmentDetail() { closeSheet($('garment-detail')); editingItem = null; }
-function refreshDetailImage() {
+async function refreshDetailImage() {
   if (editingItem && editingItem.has_image) {
-    authImageUrl(gimg(editingItem.id)).then((u) => { $('gd-img').src = u; }).catch(() => {});
+    try { $('gd-img').src = await authImageUrl(gimg(editingItem.id)); }
+    catch (e) { /* ignore */ }
   }
 }
 $('gd-close').addEventListener('click', closeGarmentDetail);
@@ -258,7 +259,9 @@ $('gd-url-btn').addEventListener('click', async () => {
 });
 $('gd-rotate').addEventListener('click', async () => {
   if (!editingItem) return;
+  const img = $('gd-img');
   $('gd-status').textContent = 'rotating…';
+  img.style.opacity = '0.35';  // instant feedback: dims the old photo
   try {
     const resp = await apiJson('/api/wardrobe/' + editingItem.id + '/rotate', { method: 'POST' });
     $('gd-status').textContent = 'rotated 180°';
@@ -267,8 +270,10 @@ $('gd-rotate').addEventListener('click', async () => {
     $('gd-near').textContent = resp.near_dup_of
       ? '⚠ looks similar to "' + resp.near_dup_of.name + '" — possible duplicate'
       : '';
-    refreshDetailImage(); loadWardrobe();
-  } catch (e) { alert(e.message); }
+    await refreshDetailImage();  // fresh, cache-busted fetch -> shows rotated photo
+    img.style.opacity = '1';
+    loadWardrobe();
+  } catch (e) { img.style.opacity = '1'; $('gd-status').textContent = e.message; }
 });
 $('gd-save').addEventListener('click', async () => {
   if (!editingItem) return;

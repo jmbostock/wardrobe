@@ -190,6 +190,11 @@ Full write-up: **`docs/wardrobe-v0.12.md`** (metadata / dedup / dropdowns / size
   detail card looked unchanged. Garment + person photo image endpoints now send
   `Cache-Control: no-store`, and the frontend cache-busts every garment image
   fetch (`?v=timestamp`), so clicking ↻ Rotate 180° updates the photo right away.
+- **Rotate is cache-proof on the phone** (v0.22.0): `authImageUrl` now fetches
+  with `cache:'no-store'` too, so every image shown (detail card, grid, picker,
+  look rows) always loads the latest bytes. The rotate button also dims the
+  current photo instantly and re-shows it rotated (clear feedback even if the
+  180° flip is subtle).
 
 ---
 
