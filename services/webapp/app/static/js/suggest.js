@@ -274,6 +274,7 @@ async function sendChat(message) {
     const decoder = new TextDecoder();
     let buf = '';
     let replyText = '';
+    let hadError = false;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -294,10 +295,15 @@ async function sendChat(message) {
             textSpan.appendChild(cursor);
             _scrollChat();
           } else if (evt.type === 'error') {
+            hadError = true;
             textSpan.textContent = `⚠ ${evt.message}`;
             cursor.remove();
           } else if (evt.type === 'done') {
             cursor.remove();
+            // insurance: never leave an empty bubble if the model returned nothing
+            if (!hadError && !replyText.trim()) {
+              textSpan.textContent = 'Hmm, I could not finish that — want to rephrase?';
+            }
             if (evt.session_id) {
               _sessionId = evt.session_id;
               sessionStorage.setItem('cher_session', _sessionId);

@@ -149,7 +149,7 @@ def _recommend_intro(activity: str, weather_used: dict, outfit: dict, prompt: st
             "or tell me what vibe you're going for."
         )
 
-    # --- why, as natural prose ---
+    # --- why, as natural prose (NO garment names — they're pictured right below) ---
     clauses: list[str] = []
     temp = weather_used.get("temp_f")
     cond = weather_used.get("condition", "clear")
@@ -162,11 +162,11 @@ def _recommend_intro(activity: str, weather_used: dict, outfit: dict, prompt: st
     top = outfit.get("top")
     bottom = outfit.get("bottom")
     if top and top.get("category") in ("dress", "swimsuit"):
-        clauses.append(f"{top['name']} is a one-piece, so no separate bottom is needed")
+        clauses.append("it's a one-piece, so no separate bottom is needed")
     elif top and bottom:
-        clauses.append(f"{top['name']} and {bottom['name']} are color-compatible")
+        clauses.append("the pieces are color-compatible")
     if outfit.get("outerwear"):
-        clauses.append(f"I layered in {outfit['outerwear']['name']}")
+        clauses.append("I added a layer for warmth")
     if prompt:
         clauses.append(f"I kept your “{prompt}” hint in mind")
 

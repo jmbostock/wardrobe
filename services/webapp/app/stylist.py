@@ -142,6 +142,10 @@ async def stream_chat(
         "model": settings.deepseek_chat_model,
         "stream": True,
         "max_tokens": max_tokens,
+        # deepseek-v4-flash is a REASONING model: without this it streams a long
+        # `reasoning_content` preamble before any visible text, so the stylist
+        # chat looks hung for seconds. Disable thinking for snappy replies.
+        "thinking": {"type": "disabled"},
         "messages": [{"role": "system", "content": system_prompt}] + messages,
     }
 
