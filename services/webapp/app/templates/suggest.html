@@ -3,35 +3,18 @@
 {% block content %}
 <section id="view-suggest">
 
-  <!-- Cher chat IS the suggest tab — the weather/location is folded into Cher's
-       reply text ("Based on San Mateo weather of 87°F …"), so there's no separate
-       weather card to clutter the mobile layout. -->
+  <!-- Cher chat IS the suggest tab. No static compose bar / occasion select —
+       everything happens IN the thread: suggested-prompt chips render as the
+       last item in the chat, tap one and the look is built right there. -->
   <div class="card chat-card suggest-chat-card">
     <div class="chat-header">
-      <span class="chat-title">✦ Cher <span class="badge">AI Stylist</span></span>
-      <select id="activity" class="field header-activity" title="Occasion / dress code">
-        <option value="office" selected>Office / work</option>
-        <option value="casual">Casual</option>
-        <option value="date">Date / dinner</option>
-        <option value="hiking">Hiking</option>
-        <option value="beach">Beach</option>
-        <option value="formal">Formal</option>
-      </select>
+      <span class="chat-title">✦ Cher</span>
       <button id="chat-clear" class="ghost small" title="New conversation">↺ New chat</button>
-    </div>
-
-    <!-- Compose: style hint + owned-only + go (occasion lives in the header) -->
-    <div class="suggest-compose">
-      <input type="text" id="prompt" placeholder="style hint (navy, wool, casual…)" class="field" />
-      <label class="owned-label">
-        <input type="checkbox" id="owned-only" checked /> Owned only
-      </label>
-      <button id="recommend-btn">✨ Suggest outfit</button>
     </div>
 
     <div id="chat-messages" class="chat-messages">
       <div class="chat-bubble assistant intro-bubble">
-        <span class="bubble-text">Hi! I'm Cher, your personal stylist. Pick an occasion above and hit <strong>Suggest outfit</strong> — I'll walk you through the picks right here, and you can keep asking me to tweak anything.</span>
+        <span class="bubble-text">Hi! I'm Cher, your personal stylist. Tap an occasion below (or just ask me anything) and I'll put together a look right here.</span>
       </div>
     </div>
 

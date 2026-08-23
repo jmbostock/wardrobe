@@ -48,7 +48,7 @@ function _hasGarments(outfit) {
 
 function _goTryOn(outfit) {
   localStorage.setItem(RECO_KEY, JSON.stringify({
-    outfit: outfit || _lastOutfit, activity: _lastActivity, prompt: $('prompt').value || '',
+    outfit: outfit || _lastOutfit, activity: _lastActivity, prompt: '',
   }));
   location.href = '/tryon';
 }
@@ -197,21 +197,51 @@ function _renderRecommendBubble({ intro, outfit }) {
   return wrap;
 }
 
+// Suggested-prompt chips live INSIDE the scrollable chat (Open-WebUI style) —
+// no static compose bar eating screen space. Re-appended at the bottom after
+// every turn so they're always right where the user is looking.
+const _SUGGEST_CHIPS = [
+  ['office', 'Office / work'],
+  ['casual', 'Casual'],
+  ['date', 'Date / dinner'],
+  ['hiking', 'Hiking'],
+  ['beach', 'Beach'],
+  ['formal', 'Formal'],
+];
+
+function _appendSuggestionChips() {
+  const msgs = $('chat-messages');
+  if (!msgs) return;
+  const old = msgs.querySelector('.suggest-chips');
+  if (old) old.remove();
+  const row = document.createElement('div');
+  row.className = 'suggest-chips';
+  for (const [act, label] of _SUGGEST_CHIPS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'suggest-chip';
+    b.dataset.activity = act;
+    b.textContent = label;
+    b.addEventListener('click', () => suggestOutfit(act));
+    row.appendChild(b);
+  }
+  msgs.appendChild(row);
+  _scrollChat();
+}
+
 // Suggest outfit → recommendation posts into the chat as a Cher message.
-async function suggestOutfit() {
-  const btn = $('recommend-btn');
-  btn.disabled = true;
-  btn.textContent = '…';
+async function suggestOutfit(activity) {
+  activity = activity || _lastActivity || 'office';
+  _lastActivity = activity;
   try {
-    _lastActivity = $('activity').value;
     const data = await apiJson('/api/suggest', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         session_id: _sessionId,
-        activity: _lastActivity,
-        prompt: $('prompt').value || null,
-        owned_only: $('owned-only').checked,
+        activity,
+        prompt: null,
+        owned_only: true,
       }),
     });
     _lastOutfit = data.outfit;
@@ -226,11 +256,9 @@ async function suggestOutfit() {
     _addBubble('assistant', `⚠ Couldn't put together a look: ${e.message}`);
     _scrollChat();
   } finally {
-    btn.disabled = false;
-    btn.textContent = '✨ Suggest outfit';
+    _appendSuggestionChips();
   }
 }
-$('recommend-btn').addEventListener('click', suggestOutfit);
 
 // ------------------------------------------------------------------ //
 // Cher stylist chat                                                    //
@@ -407,6 +435,7 @@ async function sendChat(message) {
     _chatStreaming = false;
     $('chat-send').disabled = false;
     _setStatus('');
+    _appendSuggestionChips();
     _scrollChat();
   }
 }
@@ -450,8 +479,10 @@ $('chat-clear').addEventListener('click', async () => {
   sessionStorage.removeItem('cher_session');
   _lastOutfit = null;
   _clearChat();
-  _introBubble('Fresh start! Pick an occasion above and hit <strong>Suggest outfit</strong>, or just ask me anything about your wardrobe.');
+  _introBubble('Hi! I\'m Cher, your personal stylist. Tap an occasion below or just ask me anything — I\'ll put together a look right here.');
+  _appendSuggestionChips();
 });
 
-// On load, restore the existing conversation (if any)
-restoreChat();
+// On load, restore the existing conversation (if any) — then always surface
+// the occasion chips so a fresh look is one tap away.
+(async () => { await restoreChat(); _appendSuggestionChips(); })();
