@@ -711,11 +711,30 @@ def test_clean_image_url():
     assert "width=1024" in imglink.clean_image_url("//cdn.com/x.jpg?width=92")
 
 
+def test_infer_formality_occasions():
+    """infer_formality upgrades clearly-dressier items out of the casual default
+    (dress pants / blouse → business + office) but leaves casual items alone, so
+    office recommendations never pick shorts over dress pants."""
+    from app.media import infer_formality, infer_occasions
+    assert infer_formality("Black dress pants", "bottom") == "business"
+    assert infer_formality("Navy blouse", "top") == "business"
+    assert infer_formality("Wool blazer", "outerwear") == "business"
+    assert infer_formality("Mint shorts", "bottom") == "casual"
+    assert infer_formality("Blue jeans", "bottom") == "casual"
+    assert infer_formality("White t-shirt", "top") == "casual"
+    assert infer_formality("Grey cardigan", "top") == "smart-casual"
+    # never downgrade an explicit tag
+    assert infer_formality("Mint shorts", "bottom", current="smart-casual") == "smart-casual"
+    assert infer_occasions("Black dress pants", "bottom", "business") == "office,event,date"
+    assert infer_occasions("Mint shorts", "bottom", "casual", "casual") == "casual"
+
+
 if __name__ == "__main__":
     test_create_upload_serve_delete()
     test_cross_user_isolation()
     test_rotate_90_swaps_orientation()
     test_update()
+    test_infer_formality_occasions()
     test_imglink_product_gallery_preferred_over_logo()
     test_imglink_jsonld_product_image()
     test_imglink_og_image_last_resort_and_byte_detection()

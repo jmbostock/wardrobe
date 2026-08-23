@@ -18,6 +18,8 @@ from ..media import (
     garment_dict,
     garment_image_path,
     detect_color,
+    infer_formality,
+    infer_occasions,
     normalize_color,
     normalize_orientation,
     refine_color,
@@ -91,6 +93,9 @@ def create_garment(req: WardrobeCreate, user: dict = Depends(get_current_user)) 
     dflt_warmth, dflt_formality, dflt_occasions = 3, "casual", "casual"
     if category == "swimsuit":
         dflt_warmth, dflt_formality, dflt_occasions = 1, "casual", "active,beach"
+    else:
+        dflt_formality = infer_formality(name, category, dflt_formality)
+        dflt_occasions = infer_occasions(name, category, dflt_formality, dflt_occasions)
     g = wardrobe.create(
         user["id"], name, category, color_hex=color_hex, color_tags=color,
         brand=req.brand.strip()[:120], sizes=req.sizes.strip()[:200],
@@ -316,6 +321,12 @@ def update_garment(
     fields = {
         "name": name, "category": category, "color_hex": color_hex, "color_tags": color,
     }
+    # keep the inferred dress-code tags in sync when an item is renamed/re-categorized
+    if g.formality in ("casual", "") and (req.name is not None or req.category is not None):
+        inf = infer_formality(name, category, g.formality)
+        if inf != g.formality:
+            fields["formality"] = inf
+            fields["occasions"] = infer_occasions(name, category, inf, g.occasions)
     if req.brand is not None:
         fields["brand"] = req.brand.strip()[:120]
     if req.sizes is not None:

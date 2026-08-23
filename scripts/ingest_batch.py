@@ -147,6 +147,9 @@ def ingest_one(user_id: int, path: Path, use_ai: bool, dry_run: bool = False) ->
     warmth, formality, occasions = 3, "casual", "casual"
     if category == "swimsuit":
         warmth, formality, occasions = 1, "casual", "active,beach"
+    else:
+        formality = media.infer_formality(name, category, formality)
+        occasions = media.infer_occasions(name, category, formality, occasions)
     g = wardrobe.create(
         user_id, name, category, color_hex=color_hex, color_tags=color,
         brand=brand, sizes=sizes, owned=1, warmth=warmth,

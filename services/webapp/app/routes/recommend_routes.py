@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from .. import db, recommender, stylist, weather
+from .. import db, interactions, recommender, stylist, weather
 from ..deps import get_current_user
 from ..media import garment_image_path
 from ..recommender import Weather
@@ -71,6 +71,35 @@ def recommend_outfit(req: RecommendRequest, user: dict = Depends(get_current_use
     # the top/bottom/etc photo (not just a color swatch)
     result["outfit"] = _with_image_flags(user["id"], result["outfit"])
     return result
+
+
+class RecommendFeedbackIn(BaseModel):
+    outfit: dict = {}
+    kind: str = "liked"           # liked | disliked
+    activity: str = "casual"
+    prompt: str | None = None
+
+
+@router.post("/api/recommend/feedback")
+def recommend_feedback(req: RecommendFeedbackIn, user: dict = Depends(get_current_user)) -> dict:
+    """Thumbs-up/down from the chat recommendation bubble → logs liked/disliked
+    for every garment in the outfit (with the activity context) so the engine
+    learns what works for each occasion."""
+    if req.kind not in ("liked", "disliked"):
+        raise HTTPException(400, "kind must be 'liked' or 'disliked'")
+    ids: list[int] = []
+    for slot in ("top", "bottom", "outerwear", "footwear"):
+        g = req.outfit.get(slot)
+        if g and g.get("id"):
+            ids.append(int(g["id"]))
+    for g in req.outfit.get("accessories") or []:
+        if g and g.get("id"):
+            ids.append(int(g["id"]))
+    if ids:
+        interactions.log_many(user["id"], ids, req.kind,
+                              {"source": "chat", "activity": req.activity,
+                               "prompt": req.prompt or ""})
+    return {"ok": True, "logged": len(ids), "kind": req.kind}
 
 
 def _with_image_flags(user_id: int, outfit: dict) -> dict:

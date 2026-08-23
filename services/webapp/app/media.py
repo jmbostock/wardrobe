@@ -364,6 +364,37 @@ def save_garment_image(user_id: int, garment_id: int, data: bytes, ext: str,
 # because both photos happen to be red.
 _CONFUSABLE = frozenset({"top", "outerwear"})
 
+# Formality/occasion inference — the vision tag-reader can't infer dress code, so
+# dressier items (dress pants, blouses, blazers, button-ups) would otherwise keep
+# the 'casual' default and be no more likely for the office than shorts. These
+# keyword hints upgrade that default conservatively (never downgrade).
+_FORMAL_KW = ("dress pants", "dress trousers", "trousers", "slacks", "suit",
+              "blazer", "blouse", "button-up", "button up", "dress shirt", "oxford")
+_SMART_KW = ("cardigan", "sweater vest", "peplum", "wide-leg", "flare",
+             "chambray", "polo", "turtleneck", "midi skirt")
+
+
+def infer_formality(name: str, category: str, current: str = "casual") -> str:
+    """Upgrade a still-default 'casual' tag to business/smart-casual for clearly
+    dressier items. Never downgrades an explicitly-set tag."""
+    if current not in ("casual", ""):
+        return current
+    n = (name or "").lower()
+    if any(k in n for k in _FORMAL_KW):
+        return "business"
+    if category == "outerwear" or any(k in n for k in _SMART_KW):
+        return "smart-casual"
+    return "casual"
+
+
+def infer_occasions(name: str, category: str, formality: str = "casual",
+                    current: str = "casual") -> str:
+    """Give office/event tags to items inferred as dressier so they can be
+    recommended for work; otherwise keep the stored occasions."""
+    if formality in ("business", "formal"):
+        return "office,event,date"
+    return current
+
 
 def _canonical_color(color_tags: str) -> str:
     """First canonical color tag, normalized ('navy,dark' -> 'navy'). Empty

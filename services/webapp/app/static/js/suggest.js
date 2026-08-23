@@ -169,6 +169,32 @@ function _renderRecommendBubble({ intro, outfit }) {
     btn.textContent = 'Try it on →';
     btn.addEventListener('click', () => _goTryOn(outfit));
     wrap.appendChild(btn);
+    // feedback: teach the engine — thumbs up/down logs liked/disliked for the
+    // whole outfit with the activity context (feeds L2 style + L3 ALS learning)
+    const fb = document.createElement('div');
+    fb.className = 'recommend-feedback';
+    const fbBtn = (label, kind) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'ghost'; b.textContent = label;
+      b.addEventListener('click', async () => {
+        fb.querySelectorAll('button').forEach((x) => (x.disabled = true));
+        try {
+          await apiJson('/api/recommend/feedback', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              outfit, kind, activity: _lastActivity || 'casual',
+              prompt: ($('prompt') && $('prompt').value) || null,
+            }),
+          });
+          fb.textContent = kind === 'liked'
+            ? '👍 Got it — more like this' : '👎 Got it — will avoid this for ' + (_lastActivity || 'this');
+        } catch (e) { fb.textContent = 'feedback failed: ' + e.message; }
+      });
+      return b;
+    };
+    fb.appendChild(fbBtn('👍 Looks good', 'liked'));
+    fb.appendChild(fbBtn('👎 Not right', 'disliked'));
+    wrap.appendChild(fb);
   }
 
   $('chat-messages').appendChild(wrap);
