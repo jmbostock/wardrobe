@@ -202,6 +202,9 @@ Full write-up: **`docs/wardrobe-v0.12.md`** (metadata / dedup / dropdowns / size
   `has_image` on each garment, and the Suggest page renders the top/bottom/
   outerwear/footwear/accessory photos as thumbnails (color swatch fallback when
   a garment has no photo).
+- **Bigger recommendation thumbnails** (v0.25.0): the photo on each suggested
+  garment card is now 88×112 (2× the original), with a border, so the top/
+  bottom/etc are clearly visible.
 
 ---
 
