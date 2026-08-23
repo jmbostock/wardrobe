@@ -77,9 +77,10 @@ function _goTryOn(outfit) {
   location.href = '/tryon';
 }
 
-// Render Cher's recommendation as a rich bubble inside the chat:
-// intro text + garment cards (photos) + reasoning + a Try it on action.
-function _renderRecommendBubble({ intro, outfit, reasoning, activity }) {
+// Render Cher's recommendation as ONE chat message: the intro prose carries the
+// "why" (no separate reasons card — that duplicated the prose), the garment
+// cards (photos) show the items inside the chat, and a Try it on action.
+function _renderRecommendBubble({ intro, outfit }) {
   const wrap = document.createElement('div');
   wrap.className = 'chat-bubble assistant recommend-bubble';
 
@@ -112,17 +113,6 @@ function _renderRecommendBubble({ intro, outfit, reasoning, activity }) {
     wrap.appendChild(btn);
   }
 
-  const reasons = (reasoning || []).filter(Boolean);
-  if (reasons.length) {
-    const why = document.createElement('div');
-    why.className = 'recommend-why';
-    const h = document.createElement('h4'); h.textContent = 'Why this outfit'; why.appendChild(h);
-    const ul = document.createElement('ul');
-    reasons.forEach((r) => { const li = document.createElement('li'); li.textContent = r; ul.appendChild(li); });
-    why.appendChild(ul);
-    wrap.appendChild(why);
-  }
-
   $('chat-messages').appendChild(wrap);
   _scrollChat();
   return wrap;
@@ -149,12 +139,7 @@ async function suggestOutfit() {
     _sessionId = data.session_id;
     sessionStorage.setItem('cher_session', _sessionId);
 
-    _renderRecommendBubble({
-      intro: data.intro,
-      outfit: data.outfit,
-      reasoning: data.reasoning || [],
-      activity: data.activity,
-    });
+    _renderRecommendBubble({ intro: data.intro, outfit: data.outfit });
 
     // Update the weather bar with what was actually used
     const w = data.weather_used;
@@ -214,12 +199,7 @@ function renderMessage(msg) {
   if (!msg) return;
   if (msg.role === 'user') { _addBubble('user', msg.content || ''); return; }
   if (msg.role === 'assistant' && msg.kind === 'recommend' && msg.data) {
-    _renderRecommendBubble({
-      intro: msg.content,
-      outfit: msg.data.outfit,
-      reasoning: msg.data.reasoning || [],
-      activity: msg.data.activity,
-    });
+    _renderRecommendBubble({ intro: msg.content, outfit: msg.data.outfit });
     return;
   }
   _addBubble('assistant', msg.content || '');

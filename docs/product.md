@@ -222,6 +222,12 @@ Full write-up: **`docs/wardrobe-v0.12.md`** (metadata / dedup / dropdowns / size
   survives a page refresh (history is restored from the session). New
   `POST /api/suggest` does the recommend + seeds the chat; `/api/recommend` is
   unchanged for the Try-on page's "Use recommendation".
+- **Recommendation reads like a real chat message** (v0.29.0): Cher's pick is
+  now ONE bubble — the intro prose carries the "why" woven in naturally
+  (weather/warmth, dress code, color harmony, layers, style hint) alongside the
+  garment photos. The separate "Why this outfit" card was removed — it just
+  repeated the prose. Items live inside the chat, so you can keep talking to
+  Cher about them.
 
 ---
 

@@ -223,12 +223,6 @@ button.small { font-size:12px; padding:7px 10px; }
 .recommend-bubble .bubble-text { background:#1a2230; border:1px solid #2a3550; }
 .recommend-outfit { display:grid; gap:8px; margin-top:10px; background:#0f1216;
   border:1px solid var(--line); border-radius:12px; padding:10px; }
-.recommend-why { margin-top:10px; background:#0f1216; border:1px solid var(--line);
-  border-radius:12px; padding:10px 12px; }
-.recommend-why h4 { margin:0 0 6px; font-size:11px; color:var(--mut);
-  text-transform:uppercase; letter-spacing:.5px; }
-.recommend-why ul { margin:0; padding-left:16px; color:var(--mut); font-size:13px; }
-.recommend-why li { margin-bottom:3px; }
 .recommend-tryon { margin-top:10px; width:100%; padding:13px; border-radius:10px;
   background:var(--acc); color:#0f1216; font-weight:700; font-size:15px; }
 

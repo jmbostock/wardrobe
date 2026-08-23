@@ -105,8 +105,33 @@ _ACTIVITY_LABELS = {
 }
 
 
+_FORMALITY_LABELS = {
+    "casual": "casual",
+    "smart-casual": "smart-casual",
+    "business": "business-appropriate",
+    "formal": "formal",
+}
+
+
+def _join_clauses(clauses: list[str]) -> str:
+    """Join a list of phrases into one natural comma/and sentence."""
+    if not clauses:
+        return ""
+    if len(clauses) == 1:
+        return clauses[0]
+    if len(clauses) == 2:
+        return f"{clauses[0]} and {clauses[1]}"
+    return f"{', '.join(clauses[:-1])}, and {clauses[-1]}"
+
+
 def _recommend_intro(activity: str, weather_used: dict, outfit: dict, prompt: str | None) -> str:
-    """Short natural-language opener for Cher's recommendation message."""
+    """Cher's recommendation message — ONE natural chat bubble, WHY woven in.
+
+    Reads like the stylist actually recommended it: the pieces up front, then the
+    reasoning (weather/warmth, dress code, color harmony, layers, prompt) as
+    flowing prose — no separate reasons card duplicating the same info. The user
+    can then just keep talking to Cher about the picks.
+    """
     slot_names: list[str] = []
     for slot in ("top", "bottom", "outerwear", "footwear"):
         g = outfit.get(slot)
@@ -116,25 +141,41 @@ def _recommend_intro(activity: str, weather_used: dict, outfit: dict, prompt: st
         slot_names.append(a["name"])
 
     label = _ACTIVITY_LABELS.get(activity, activity)
-    temp = weather_used.get("temp_f")
-    cond = weather_used.get("condition", "clear")
-    weather_bit = f"it's {temp}°F and {cond} out" if temp is not None else f"it's {cond} out"
 
-    if slot_names:
-        intro = (
-            f"Here's your look for a {label} — {', '.join(slot_names)}. "
-            f"Since {weather_bit}, I balanced warmth, formality, and color. "
-            "Ask me to swap anything and I'll adjust."
-        )
-    else:
-        intro = (
-            f"I couldn't put together a full look for a {label} right now. "
+    if not slot_names:
+        return (
+            f"I couldn't put together a full {label} look right now. "
             "Add a few more pieces in the Wardrobe tab and hit Suggest again — "
             "or tell me what vibe you're going for."
         )
+
+    # --- why, as natural prose ---
+    clauses: list[str] = []
+    temp = weather_used.get("temp_f")
+    cond = weather_used.get("condition", "clear")
+    if temp is not None:
+        clauses.append(f"it's {temp:.0f}°F and {cond} out")
+    formality = recommender.ACTIVITY_MAP.get(
+        activity.lower(), recommender.ACTIVITY_MAP["casual"]
+    )[0]
+    clauses.append(f"I matched a {_FORMALITY_LABELS.get(formality, formality)} dress code")
+    top = outfit.get("top")
+    bottom = outfit.get("bottom")
+    if top and top.get("category") in ("dress", "swimsuit"):
+        clauses.append(f"{top['name']} is a one-piece, so no separate bottom is needed")
+    elif top and bottom:
+        clauses.append(f"{top['name']} and {bottom['name']} are color-compatible")
+    if outfit.get("outerwear"):
+        clauses.append(f"I layered in {outfit['outerwear']['name']}")
     if prompt:
-        intro += f" (Style hint “{prompt}” factored in.)"
-    return intro
+        clauses.append(f"I kept your “{prompt}” hint in mind")
+
+    why = _join_clauses(clauses)
+    why = why[:1].upper() + why[1:] + "."  # uppercase 1st char only (keep 71°F etc.)
+    return (
+        f"Here's your {label} look — {', '.join(slot_names)}. "
+        f"{why} Ask me to swap anything — color, layers, or vibe — and I'll adjust."
+    )
 
 
 class SuggestRequest(BaseModel):
