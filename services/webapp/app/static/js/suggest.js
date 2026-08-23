@@ -108,8 +108,10 @@ function _renderChatGarments(bubble, items) {
   _scrollChat();
 }
 
-// Shared action bar under EVERY recommendation: compact 👍/👎 thumb buttons
-// (log the whole outfit + activity so the engine learns) and a Try it on.
+// Shared action bar under EVERY recommendation: 👍/👎 (clean SVG icons) + Try it on.
+// Feedback logs the whole outfit + activity so the engine learns.
+const _THUMB_UP = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/></svg>';
+const _THUMB_DOWN = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/></svg>';
 function _addFeedbackActions(container, outfit) {
   const actions = document.createElement('div');
   actions.className = 'recommend-actions';
@@ -117,13 +119,14 @@ function _addFeedbackActions(container, outfit) {
   const fb = document.createElement('div');
   fb.className = 'recommend-feedback';
 
-  const thumb = (emoji, kind, title) => {
+  const thumb = (icon, kind, title) => {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'fb-thumb';
     b.dataset.kind = kind;
     b.title = title;
-    b.textContent = emoji;
+    b.setAttribute('aria-label', title);
+    b.innerHTML = icon;
     b.addEventListener('click', async () => {
       fb.querySelectorAll('button').forEach((x) => (x.disabled = true));
       try {
@@ -144,8 +147,8 @@ function _addFeedbackActions(container, outfit) {
     return b;
   };
 
-  fb.appendChild(thumb('👍', 'liked', 'Looks good'));
-  fb.appendChild(thumb('👎', 'disliked', 'Not right'));
+  fb.appendChild(thumb(_THUMB_UP, 'liked', 'Looks good'));
+  fb.appendChild(thumb(_THUMB_DOWN, 'disliked', 'Not right'));
   actions.appendChild(fb);
 
   const btn = document.createElement('button');
