@@ -278,11 +278,13 @@ def normalize_orientation(data: bytes, rotate: int = 0) -> tuple[bytes, str]:
 
     Hard rules (deterministic, no exceptions):
       1. apply EXIF orientation (fixes sideways / upside-down phone photos)
-      2. `rotate` may only be 180 — a portrait-preserving flip from the tag
-         reader (an upside-down garment with a readable tag). 90/270 are never
-         accepted because they'd turn a portrait frame horizontal.
-      3. NEVER output a landscape (horizontal) image — if the result is wider
-         than tall it is rotated back to portrait.
+      2. `rotate` ∈ {0, 90, 180, 270} from the tag reader — 180 flips an
+         upside-down garment, 90/270 correct a sideways one.
+      3. When NO rotation was chosen by the tag reader, never output a
+         landscape (horizontal) image — a wide frame is rotated back to
+         portrait. A 90/270 chosen by the tag reader is trusted even if it
+         makes the frame horizontal (the garment is upright, which is what
+         matters).
 
     Returns (normalized bytes, new ext) or (data, '') when nothing needed
     changing / the image can't be decoded (caller keeps it)."""
@@ -301,8 +303,15 @@ def normalize_orientation(data: bytes, rotate: int = 0) -> tuple[bytes, str]:
     if rotate == 180:
         img = img.transpose(Image.Transpose.ROTATE_180)
         changed = True
-    if img.width > img.height:
-        # never horizontal — force landscape images back to portrait
+    elif rotate == 90:
+        img = img.transpose(Image.Transpose.ROTATE_90)
+        changed = True
+    elif rotate == 270:
+        img = img.transpose(Image.Transpose.ROTATE_270)
+        changed = True
+    if rotate == 0 and img.width > img.height:
+        # heuristic fallback only when the tag reader found no rotation: never
+        # leave a horizontal frame (phone shot sideways with no tag signal).
         img = img.transpose(Image.Transpose.ROTATE_90)
         changed = True
     if not changed:
@@ -316,12 +325,12 @@ def normalize_orientation(data: bytes, rotate: int = 0) -> tuple[bytes, str]:
 
 
 def save_garment_image(user_id: int, garment_id: int, data: bytes, ext: str,
-                       ai_orient: bool = False) -> Path:
+                       ai_orient: bool = False, rotate: int | None = None) -> Path:
     """Store a garment photo. Orientation is normalized on EVERY save (no
-    exceptions): EXIF righting + portrait — the result is never horizontal.
-    When `ai_orient` is set (file uploads), the tag-reader may add a 180° flip
-    for an upside-down garment with a readable tag; 90/270 rotations are never
-    applied because they'd make the frame horizontal."""
+    exceptions): EXIF righting + portrait (unless the tag reader picked 90/270,
+    which is trusted even if it makes the frame horizontal). When `ai_orient`
+    is set (file uploads), the tag reader picks the rotation (0/90/180/270); an
+    explicit `rotate` overrides that."""
     d = WARDROBE_DIR / str(user_id)
     d.mkdir(parents=True, exist_ok=True)
     for old in d.glob(f"{garment_id}.*"):
@@ -332,10 +341,9 @@ def save_garment_image(user_id: int, garment_id: int, data: bytes, ext: str,
     if ext == "heic":  # normalize iPhone photos to JPEG on ingest
         data = _heic_to_jpeg(data)
         ext = "jpg"
-    rotate = aifill.ai_orientation(data) if ai_orient else 0
-    # ai_orientation returns only 0 or 180 (portrait-preserving); 90/270 are
-    # never produced — they'd make a horizontal frame, which is forbidden.
-    data, norm_ext = normalize_orientation(data, rotate=rotate)  # upright + portrait
+    if rotate is None:
+        rotate = aifill.ai_orientation(data) if ai_orient else 0
+    data, norm_ext = normalize_orientation(data, rotate=rotate)
     if norm_ext:
         ext = norm_ext
     path = d / f"{garment_id}.{ext}"
@@ -368,7 +376,9 @@ def near_duplicates(
     same) item as one with `phash_hex`. Sorted by closest first.
     Empty list = no near-duplicate.
 
-    Three gates (all must pass):
+    Three gates (all must pass) — EXCEPT a near-identical picture (Hamming
+    distance <= SAME_IMAGE_DISTANCE) which bypasses the category/color gates,
+    since it is the same photo regardless of how it was tagged:
     - same `category` (a top vs. a pair of pants shot the same way isn't a dup)
     - color: when BOTH garments carry a canonical color tag, those must match
       (so a red one-piece is never "similar to" a pink polka-dot one even when
@@ -383,20 +393,23 @@ def near_duplicates(
     for g in wardrobe.all(user_id):
         if not g.phash or g.id == exclude_id:
             continue
-        if category is not None and g.category != category:
+        d = phash.hamming(phash_hex, g.phash)
+        if d > threshold:
+            continue
+        same_image = d <= phash.SAME_IMAGE_DISTANCE
+        # a near-identical picture is the same item no matter how it was tagged
+        # (same plaid shirt imported once as 'top' and once as 'outerwear')
+        if not same_image and category is not None and g.category != category:
             continue
         g_color = _canonical_color(g.color_tags)
-        if my_color and g_color:
-            # both canonical → must be the same color (red != pink)
-            if my_color != g_color:
+        if not same_image:
+            if my_color and g_color:
+                # both canonical → must be the same color (red != pink)
+                if my_color != g_color:
+                    continue
+            elif not color_sig or not g.color_sig or g.color_sig != color_sig:
                 continue
-        else:
-            # no canonical colors → fall back to coarse photo color match
-            if not color_sig or not g.color_sig or g.color_sig != color_sig:
-                continue
-        d = phash.hamming(phash_hex, g.phash)
-        if d <= threshold:
-            out.append({"id": g.id, "name": g.name, "distance": d})
+        out.append({"id": g.id, "name": g.name, "distance": d})
     out.sort(key=lambda x: x["distance"])
     return out
 

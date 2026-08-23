@@ -208,12 +208,13 @@ def _vlm_read(image_bytes: bytes, prompt: str) -> str:
 
 
 def ai_orientation(image_bytes: bytes) -> int:
-    """Decide whether an upside-down garment needs a 180° flip by reading its
-    tag text at the two portrait-preserving rotations (0° and 180°). If the tag
-    is readable at 180° but not 0°, return 180 (flip it upright); otherwise
-    return 0. 90/270 are never tested because they'd turn a portrait frame
-    horizontal (forbidden) — this also keeps it to just 2 VLM calls per upload.
-    Returns 0 when ambiguous / no readable tag / unreadable image."""
+    """Decide whether a garment photo is rotated and return the fix rotation.
+
+    Reads the tag text at 0/90/180/270 and returns the rotation that makes it
+    readable right-side up. Priority 0 → 180 → 90 → 270 (portrait-preserving
+    flips first; sideways only when the tag is clearly readable that way). So an
+    upside-down item gets 180, a sideways one gets 90/270. Returns 0 when the
+    current orientation is fine / ambiguous / no readable tag / unreadable."""
     try:
         import io as _io
         from PIL import Image, ImageOps
@@ -223,7 +224,12 @@ def ai_orientation(image_bytes: bytes) -> int:
         img.thumbnail((1280, 1280))
     except Exception:  # noqa: BLE001 — unreadable → caller falls back
         return 0
-    trans = {0: None, 180: Image.Transpose.ROTATE_180}
+    trans = {
+        0: None,
+        180: Image.Transpose.ROTATE_180,
+        90: Image.Transpose.ROTATE_90,
+        270: Image.Transpose.ROTATE_270,
+    }
     reads: dict[int, str] = {}
     for deg, t in trans.items():
         im = img.transpose(t) if t else img
@@ -235,9 +241,11 @@ def ai_orientation(image_bytes: bytes) -> int:
         t = (reads.get(deg) or "").strip().strip(".")
         return bool(t and t.lower() not in ("none", "no text", "n/a", "na"))
 
-    r0, r180 = readable(0), readable(180)
-    if r180 and not r0:
-        return 180
+    if readable(0):
+        return 0
+    for deg in (180, 90, 270):
+        if readable(deg):
+            return deg
     return 0
 
 

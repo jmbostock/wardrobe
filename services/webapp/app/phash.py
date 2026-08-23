@@ -19,6 +19,11 @@ from PIL import Image
 # the same item at a slightly different angle/hang can be up to ~8. We hash the
 # CENTER CROP (see image_phash), so unrelated garments land well above this.
 SIMILAR_THRESHOLD = 8
+# Below this we treat two photos as *the same picture* (identical or just
+# re-encoded) regardless of their metadata labels — so a duplicate imported with
+# a wrong/missing category is still caught (e.g. the same plaid shirt tagged
+# once as 'top' and once as 'outerwear').
+SAME_IMAGE_DISTANCE = 4
 
 
 def image_phash(data: bytes, crop_frac: float = 0.6) -> str:
