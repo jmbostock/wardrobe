@@ -198,6 +198,10 @@ Full write-up: **`docs/wardrobe-v0.12.md`** (metadata / dedup / dropdowns / size
 - **Detail card tidy-up** (v0.23.0): removed the "used in N saved outfits" line
   from the garment detail card and added a gap between the photo and the Name
   field. (`used_count` is still kept for the wardrobe "Most used" sort.)
+- **Recommendations show photos** (v0.24.0): `/api/recommend` now returns
+  `has_image` on each garment, and the Suggest page renders the top/bottom/
+  outerwear/footwear/accessory photos as thumbnails (color swatch fallback when
+  a garment has no photo).
 
 ---
 

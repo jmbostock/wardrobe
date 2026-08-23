@@ -49,10 +49,14 @@ function _garmentCard(g, slot) {
   const label = (slot === 'top' && (g.category === 'dress' || g.category === 'swimsuit'))
     ? 'One-piece' : { top: 'Top', bottom: 'Bottom', outerwear: 'Outer', footwear: 'Shoes', accessory: 'Acc' }[slot] || slot;
   const stars = g.rating ? `<span class="garment-rating">★ ${g.rating}/10</span>` : '';
+  // show the garment photo when it has one; otherwise fall back to the color swatch
+  const img = g.has_image
+    ? `<img class="slot-swatch slot-img" data-gid="${g.id}" alt="${g.name}">`
+    : `<div class="slot-swatch" style="background:${g.color_hex || '#555'}"></div>`;
   return `
     <div class="outfit-slot-card" data-slot="${slot}" data-id="${g.id}">
       <span class="slot-label">${label}</span>
-      <div class="slot-swatch" style="background:${g.color_hex || '#555'}"></div>
+      ${img}
       <div class="slot-info">
         <span class="slot-name">${g.name}</span>
         ${stars}
@@ -69,6 +73,10 @@ function renderOutfit(outfit) {
   }
   (outfit.accessories || []).forEach((g) => { html += _garmentCard(g, 'accessory'); });
   $('outfit').innerHTML = html || '<p class="muted">No matching outfit found.</p>';
+  // load the garment thumbnails (async; authImageUrl already cache-busts)
+  $('outfit').querySelectorAll('.slot-img').forEach((img) => {
+    authImageUrl('/api/wardrobe/' + img.dataset.gid + '/image').then((u) => { img.src = u; }).catch(() => {});
+  });
   $('outfit-result').hidden = false;
   $('outfit-empty').hidden = true;
   $('try-on-btn').hidden = false;
@@ -133,7 +141,7 @@ $('try-on-btn').addEventListener('click', () => {
 // ------------------------------------------------------------------ //
 // Cher stylist chat                                                    //
 // ------------------------------------------------------------------ //
-let _sessionId = sessionStorage.getItem('alta_session') || null;
+let _sessionId = sessionStorage.getItem('cher_session') || null;
 let _chatStreaming = false;
 
 function _scrollChat() {
@@ -157,7 +165,7 @@ function _addBubble(role, text, id) {
 function _startNewSession(recommendData) {
   // Clears history UI and resets session; primes Cher with context
   _sessionId = null;
-  sessionStorage.removeItem('alta_session');
+  sessionStorage.removeItem('cher_session');
   // Clear old messages except the intro bubble
   const msgs = $('chat-messages');
   while (msgs.children.length > 1) msgs.removeChild(msgs.lastChild);
@@ -254,7 +262,7 @@ async function sendChat(message) {
             cursor.remove();
             if (evt.session_id) {
               _sessionId = evt.session_id;
-              sessionStorage.setItem('alta_session', _sessionId);
+              sessionStorage.setItem('cher_session', _sessionId);
             }
           }
         } catch (_) { /* ignore malformed SSE lines */ }
@@ -307,7 +315,7 @@ $('chat-clear').addEventListener('click', async () => {
     } catch (_) { /* ignore */ }
   }
   _sessionId = null;
-  sessionStorage.removeItem('alta_session');
+  sessionStorage.removeItem('cher_session');
   const msgs = $('chat-messages');
   while (msgs.children.length > 1) msgs.removeChild(msgs.lastChild);
   _addBubble('assistant', 'Fresh start! Ask me anything about your wardrobe.');

@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from .. import db, recommender, stylist, weather
 from ..deps import get_current_user
+from ..media import garment_image_path
 from ..recommender import Weather
 from ..store import wardrobe
 
@@ -62,10 +63,33 @@ def recommend_outfit(req: RecommendRequest, user: dict = Depends(get_current_use
     else:
         lat, lon = _user_coords(user)
         w = weather.fetch(lat, lon)
-    return recommender.recommend(
+    result = recommender.recommend(
         w, req.activity, req.prompt, wardrobe=wardrobe, user_id=user["id"],
         owned_only=req.owned_only,
     )
+    # attach has_image to each recommended garment so the Suggest page can show
+    # the top/bottom/etc photo (not just a color swatch)
+    result["outfit"] = _with_image_flags(user["id"], result["outfit"])
+    return result
+
+
+def _with_image_flags(user_id: int, outfit: dict) -> dict:
+    """Attach boolean `has_image` to every garment in the recommended outfit.
+
+    Checks on-disk photo existence via `garment_image_path` so the frontend
+    Suggest tab can display actual garment photo thumbnails instead of generic
+    color swatches.
+    """
+    def flag(g):
+        if isinstance(g, dict) and g.get("id"):
+            g["has_image"] = garment_image_path(user_id, g["id"]) is not None
+        return g
+    for key, val in outfit.items():
+        if isinstance(val, list):
+            outfit[key] = [flag(g) for g in val]
+        else:
+            outfit[key] = flag(val)
+    return outfit
 
 
 # --------------------------------------------------------------------------- #
