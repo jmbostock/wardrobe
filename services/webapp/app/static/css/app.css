@@ -249,12 +249,18 @@ body:has(#view-suggest) .app-version { display:none; }
   border:1px solid var(--line); border-radius:12px; padding:10px; }
 .recommend-tryon { margin-top:0; flex:none; padding:9px 16px; border-radius:9px;
   background:var(--acc); color:#0f1216; font-weight:700; font-size:13px; }
-/* feedback + Try it on share ONE compact row (like a real chat action bar) */
-.recommend-actions { display:flex; align-items:stretch; gap:8px; margin-top:10px; }
-.recommend-feedback { display:flex; gap:8px; flex:1; min-width:0; }
-.recommend-feedback button { flex:1; padding:9px 10px; border-radius:9px; font-size:13px;
-  background:transparent; border:1px solid var(--line); color:var(--txt); }
-.recommend-feedback button:hover { border-color:var(--acc); }
+/* feedback + Try it on share ONE compact row (like a real chat action bar).
+   Thumbs are small circular icon buttons that light up when tapped. */
+.recommend-actions { display:flex; align-items:center; gap:8px; margin-top:10px; }
+.recommend-feedback { display:flex; gap:6px; flex:none; }
+.recommend-feedback .fb-thumb { width:38px; height:38px; padding:0; border-radius:50%;
+  display:flex; align-items:center; justify-content:center; font-size:17px; line-height:1;
+  background:transparent; border:1px solid var(--line); color:var(--txt); cursor:pointer;
+  transition:border-color .15s, background .15s, transform .1s; }
+.recommend-feedback .fb-thumb:hover { border-color:var(--acc); background:rgba(79,156,249,.10); }
+.recommend-feedback .fb-thumb:active { transform:scale(.92); }
+.recommend-feedback .fb-thumb:disabled { opacity:.45; cursor:default; }
+.recommend-feedback .fb-thumb.picked { border-color:var(--acc); background:var(--acc); color:#0f1216; }
 /* occasion quick-select in the chat header (no separate weather/location card) */
 .chat-header #activity { width:auto; max-width:170px; margin:0 6px; }
 

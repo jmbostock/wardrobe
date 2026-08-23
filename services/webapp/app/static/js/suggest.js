@@ -102,13 +102,59 @@ function _renderChatGarments(bubble, items) {
     authImageUrl('/api/wardrobe/' + img.dataset.gid + '/image')
       .then((u) => { img.src = u; }).catch(() => {});
   });
-  // Try on the main picks right from the chat
+  // every recommendation gets thumbs up/down + Try it on (same as the
+  // Suggest-button card) so the engine learns from chat picks too
+  _addFeedbackActions(bubble, _chatItemsToOutfit(items));
+  _scrollChat();
+}
+
+// Shared action bar under EVERY recommendation: compact 👍/👎 thumb buttons
+// (log the whole outfit + activity so the engine learns) and a Try it on.
+function _addFeedbackActions(container, outfit) {
+  const actions = document.createElement('div');
+  actions.className = 'recommend-actions';
+
+  const fb = document.createElement('div');
+  fb.className = 'recommend-feedback';
+
+  const thumb = (emoji, kind, title) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'fb-thumb';
+    b.dataset.kind = kind;
+    b.title = title;
+    b.textContent = emoji;
+    b.addEventListener('click', async () => {
+      fb.querySelectorAll('button').forEach((x) => (x.disabled = true));
+      try {
+        await apiJson('/api/recommend/feedback', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            outfit, kind, activity: _lastActivity || 'casual',
+            prompt: ($('prompt') && $('prompt').value) || null,
+          }),
+        });
+        b.disabled = false;
+        b.classList.add('picked');
+      } catch (e) {
+        b.disabled = false;
+        b.title = 'feedback failed';
+      }
+    });
+    return b;
+  };
+
+  fb.appendChild(thumb('👍', 'liked', 'Looks good'));
+  fb.appendChild(thumb('👎', 'disliked', 'Not right'));
+  actions.appendChild(fb);
+
   const btn = document.createElement('button');
   btn.className = 'recommend-tryon';
   btn.textContent = 'Try it on →';
-  btn.addEventListener('click', () => _goTryOn(_chatItemsToOutfit(items)));
-  bubble.appendChild(btn);
-  _scrollChat();
+  btn.addEventListener('click', () => _goTryOn(outfit));
+  actions.appendChild(btn);
+
+  container.appendChild(actions);
 }
 
 // Render Cher's recommendation as ONE chat message: the intro prose carries the
@@ -139,41 +185,8 @@ function _renderRecommendBubble({ intro, outfit }) {
     grid.querySelectorAll('.slot-img').forEach((img) => {
       authImageUrl('/api/wardrobe/' + img.dataset.gid + '/image').then((u) => { img.src = u; }).catch(() => {});
     });
-    // thumbs up/down under the photos — logs liked/disliked for the whole
-    // outfit with the activity context (feeds L2 style + L3 ALS learning)
-    const fb = document.createElement('div');
-    fb.className = 'recommend-feedback';
-    const fbBtn = (label, kind) => {
-      const b = document.createElement('button');
-      b.type = 'button'; b.className = 'ghost'; b.textContent = label;
-      b.addEventListener('click', async () => {
-        fb.querySelectorAll('button').forEach((x) => (x.disabled = true));
-        try {
-          await apiJson('/api/recommend/feedback', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              outfit, kind, activity: _lastActivity || 'casual',
-              prompt: ($('prompt') && $('prompt').value) || null,
-            }),
-          });
-          fb.textContent = kind === 'liked'
-            ? '👍 Got it — more like this' : '👎 Got it — will avoid this for ' + (_lastActivity || 'this');
-        } catch (e) { fb.textContent = 'feedback failed: ' + e.message; }
-      });
-      return b;
-    };
-    fb.appendChild(fbBtn('👍 Looks good', 'liked'));
-    fb.appendChild(fbBtn('👎 Not right', 'disliked'));
     // one compact action row: thumbs + Try it on (like a chat action bar)
-    const actions = document.createElement('div');
-    actions.className = 'recommend-actions';
-    actions.appendChild(fb);
-    const btn = document.createElement('button');
-    btn.className = 'recommend-tryon';
-    btn.textContent = 'Try it on →';
-    btn.addEventListener('click', () => _goTryOn(outfit));
-    actions.appendChild(btn);
-    wrap.appendChild(actions);
+    _addFeedbackActions(wrap, outfit);
   }
 
   $('chat-messages').appendChild(wrap);
