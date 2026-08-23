@@ -26,7 +26,7 @@ from .config import settings
 # Same model family as ai-fill — small enough to run locally on the 5060 Ti but
 # follows multi-line prompts and can describe/compare outfits from photos.
 DEFAULT_VISION_MODEL = "qwen2.5vl:3b"
-VISION_TIMEOUT = 60  # seconds; multi-image calls are slower than tag reads
+VISION_TIMEOUT = 10  # seconds; fallback to PIL heuristic if VLM is slow/busy
 
 # candidate photos are capped so the request stays small/fast
 MAX_CANDIDATES = 10
@@ -136,12 +136,12 @@ def _vision_rank(
 
 
 def rank_photos_for_garment(
-    user_id: int, garment_bytes: bytes, garment_category: str
+    user_id: int, garment_bytes: bytes, garment_category: str, fast: bool = False
 ) -> list[dict[str, Any]]:
     """Rank the user's saved person photos best-first as the try-on base for a
     specific garment. Primary signal = outfit match via vision LLM; falls back
     to the pure-PIL person-QA heuristic (category-nudged) when the model is
-    unavailable. Corrupt/undecodable photos are skipped — never offered.
+    unavailable or fast=True is specified. Corrupt/undecodable photos are skipped — never offered.
 
     Returns photo dicts (photos._row_to_dict fields) plus score/grade/reason/
     method ("ai" | "heuristic"). Corrupt/undecodable photos are skipped, and any
@@ -159,7 +159,7 @@ def rank_photos_for_garment(
         return []
 
     entries: dict[int, dict[str, Any]] = {}
-    ai_scores = _vision_rank(garment_bytes, [(p["id"], d) for p, d in candidates])
+    ai_scores = None if fast else _vision_rank(garment_bytes, [(p["id"], d) for p, d in candidates])
     for p, d in candidates:
         if ai_scores is None:
             s = imageqa.suitability(d, garment_category)

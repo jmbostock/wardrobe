@@ -4,15 +4,11 @@
 **Target Performance:** Near real-time user experience (< 5–10s total end-to-end response for interactive flows)  
 **Evaluated Version:** v0.14.0 (`altacloset`)
 
-> **Status update (later same day):** §3 Hotspot 1 and §4 have been resolved by
-> **removing the model-based orientation entirely**. The 3-vote "which edge is the
-> top" detector (`ai_upright_rotation` / `_top_edge`) was unreliable (the small VLM
-> flip-flopped between left/down/up/right on folded flat-lays) and its 90° rotations
-> produced **landscape** photos, which the user forbade. Orientation is now fully
-> **deterministic** (`media.normalize_orientation`): EXIF righting → optional 180°
-> flip from the tag-reader → hard guarantee the saved photo is portrait. `ai_orientation`
-> now only tests 0°/180° (2 VLM calls, not 4). The review's broader VRAM/SVD/photopick
-> findings still stand.
+> **Status update (2026-08-23):** 
+> 1. **Orientation**: Replaced model-based 90° orientation with deterministic portrait normalization (`media.normalize_orientation`) + 2-call 0°/180° tag reader check.
+> 2. **VRAM Footprint**: Added `OLLAMA_KEEP_ALIVE=2m` to `docker-compose.yml` so Qwen2.5-VL auto-unloads from VRAM when idle, freeing max VRAM headroom for CatVTON try-on renders.
+> 3. **Photo Pick Latency**: Reduced `photopick` timeout from 60s to 10s and added `fast=true` support for instant pure-PIL suitability ranking (<2ms).
+> 4. **Bitwise Hamming Distance**: Updated `phash.hamming` to perform native 64-bit integer XOR bit-counting `(val_a ^ val_b).bit_count()` for instant near-duplicate checks.
 
 ---
 

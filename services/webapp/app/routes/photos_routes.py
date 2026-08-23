@@ -26,20 +26,20 @@ def list_photos(user: dict = Depends(get_current_user)) -> list[dict]:
 
 @router.get("/api/photos/best-for-garment/{garment_id}")
 def best_photo_for_garment(
-    garment_id: int, user: dict = Depends(get_current_user)
+    garment_id: int, fast: bool = False, user: dict = Depends(get_current_user)
 ) -> dict:
     """Pick the best saved person photo as the try-on base for a SPECIFIC
     garment. Driven by OUTFIT MATCH (vision LLM: a swimsuit garment wants a
     swimsuit-ish photo, a dress wants a dress photo, etc.) with a pure-PIL
-    fallback when the vision model is down. Returns best + full ranked list
-    (best-first), each entry carrying score/grade/reason/method."""
+    fallback when the vision model is down or fast=true is passed. Returns best
+    + full ranked list (best-first), each entry carrying score/grade/reason/method."""
     g = wardrobe.get(user["id"], garment_id)
     if g is None:
         raise HTTPException(404, f"garment {garment_id} not found in your wardrobe")
     path = garment_image_path(user["id"], garment_id)
     if path is None:
         raise HTTPException(404, "no image for this garment")
-    ranked = photopick.rank_photos_for_garment(user["id"], path.read_bytes(), g.category)
+    ranked = photopick.rank_photos_for_garment(user["id"], path.read_bytes(), g.category, fast=fast)
     best = ranked[0] if ranked else None
     return {
         "garment_id": garment_id,

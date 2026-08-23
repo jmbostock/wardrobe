@@ -77,6 +77,8 @@ services:
               capabilities: [gpu]
     volumes:
       - ./data/ollama:/root/.ollama
+    environment:
+      - OLLAMA_KEEP_ALIVE=2m
     ports:
       - "127.0.0.1:${OLLAMA_PORT:-28114}:11434"
     healthcheck:

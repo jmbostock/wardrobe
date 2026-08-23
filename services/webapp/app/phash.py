@@ -45,9 +45,17 @@ def image_phash(data: bytes, crop_frac: float = 0.6) -> str:
     return hex(int("".join(bits), 2))[2:].zfill(16)
 
 
-def hamming(a: str, b: str) -> int:
-    """Number of differing bits between two hex phashes (0 = identical)."""
-    return sum(x != y for x, y in zip(a, b))
+def hamming(a: str | int, b: str | int) -> int:
+    """Number of differing bits (0 to 64) between two 64-bit phashes.
+    Accepts 16-char hex strings or integer bitfields."""
+    if not a or not b:
+        return 64
+    try:
+        val_a = int(a, 16) if isinstance(a, str) else int(a)
+        val_b = int(b, 16) if isinstance(b, str) else int(b)
+        return (val_a ^ val_b).bit_count()
+    except Exception:  # noqa: BLE001
+        return 64
 
 
 # ---- coarse color fingerprint ----------------------------------------------

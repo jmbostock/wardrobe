@@ -33,6 +33,8 @@
 | 17 | Photo auto-pick driven by the GARMENT (vision) | 2026-08-22 | `GET /api/photos/best-for-garment/{id}` → `app/photopick.py` sends garment + every saved photo to Ollama `qwen2.5vl:3b` in ONE multi-image call, scored mostly on outfit type/coverage match (swimsuit garment → swimsuit-ish photo, dress → dress photo). Auto-selects the best in the Try-on dropdown; a manual pick wins. Falls back to `imageqa.suitability` (pure-PIL, category-nudged) when the model is down; vision-skipped photos filled with the heuristic |
 | 18 | Garment metadata + AI tag-read + auto-orient | 2026-08-22 | `garments.brand`/`sizes` columns; `POST /api/wardrobe/ai-fill` reads visible tags with `qwen2.5vl:3b` (moondream rejected — ignores multi-line prompts); parse-link extracts brand/sizes from product pages. Uploads are EXIF-righted + portrait-normalized (deterministic) with an optional manual/rotational correction path |
 | 19 | PWA cache discipline: bump `CACHE` per release | 2026-08-22 | `sw.js` serves static assets cache-first — without bumping `closet-v2 → v3`, phones kept serving the stale v0.12 `tryon.js` and never saw the auto-pick. **Bump `const CACHE` on every JS/CSS release.** |
+| 20 | VRAM auto-unload (`OLLAMA_KEEP_ALIVE=2m`) & graceful VLM timeout (10s) + `fast` mode | 2026-08-23 | Ollama unloads Qwen2.5-VL after 2m idle so CatVTON has full ~14-15GB VRAM headroom. `photopick` timeout reduced 60s → 10s and supports `fast=true` pure-PIL suitability ranking (<2ms) |
+| 21 | Bitwise integer Hamming distance for near-duplicate dHash (`phash.py`) | 2026-08-23 | Replaced hex char iteration with CPU-native `(val_a ^ val_b).bit_count()` for 64-bit dHash comparison |
 
 ## Frontend code layout (2026-08-21)
 
