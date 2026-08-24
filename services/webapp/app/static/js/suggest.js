@@ -100,9 +100,10 @@ function _renderChatGarments(bubble, items) {
   grid.querySelectorAll('.slot-img').forEach((img) => {
     if (img.src) return;
     const it = items.find((x) => String(x.id) === img.dataset.gid);
+    const sz = chatImgSize();
     setAuthImage(img, (it && it.image_version)
-      ? ('/api/wardrobe/' + it.id + '/image?size=thumb&v=' + it.image_version)
-      : ('/api/wardrobe/' + img.dataset.gid + '/image?size=thumb&v=0'));
+      ? ('/api/wardrobe/' + it.id + '/image?size=' + sz + '&v=' + it.image_version)
+      : ('/api/wardrobe/' + img.dataset.gid + '/image?size=' + sz + '&v=0'));
   });
   // every recommendation gets thumbs up/down + Try it on (same as the
   // Suggest-button card) so the engine learns from chat picks too
@@ -193,8 +194,8 @@ function _renderRecommendBubble({ intro, outfit }) {
         (outfit.outerwear && outfit.outerwear.id === Number(img.dataset.gid) ? outfit.outerwear :
         (outfit.footwear && outfit.footwear.id === Number(img.dataset.gid) ? outfit.footwear :
         (outfit.accessories || []).find((x) => String(x.id) === img.dataset.gid))));
-      setAuthImage(img, g ? garmentImg(g, 'thumb')
-                         : ('/api/wardrobe/' + img.dataset.gid + '/image?size=thumb&v=0'));
+      setAuthImage(img, g ? garmentImg(g, chatImgSize())
+                         : ('/api/wardrobe/' + img.dataset.gid + '/image?size=' + chatImgSize() + '&v=0'));
     });
     // one compact action row: thumbs + Try it on (like a chat action bar)
     _addFeedbackActions(wrap, outfit);
@@ -217,6 +218,12 @@ const _SUGGEST_CHIPS = [
   ['beach', 'Beach'],
   ['formal', 'Formal'],
 ];
+
+// Desktop chat cards show BIG garment photos -> request the 768px detail WebP
+// so they stay crisp; phones keep the small 300px thumb.
+function chatImgSize() {
+  return window.matchMedia('(min-width: 641px)').matches ? 'detail' : 'thumb';
+}
 
 let _conversationStarted = false;
 

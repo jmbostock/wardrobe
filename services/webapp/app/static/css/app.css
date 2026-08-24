@@ -316,8 +316,12 @@ body:has(#view-suggest) .app-version { display:none; }
 @media (min-width: 641px) {
   .sheet .panel { border-left:1px solid var(--line); border-right:1px solid var(--line); }
   .sheet .grab { display:none; }
-  .recommend-outfit .outfit-slot-card { min-width:88px; max-width:120px; }
-  .recommend-outfit .slot-img { width:64px; height:82px; }
+  /* desktop: chat recommendation tiles are MUCH bigger so the garment photos
+     are easy to see (phones keep the compact filmstrip) */
+  .recommend-outfit .outfit-slot-card { min-width:150px; max-width:230px; padding:12px; gap:8px; }
+  .recommend-outfit .slot-img { width:180px; height:240px; }
+  .recommend-outfit .slot-name { font-size:13px; }
+  .recommend-outfit .slot-label { font-size:11px; }
 }
 
 /* ---- PWA standalone (iPhone): clear the notch + home indicator ---- */
