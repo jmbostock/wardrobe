@@ -13,7 +13,7 @@ services:
     env_file: .env
     environment:
       - HF_HOME=/models/huggingface
-      - COMFYUI_URL=http://comfyui:8188
+      - COMFYUI_URL=${COMFYUI_URL:-http://comfyui:8188}
       - OLLAMA_URL=http://ollama:11434
     volumes:
       - ./data/wardrobe:/data/wardrobe
