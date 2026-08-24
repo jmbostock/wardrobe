@@ -129,3 +129,44 @@ RUN sed -i 's/AT_DISPATCH_FLOATING_TYPES(z\.type()/AT_DISPATCH_FLOATING_TYPES(z.
 RUN cd /opt/ComfyUI/custom_nodes/ComfyUI-CatVTON \
  && python -c "from torch.utils.cpp_extension import load; import os; _s='model/SCHP/modules/src'; load(name='inplace_abn', extra_cflags=['-O3'], sources=[os.path.join(_s,f) for f in ['inplace_abn.cpp','inplace_abn_cpu.cpp','inplace_abn_cuda.cu','inplace_abn_cuda_half.cu']], extra_cuda_cflags=['--expt-extended-lambda']); print('inplace_abn prebuilt OK')"
 
+# ======================================================================
+# IDM-VTON + mask/DensePose helper node deps (dev multi-model try-on) — 2026-08-24
+# ----------------------------------------------------------------------
+# Adds python deps for the IDM-VTON (SDXL) backend and its mask (segment-anything)
+# + DensePose (comfyui_controlnet_aux) helper nodes.
+#
+# CRITICAL: installed with --no-deps so the pinned torch 2.7.1+cu128 (Blackwell
+# sm_120), diffusers 0.29.2 and transformers 4.44+ stay untouched — pip's default
+# resolution drags in torch 2.13 + cu13 wheels that break sm_120. Because --no-deps
+# skips transitive deps, the KNOWN leaf deps of every package are listed explicitly
+# below (joblib/threadpoolctl/albucore/lightning-utilities/onnxruntime runtime
+# helpers/omegaconf runtime/etc). Omitting one (e.g. joblib) breaks transformers'
+# lazy AutoModel import, which in turn breaks CatVTON — verify with
+#   python -c "from transformers import CLIPTextModel; import diffusers"
+# after any change here.
+# NOTE: the custom_nodes themselves live in the bind-mounted
+# data/comfyui/custom_nodes dir (persistent), NOT baked into the image.
+RUN pip install --no-cache-dir --no-deps \
+      torchmetrics einops onnxruntime-gpu fvcore omegaconf ftfy \
+      addict yacs trimesh "albumentations==1.4.21" scikit-learn matplotlib yapf \
+      scikit-image segment-anything timm \
+      joblib threadpoolctl albucore lightning-utilities protobuf flatbuffers \
+      sympy coloredlogs humanfriendly iopath tabulate antlr4-python3-runtime \
+      imageio tifffile lazy-loader wcwidth psutil
+# diffusers >= 0.28 moved DualTransformer2DModel/Transformer2DModel out of the
+# flat `diffusers.models.<name>` modules that ComfyUI-IDM-VTON imports — shim the
+# old paths so the node imports cleanly against diffusers 0.29.2.
+RUN python - <<'PY'
+import diffusers.models as m
+import os
+from pathlib import Path
+base = Path(os.path.dirname(m.__file__))
+(base / "dual_transformer_2d.py").write_text(
+    "from diffusers.models.transformers.dual_transformer_2d import DualTransformer2DModel  # noqa: F401\n"
+)
+(base / "transformer_2d.py").write_text(
+    "from diffusers.models.transformers.transformer_2d import Transformer2DModel  # noqa: F401\n"
+)
+print("diffusers shims written")
+PY
+

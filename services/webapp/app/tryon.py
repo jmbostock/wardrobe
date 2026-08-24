@@ -95,6 +95,8 @@ async def run_tryon_model(
     backends raise ComfyUnavailable with a clear message (surfaced per-model)."""
     if model == "catvton":
         return await run_tryon(person_bytes, garment, user_id)
+    if model == "idm_vton":
+        return await _run_idm_vton(person_bytes, garment, user_id)
     wf = _workflow_path(model)
     if not wf.exists():
         raise ComfyUnavailable(
@@ -104,6 +106,49 @@ async def run_tryon_model(
     raise ComfyUnavailable(
         f"model '{model}' has a workflow but no renderer wired yet in tryon.py"
     )
+
+
+# --- IDM-VTON (SDXL) backend ---
+IDM_WORKFLOW_PATH = Path(__file__).parent / "workflows" / "idm_vton.json"
+IDM_NODE_IDS = {
+    "person_image": "10",
+    "garment_image": "11",
+    "masker_pipe": "12",
+    "automasker": "13",
+    "densepose": "14",
+    "pipeline": "15",
+    "idm": "16",
+    "output": "17",
+}
+
+
+async def _run_idm_vton(
+    person_bytes: bytes, garment: Garment, user_id: int, seed: int | None = None
+) -> bytes:
+    """IDM-VTON (SDXL) try-on via ComfyUI. Reuses CatVTON's LoadAutoMasker +
+    AutoMasker for the garment mask (cloth_type from the category) and
+    controlnet_aux's DensePose preprocessor for the pose image. Heavier than
+    CatVTON (~8-11GB VRAM) — meant for the dev / batch (overnight) path."""
+    if not IDM_WORKFLOW_PATH.exists():
+        raise ComfyUnavailable("workflows/idm_vton.json missing — see workflows/README.md")
+    workflow = json.loads(IDM_WORKFLOW_PATH.read_text())
+    garment_bytes = _load_garment_image(garment, user_id)
+    cloth_type = CLOTH_TYPE.get(garment.category, "upper")
+    person_bytes = _prep_person(person_bytes)
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        person_name = await _upload(client, "person.png", person_bytes)
+        garment_name = await _upload(client, "garment.png", garment_bytes)
+        n = IDM_NODE_IDS
+        workflow[n["person_image"]]["inputs"]["image"] = person_name
+        workflow[n["garment_image"]]["inputs"]["image"] = garment_name
+        workflow[n["automasker"]]["inputs"]["cloth_type"] = cloth_type
+        if seed is None:
+            seed = settings.tryon_seed if settings.tryon_seed is not None else random.randint(0, 2**31)
+        workflow[n["idm"]]["inputs"]["seed"] = seed
+        prompt_id = await _submit(client, workflow)
+        entry = await _poll(client, prompt_id)
+        return await _fetch_output(client, entry)
 
 
 async def run_tryon(person_bytes: bytes, garment: Garment, user_id: int) -> bytes:

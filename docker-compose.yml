@@ -46,11 +46,17 @@ services:
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
       - HF_HOME=/root/.cache/huggingface
     volumes:
-      # CatVTON custom node is BAKED INTO the image (services/comfyui/Dockerfile).
-      # Weights (HF cache) and ComfyUI input/output persist on disk.
+      # CatVTON custom node + weights are BAKED INTO the image
+      # (services/comfyui/Dockerfile). The IDM-VTON / segment-anything /
+      # controlnet_aux custom nodes + their model weights live in bind mounts
+      # below so they survive container rebuilds (node python deps are baked
+      # into the image in the Dockerfile — never pip-install into the running
+      # container: a compose recreate wipes the writable layer).
       - ./data/comfyui/models:/root/.cache/huggingface
       - ./data/comfyui/input:/opt/ComfyUI/input
       - ./data/comfyui/output:/opt/ComfyUI/output
+      - ./data/comfyui/custom_nodes:/opt/ComfyUI/custom_nodes
+      - ./data/comfyui/models_dir:/opt/ComfyUI/models
     ports:
       - "127.0.0.1:${COMFYUI_PORT:-28188}:8188"
     healthcheck:

@@ -54,21 +54,19 @@ def test_run_tryon_model_unknown_raises():
 
     from app.tryon import ComfyUnavailable
 
-    # A backend with no renderer must fail gracefully (per-model error), never
-    # 500 the whole request. catvton's real renderer is covered by the live
-    # E2E path (and needs a GPU), so we only assert the graceful failure here.
+    # A backend with no workflow/renderer must fail gracefully (per-model error),
+    # never 500 the whole request. catvton + idm_vton have real renderers
+    # (need GPU + weights), so we assert the graceful failure of an unwired one.
     async def _call():
-        # minimal fake garment — run_tryon_model for a non-catvton model raises
-        # before touching the garment bytes, so a stub is fine.
         class G:  # noqa: D106
             user_id = 1
             image_path = None
-        await tryon.run_tryon_model("idm_vton", b"person", G(), 1)
+        await tryon.run_tryon_model("flux_kontext", b"person", G(), 1)
 
     try:
         asyncio.run(_call())
     except ComfyUnavailable as ex:
-        assert "idm_vton" in str(ex)
+        assert "flux_kontext" in str(ex)
         return
     raise AssertionError("expected ComfyUnavailable for unconfigured model")
 
