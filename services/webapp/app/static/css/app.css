@@ -195,7 +195,7 @@ body:has(#view-suggest) .app-version { display:none; }
 .suggest-chat-card { height:auto; }
 .full-width { width:100%; margin-top:4px; }
 /* Try-on page — full-width, horizontal Try on CTA (hint text removed) */
-#tryon-btn { width:100%; padding:14px 18px; font-size:16px; margin-top:10px; }
+#tryon-btn { flex:none; padding:12px 22px; font-size:15px; }
 
 /* outfit slot cards */
 .outfit-slots { display:grid; gap:10px; padding:4px 0; }
