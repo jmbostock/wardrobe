@@ -17,20 +17,32 @@ API (Bearer token; see the per-domain routers under app/routes/):
   tryon:    POST /api/tryon(,outfit) · POST /api/tryon/clip · GET /api/clips/{id} ·
             GET /api/uploads/{name}
   recommend:GET /api/weather · POST /api/recommend · POST /api/image-quality
+  admin (dev-only, login = `admin` user): GET /api/admin/users ·
+                    POST /api/admin/impersonate (act as user) ·
+                    POST /api/admin/test-copy · GET /api/admin/test
 """
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from . import routes
+from . import auth, routes
 from .version import __version__
 
-app = FastAPI(title="altacloset", version=__version__)
-
 STATIC_DIR = Path(__file__).parent / "static"
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # create the dev `admin`/`test` accounts when DEV_ADMIN_ENABLED=1
+    auth.ensure_dev_accounts()
+    yield
+
+
+app = FastAPI(title="altacloset", version=__version__, lifespan=lifespan)
 
 
 class NoCacheStaticFiles(StaticFiles):
@@ -51,6 +63,8 @@ def health() -> dict:
 
 app.include_router(routes.pages.router)
 app.include_router(routes.auth_routes.router)
+app.include_router(routes.admin_routes.router)
+app.include_router(routes.test_routes.router)
 app.include_router(routes.account_routes.router)
 app.include_router(routes.photos_routes.router)
 app.include_router(routes.wardrobe_routes.router)

@@ -218,6 +218,20 @@ def _migrate(conn: sqlite3.Connection) -> None:
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_interactions_user ON interactions(user_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_interactions_garment ON interactions(garment_id)")
+    # --- dev accounts + session kind (added 2026-08-24) ---
+    # users.role: 'user' (normal) | 'admin' (dev master account) |
+    #             'test' (dev sandbox whose data is a copy of a real user)
+    ucols = {r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()}
+    if "role" not in ucols:
+        conn.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'")
+    # sessions.kind: 'user' (normal) | 'admin' (dev-admin token) |
+    #                'impersonate' (admin acting AS a real user — as-if-user)
+    # sessions.snapshot_of: for impersonate sessions, the real user being acted as
+    scols = {r[1] for r in conn.execute("PRAGMA table_info(sessions)").fetchall()}
+    if "kind" not in scols:
+        conn.execute("ALTER TABLE sessions ADD COLUMN kind TEXT NOT NULL DEFAULT 'user'")
+    if "snapshot_of" not in scols:
+        conn.execute("ALTER TABLE sessions ADD COLUMN snapshot_of INTEGER")
     # flat family sharing: one global Family group, every user a member
     conn.execute(
         """CREATE TABLE IF NOT EXISTS groups (
@@ -269,6 +283,20 @@ def _migrate(conn: sqlite3.Connection) -> None:
             dim        INTEGER NOT NULL DEFAULT 512,
             vector     BLOB NOT NULL,
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )"""
+    )
+    # dev test-sandbox snapshots (added 2026-08-24): frozen copies of real users
+    # that the `test` sandbox can switch between (always non-live). users.test_source
+    # = the real user id the test sandbox currently mirrors (NULL = none).
+    ucols = {r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()}
+    if "test_source" not in ucols:
+        conn.execute("ALTER TABLE users ADD COLUMN test_source INTEGER")
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS test_snapshots (
+            user_id      INTEGER PRIMARY KEY,   -- the REAL user this snapshot is of
+            email        TEXT NOT NULL,
+            snap_user_id INTEGER NOT NULL,      -- hidden role='snapshot' user holding the frozen copy
+            created_at   TEXT NOT NULL DEFAULT (datetime('now'))
         )"""
     )
 

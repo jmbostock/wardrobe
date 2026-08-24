@@ -7,5 +7,6 @@ from . import outfits_routes  # noqa: F401
 from . import pages  # noqa: F401
 from . import photos_routes  # noqa: F401
 from . import recommend_routes  # noqa: F401
+from . import test_routes  # noqa: F401
 from . import tryon_routes  # noqa: F401
 from . import wardrobe_routes  # noqa: F401

@@ -140,6 +140,51 @@
     <p class="muted">Sign out of this device.</p>
     <button id="signout-btn" class="danger">Sign out</button>
   </div>
+
+  <div class="card" id="dev-card" style="margin-top:20px; border:1px solid #6b521f;">
+    <h2>Dev console <span class="muted" style="text-transform:uppercase;font-size:10px;letter-spacing:.06em;color:#ffb648;">dev only</span></h2>
+
+    <!-- admin account (MASTER) → act as any user / refresh the test sandbox -->
+    <div id="dev-admin-console" hidden>
+      <p class="muted" style="font-size:12px">
+        You're the <b>master</b> account. <b>Act as user</b> switches you into that account and
+        you can see <b>and alter their live data</b> (as if you were them). Or refresh the
+        <b>test</b> sandbox with a copy of a user's data. Dev instance only — never production.
+      </p>
+      <div class="row">
+        <select id="dev-user" class="field"></select>
+        <button id="dev-act">Act as user</button>
+        <button id="dev-test-copy" class="ghost">Refresh test copy</button>
+        <button id="dev-snapshot-all" class="ghost">Snapshot all users</button>
+        <button id="dev-admin-exit" class="ghost">Sign out of admin</button>
+        <span class="muted" id="dev-status"></span>
+      </div>
+      <p class="muted" id="dev-test-info" style="font-size:11px; margin:8px 0 0;"></p>
+    </div>
+
+    <!-- acting as a real user → show who + exit -->
+    <div id="dev-acting" hidden>
+      <p class="muted" style="font-size:12px">
+        Acting as <b id="dev-acting-email"></b> — changes apply to their data on the dev
+        instance, never production.
+      </p>
+      <button id="dev-exit" class="ghost">Exit to admin</button>
+    </div>
+
+    <!-- test sandbox note + switch between non-live snapshots -->
+    <div id="dev-test-note" hidden>
+      <p class="muted" style="font-size:12px">
+        You're the <b>test</b> sandbox — this account holds a <b>copy</b> of a user's data.
+        Run anything you like; changes never affect real accounts.
+      </p>
+      <p class="muted" id="test-source-line" style="font-size:12px; margin:6px 0 0;"></p>
+      <div class="row" style="margin-top:8px;">
+        <select id="test-switch-user" class="field"></select>
+        <button id="test-switch-btn" class="ghost">Switch sandbox to…</button>
+        <span class="muted" id="test-switch-status" style="font-size:11px;"></span>
+      </div>
+    </div>
+  </div>
 </section>
 {% endblock %}
 {% block scripts %}<script src="/static/js/account.js"></script>{% endblock %}

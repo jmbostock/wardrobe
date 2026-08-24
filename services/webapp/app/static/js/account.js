@@ -38,9 +38,20 @@ async function loadTestInfo() {
   try { info = await adminApi('/api/admin/test'); }
   catch (e) { $('dev-test-info').textContent = ''; return; }
   const c = info.counts || {};
+  const src = info.source ? (' — copy of ' + info.source.email) : '';
   $('dev-test-info').textContent =
-    `test sandbox (${info.email}) — ${c.garments ?? 0} garments, ${c.outfits ?? 0} outfits copied.`;
+    `test sandbox (${info.email})${src} — ${c.garments ?? 0} garments, ${c.outfits ?? 0} outfits copied.`;
 }
+
+$('dev-snapshot-all').addEventListener('click', async () => {
+  $('dev-status').textContent = 'snapshotting all users…';
+  try {
+    const r = await adminApi('/api/admin/test/snapshot-all', { method: 'POST' });
+    $('dev-status').textContent = 'snapshotted ' + r.count + ' user(s) — switchable from the test sandbox';
+    toast('snapshotted ' + r.count + ' user(s)');
+    loadTestInfo();
+  } catch (e) { $('dev-status').textContent = e.message; }
+});
 
 async function devAct() {
   const userId = Number($('dev-user').value);
@@ -245,6 +256,41 @@ async function attachPhotoQa(card, photoId) {
   } catch (e) { /* ignore */ }
 }
 
+// ---------- test sandbox: switch between non-live snapshots ----------
+async function loadTestSnapshots() {
+  let data;
+  try { data = await apiJson('/api/test/snapshots'); }
+  catch (e) { $('test-switch-status').textContent = e.message; return; }
+  const sel = $('test-switch-user');
+  sel.innerHTML = '';
+  const snaps = (data.snapshots || []).sort((a, b) => (b.active ? 1 : 0) - (a.active ? 1 : 0));
+  for (const s of snaps) {
+    const o = document.createElement('option');
+    o.value = s.user_id;
+    o.textContent = s.email + (s.active ? '  (current)' : '');
+    if (s.active) o.selected = true;
+    sel.appendChild(o);
+  }
+  if (!snaps.length) {
+    const o = document.createElement('option'); o.value = ''; o.textContent = 'no snapshots yet — have admin run “Snapshot all users”';
+    sel.appendChild(o);
+  }
+}
+$('test-switch-btn').addEventListener('click', async () => {
+  const uid = Number($('test-switch-user').value);
+  if (!uid) return;
+  $('test-switch-status').textContent = 'switching…';
+  try {
+    const r = await apiJson('/api/test/switch', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: uid }),
+    });
+    $('test-switch-status').textContent = 'now viewing a copy of ' + r.copied_from + ' — non-live';
+    toast('sandbox switched to a copy of ' + r.copied_from);
+    location.reload();
+  } catch (e) { $('test-switch-status').textContent = e.message; }
+});
+
 // ---------- boot: admin / acting-as / test sandbox / normal user ----------
 async function boot() {
   let me;
@@ -260,6 +306,13 @@ async function boot() {
   $('dev-test-note').hidden = !isTest;
   if (acting && me.dev) $('dev-acting-email').textContent = me.dev.acting_as.email || 'a user';
   if (isAdmin) loadDevUsers();
+  if (isTest) {
+    const co = me.dev && me.dev.copy_of;
+    $('test-source-line').textContent = co
+      ? 'Currently a copy of <b>' + co.email + '</b> — frozen, non-live.'
+      : 'No copy loaded yet — pick a snapshot below.';
+    loadTestSnapshots();
+  }
 
   // normal account content only makes sense for a real user (or acting-as /
   // test — both resolve to a user row and can see their own account page)
