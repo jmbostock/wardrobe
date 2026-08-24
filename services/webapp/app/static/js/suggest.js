@@ -192,7 +192,7 @@ function _renderRecommendBubble({ intro, outfit }) {
         (outfit.bottom && outfit.bottom.id === Number(img.dataset.gid) ? outfit.bottom :
         (outfit.outerwear && outfit.outerwear.id === Number(img.dataset.gid) ? outfit.outerwear :
         (outfit.footwear && outfit.footwear.id === Number(img.dataset.gid) ? outfit.footwear :
-        (outfit.accessories || []).find((x) => String(x.id) === img.dataset.gid)))));
+        (outfit.accessories || []).find((x) => String(x.id) === img.dataset.gid))));
       setAuthImage(img, g ? garmentImg(g, 'thumb')
                          : ('/api/wardrobe/' + img.dataset.gid + '/image?size=thumb&v=0'));
     });
