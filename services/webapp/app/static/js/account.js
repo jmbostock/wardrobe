@@ -1,8 +1,9 @@
 // account page — profile, location, password, person photos, sign out,
 // plus the DEV console for the `admin` account (act as any user) and the
 // `test` sandbox (a copy of a user's data that never touches real accounts).
-const ADMIN_TOKEN_KEY = 'altacloset_admin_token';
-function getAdminToken() { return localStorage.getItem(ADMIN_TOKEN_KEY); }
+// NOTE: ADMIN_TOKEN_KEY + getAdminToken live in common.js (loaded first, shared
+// global scope) — do NOT redeclare them here; a duplicate `const` throws and
+// kills this whole script (the account page would lose Sign out + dev console).
 function setAdminToken(t) { t ? localStorage.setItem(ADMIN_TOKEN_KEY, t) : localStorage.removeItem(ADMIN_TOKEN_KEY); }
 
 async function adminApi(path, opts = {}) {
