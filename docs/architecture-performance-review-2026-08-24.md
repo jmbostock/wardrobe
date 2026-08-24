@@ -303,3 +303,61 @@ the app is fast on the backend and slow in the browser because it re-downloads
 full-res images serially with caching disabled. Fix the image path (P0) + cache
 weather (P1) and the "app is slow" complaints should largely disappear without
 touching the recommendation or storage design.
+
+---
+
+## 8. IMPLEMENTED 2026-08-24 — responsive image pipeline (v0.37.0, SW v26)
+
+P0 shipped and verified live on **187 only** (202 is GPU-only and hosts no webapp;
+its webapp service was removed 2026-08-24 — see repo memory TOPOLOGY note).
+What changed, file by file:
+
+### Backend — size-aware, versioned, cached image serving
+- **`app/media.py`** — new `THUMB_PX=300` / `DETAIL_PX=768`, `image_variant()`
+  (lazy WebP generation, atomic tmp+replace), `_write_variants()` (generated at
+  save time), `garment_image_file()`, `garment_image_version()` (mtime),
+  `media_type_for()`, `IMAGE_CACHE_CONTROL = "private, max-age=86400, immutable"`.
+  `garment_image_path()` now skips `.thumb.webp`/`.detail.webp` variants.
+  `garment_dict()` returns `image_version` (file mtime) for the `?v=` cache-buster.
+- **`app/routes/wardrobe_routes.py`** — `GET /api/wardrobe/{id}/image?size=thumb|detail|full`
+  serves the WebP variant (or original) with immutable cache headers. Edit ops
+  (rotate/upload/url) already re-save → new mtime → new `?v=` → fresh fetch.
+- **`app/routes/photos_routes.py`** — `GET /api/photos/{id}/image?size=` lazy
+  variants + cache headers.
+- **`app/routes/tryon_routes.py`** — `GET /api/uploads/{name}?size=` lazy variants
+  for outfit renders/clips + cache headers.
+- **`app/routes/recommend_routes.py`** — `_with_image_flags()` and
+  `_resolve_outfit_items()` now attach `image_version` so Suggest chat cards can
+  build versioned thumb URLs.
+- **`scripts/backfill_thumbs.py`** — one-shot backfill for existing garments,
+  person photos, and outfit renders (idempotent; `--force` to regenerate).
+
+### Frontend — parallel, cached, leak-free, in-place edits
+- **`common.js`** — `authImageUrl()` switched from `cache:'no-store'` to
+  `cache:'default'` (repeat loads hit the HTTP cache); new `setAuthImage(img, url)`
+  (fetch+blob, auto-revokes after decode — no more blob-URL leak); new
+  `garmentImg(g, size)` versioned URL builder.
+- **`wardrobe.js`** — grid loads ~300px thumbs in **parallel** (no `await` in the
+  loop, no `loading="lazy"` — tiny cached WebP decodes instantly), cards carry
+  `data-gid` + `dataset.v`; new `buildMeta()` + `updateCard()` update ONE card in
+  place after save/upload/rotate/url/delete instead of reloading the whole grid;
+  detail sheet uses `size=detail`; `gimg(g, size)` versioned.
+- **`outfits.js` / `suggest.js` / `tryon.js` / `account.js`** — all grids/pickers/
+  chat cards use thumb WebP via `setAuthImage`; detail/lightbox use detail/full.
+
+### Verified live (browser, 187)
+- Grid: 20/20 thumbnails decode instantly (parallel, ~20KB each).
+- Tap card → edit sheet: **7 ms**. Detail image loads from cache.
+- Quick edit (Save): card updates in place — **no grid reload, no image re-fetch**
+  (same `<img>` node preserved).
+- Backfill: 186 garments → 186 `.thumb.webp` + 186 `.detail.webp` (17–25KB vs
+  250–600KB originals); person photos + outfit renders too. One corrupt file
+  (`333690098`, not an image) fails gracefully.
+
+### Still open (not in this pass — see §6 P1/P2)
+- Weather fetch caching (~710 ms per recommend) — recommend endpoint still
+  ~730 ms until done.
+- Wardrobe list O(N²) (near_dup + sharing.state per garment) + SQLite WAL.
+- Try-on picker: default `fast=true` / debounce the VLM photo-pick.
+- Auto-bump SW cache from version instead of hand-editing `sw.js`.
+- Downsample `shown` interactions.
