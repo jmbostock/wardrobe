@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -160,9 +161,11 @@ def _copy_clips(conn, orig_id: int, target_id: int, omap: dict[int, int]) -> Non
 
 
 def _copy_chat(conn, orig_id: int, target_id: int) -> None:
-    # chat_sessions.id is a UUID — globally unique, safe to copy verbatim
+    # chat_sessions.id is the PRIMARY KEY — a copy MUST get a fresh UUID, not
+    # the original's (the original row still exists, so reusing its id would
+    # hit UNIQUE constraint failed: chat_sessions.id).
     for row in conn.execute("SELECT * FROM chat_sessions WHERE user_id=?", (orig_id,)).fetchall():
-        _insert_copy(conn, "chat_sessions", row, {"user_id": target_id})
+        _insert_copy(conn, "chat_sessions", row, {"id": str(uuid.uuid4()), "user_id": target_id})
 
 
 def _copy_interactions(conn, orig_id: int, target_id: int, gmap: dict[int, int]) -> None:
