@@ -16,6 +16,38 @@ let savedOutfits = [];      // cached /api/outfits that have a render (Saved-ima
 let selectedSaved = null;   // the chosen saved outfit render
 let manualPhotoPick = false; // user hand-picked the base photo → don't auto-override it
 let lookGarments = [];       // cached /api/wardrobe list — drives the look photo pickers
+// ---- dev-only multi-model try-on ----
+// The model selector is part of the dev difference: admin / test / acting-as
+// sessions can render a look against several models (CatVTON / IDM-VTON / FLUX
+// Kontext) and compare the outputs side by side. Normal users always get the
+// fast default (CatVTON) and never see the selector.
+let isDevSession = false;
+function selectedTryonModels() {
+  if (!isDevSession) return ['catvton'];
+  const checked = [...document.querySelectorAll('#tryon-models input:checked')].map((c) => c.value);
+  return checked.length ? checked : ['catvton'];
+}
+async function setupTryonModels() {
+  const block = $('tryon-models-block');
+  if (!block) return;
+  try {
+    const me = await apiJson('/api/auth/me');
+    isDevSession = !!(me.admin || me.dev);
+  } catch (e) { isDevSession = false; }
+  block.hidden = !isDevSession;
+  if (!isDevSession) return;
+  // grey out backends this host doesn't have configured yet (per-model error
+  // still shown if a checkbox stays on and the render fails).
+  try {
+    const { models } = await apiJson('/api/tryon/models');
+    document.querySelectorAll('#tryon-models input').forEach((cb) => {
+      const m = models.find((x) => x.id === cb.value);
+      cb.disabled = !!(m && !m.available);
+      if (cb.disabled) cb.checked = false;
+      cb.title = (m && !m.available) ? 'not configured on this host' : '';
+    });
+  } catch (e) { /* ignore — checkboxes stay enabled */ }
+}
 // Look-builder roles. 'full' = one-piece garments (dresses, swimsuits, jumpsuits)
 // that don't need a separate top + bottom.
 const LOOK_ROLES = ['top', 'bottom', 'full', 'outerwear', 'footwear'];
@@ -433,6 +465,7 @@ async function loadSavedImages() {
   } catch (e) { /* ignore */ }
 }
 loadSavedImages(); populateLook().then(() => { applySavedReco(); });
+setupTryonModels();  // dev-only multi-model selector (admin/test/acting-as)
 // Show the quality score for the pre-selected (default) saved photo right away,
 // without making the user interact with the dropdown first.
 loadSavedPhotos().then(() => { checkPersonImage(); autoPickBestPhoto(); });
@@ -441,6 +474,8 @@ loadSavedPhotos().then(() => { checkPersonImage(); autoPickBestPhoto(); });
 async function runTryon(ids, baseResult, prompt) {
   const fd = new FormData();
   fd.append('garment_ids', JSON.stringify(ids));
+  const models = selectedTryonModels();
+  if (isDevSession && models.length) fd.append('models', JSON.stringify(models));
   const name = ($('outfit-name') ? $('outfit-name').value : '').trim();
   if (name) fd.append('outfit_name', name);
   let baseUrl = null; // what produced the latest render — shown as "original" in the compare
@@ -472,10 +507,11 @@ async function runTryon(ids, baseResult, prompt) {
     ? (multi ? `Rendering garment 1 of ${ids.length}…` : 'Rendering garment…')
     : 'Refining image…';
   const hint = document.createElement('div'); hint.className = 'hint';
-  hint.textContent = ids.length
-    ? (multi ? `applying ${ids.length} garments in sequence — this can take a while`
-             : 'first run may download ~4-6GB of model weights (can take a few minutes)')
-    : 'refining from the base image — no garments re-added';
+  hint.textContent = (models.length > 1 ? `rendering with ${models.length} models (queue): ${models.join(' + ')} — ` : '')
+    + (ids.length
+        ? (multi ? `applying ${ids.length} garments in sequence — this can take a while`
+                 : 'first run may download ~4-6GB of model weights (can take a few minutes)')
+        : 'refining from the base image — no garments re-added');
   const timer = document.createElement('div'); timer.className = 'timer'; timer.textContent = '0s';
   txt.appendChild(stage); txt.appendChild(hint);
   box.appendChild(spinner); box.appendChild(txt); box.appendChild(timer);
@@ -503,12 +539,13 @@ async function runTryon(ids, baseResult, prompt) {
     lastResultLook = JSON.stringify(ids);
     lastIds = ids;
     lastOutfitId = data.outfit_id || null;
-    const url = await authImageUrl(data.result_url + '?size=detail');
-    $('result').innerHTML = '';
-    const img = document.createElement('img'); img.src = url; $('result').appendChild(img);
+    renderTryonResults(data.results && data.results.length
+      ? data.results
+      : [{ model: 'catvton', label: 'CatVTON (fast)', result_url: data.result_url }]);
     // before/after only makes sense when altering (chat re-render / saved-image
     // refine). A plain try-on shows just the new render — never the original.
-    if (baseResult) showCompare(baseUrl, url);
+    const primaryUrl = await authImageUrl(data.result_url + '?size=detail');
+    if (baseResult) showCompare(baseUrl, primaryUrl);
     else hideCompare();
     // show the "coming soon" edit teaser under the result
     $('chat-bar').hidden = false;
@@ -524,6 +561,30 @@ async function runTryon(ids, baseResult, prompt) {
     toast(baseResult ? 'updated — check the result' : 'try-on ready — saved to Outfits');
   } catch (e) { $('result').innerHTML = `<p class="muted">error: ${e}</p>`; }
   finally { clearInterval(tryonInt); tryonInt = null; }
+}
+
+// Render one labeled image per model result (side-by-side comparison grid).
+// A per-model error shows in place of that model's image; the primary result
+// still drives the clip / chat / saved-outfit logic below.
+function renderTryonResults(results) {
+  const grid = document.createElement('div'); grid.className = 'model-results';
+  for (const r of results) {
+    const fig = document.createElement('figure');
+    const cap = document.createElement('figcaption');
+    cap.textContent = r.label || r.model || 'result';
+    fig.appendChild(cap);
+    if (r.result_url) {
+      const img = document.createElement('img'); img.alt = cap.textContent;
+      setAuthImage(img, r.result_url + '?size=detail');
+      fig.appendChild(img);
+    } else if (r.error) {
+      const err = document.createElement('div'); err.className = 'model-err';
+      err.textContent = r.error; fig.appendChild(err);
+    }
+    grid.appendChild(fig);
+  }
+  $('result').innerHTML = '';
+  $('result').appendChild(grid);
 }
 
 $('tryon-btn').addEventListener('click', async () => {

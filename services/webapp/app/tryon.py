@@ -59,6 +59,53 @@ class ComfyUnavailable(Exception):
     """ComfyUI is missing, errored, or timed out — surfaced as HTTP 503."""
 
 
+# --- multi-model try-on (dev-selectable backends) ---
+# "catvton" is the fast/live default and always present. "idm_vton" / "flux_kontext"
+# are higher-quality backends; they become usable once their workflow file exists
+# in workflows/ AND the model is in TRYON_MODELS (see run_tryon_model).
+MODEL_LABELS = {
+    "catvton": "CatVTON (SD1.5, fast)",
+    "idm_vton": "IDM-VTON (SDXL)",
+    "flux_kontext": "FLUX Kontext (FLUX.1-dev)",
+}
+MODEL_WORKFLOWS = {
+    "catvton": "catvton.json",
+    "idm_vton": "idm_vton.json",
+    "flux_kontext": "flux_kontext.json",
+}
+
+
+def _workflow_path(model: str) -> Path:
+    return Path(__file__).parent / "workflows" / MODEL_WORKFLOWS.get(model, f"{model}.json")
+
+
+def available_models() -> list[str]:
+    """Enabled + workflow-present models, in TRYON_MODELS order. CatVTON is the
+    guaranteed fallback (its workflow ships with the app)."""
+    out = [m for m in settings.tryon_models if m in MODEL_LABELS and _workflow_path(m).exists()]
+    if not out and _workflow_path("catvton").exists():
+        out = ["catvton"]
+    return out
+
+
+async def run_tryon_model(
+    model: str, person_bytes: bytes, garment: Garment, user_id: int
+) -> bytes:
+    """Render one garment with a named model backend. Unknown / unconfigured
+    backends raise ComfyUnavailable with a clear message (surfaced per-model)."""
+    if model == "catvton":
+        return await run_tryon(person_bytes, garment, user_id)
+    wf = _workflow_path(model)
+    if not wf.exists():
+        raise ComfyUnavailable(
+            f"model '{model}' not configured — workflow {wf.name} missing "
+            f"(see services/webapp/app/workflows/)"
+        )
+    raise ComfyUnavailable(
+        f"model '{model}' has a workflow but no renderer wired yet in tryon.py"
+    )
+
+
 async def run_tryon(person_bytes: bytes, garment: Garment, user_id: int) -> bytes:
     if not WORKFLOW_PATH.exists():
         raise ComfyUnavailable(

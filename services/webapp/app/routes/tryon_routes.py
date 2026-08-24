@@ -21,6 +21,45 @@ from ..store import clips, outfits, wardrobe
 router = APIRouter()
 
 
+@router.get("/api/tryon/models")
+def list_models() -> dict:
+    """Dev helper: which try-on model backends this host has (label + whether
+    it's configured). The dev console uses it to enable/disable model checkboxes."""
+    avail = set(tryon.available_models())
+    return {
+        "models": [
+            {"id": m, "label": tryon.MODEL_LABELS[m], "available": m in avail}
+            for m in tryon.MODEL_LABELS
+        ]
+    }
+
+
+def _is_dev_session(user: dict) -> bool:
+    """A dev session is the admin/test account itself, or the admin acting AS a
+    real user (impersonate). Model selection is a dev-console feature — normal
+    users always render with the fast default (CatVTON)."""
+    return (
+        user.get("role") in ("admin", "test")
+        or user.get("session_kind") == "impersonate"
+    )
+
+
+def _resolve_models(user: dict, raw: str | None) -> list[str]:
+    """Decide which models to render with. Non-dev sessions always get
+    ['catvton']; dev sessions may request any subset (multi = queued)."""
+    want = ["catvton"]
+    if _is_dev_session(user) and raw:
+        try:
+            parsed = [m.strip() for m in json.loads(raw)]
+            if parsed:
+                want = parsed
+        except Exception:  # noqa: BLE001 — bad JSON → default
+            want = ["catvton"]
+    avail = tryon.available_models()
+    chosen = [m for m in want if m in avail] or (["catvton"] if "catvton" in avail else avail)
+    return chosen
+
+
 @router.post("/api/tryon")
 async def do_tryon(
     garment_id: int = Form(...),
@@ -62,6 +101,7 @@ async def do_tryon_outfit(
     base_result: str | None = Form(None),
     prompt: str | None = Form(None),
     outfit_name: str | None = Form(None),
+    models: str | None = Form(None),
     user: dict = Depends(get_current_user),
 ) -> dict:
     """Try on a whole look: apply each garment in order, chaining the result
@@ -78,9 +118,16 @@ async def do_tryon_outfit(
     through the response and ready for promptable models (IDM-VTON / FLUX-Kontext
     upgrade path).
 
+    `models` (dev-only) is a JSON array of model backends to render with, e.g.
+    '["catvton","idm_vton"]'. When multiple are given they run in sequence (a
+    queue) and each returns its own result_url in `results` so the dev console
+    can compare outputs side by side. Non-dev sessions always render CatVTON.
+
     Any render produced from a look (non-empty garment_ids) is auto-saved to
     the Outfits page — one new saved outfit per render (no dedupe: re-rendering
-    a look creates a fresh card so it's always obvious the render was saved)."""
+    a look creates a fresh card so it's always obvious the render was saved).
+    For multi-model renders only the FIRST model's output is auto-saved to
+    Outfits; the rest are comparison renders (saved to uploads only)."""
     try:
         ids = [int(x) for x in json.loads(garment_ids)]
     except Exception as ex:  # noqa: BLE001
@@ -109,34 +156,50 @@ async def do_tryon_outfit(
     # context for follow-ups).
     person_photo_id = int(photo_id) if photo_id is not None else 0
     person_url = f"/api/photos/{person_photo_id}/image" if person_photo_id else ""
-    # Apply the look (garments) if any. With an empty look (Saved-image / chat
-    # refine mode) the base image passes through untouched — no garments are
-    # re-added to an already-rendered image. A promptable model (Phase 5) can
-    # later use `prompt` to actually alter the image here.
+    # Resolve the model(s) to render with (dev sessions can pick; everyone else
+    # gets CatVTON). With an empty look (Saved-image / chat refine mode) the
+    # base image passes through untouched — no garments are re-added to an
+    # already-rendered image, so no model runs.
+    models = _resolve_models(user, models)
+    results: list[dict] = []
     outfit_id: int | None = None
+    result_url = ""
     if ids:
-        try:
-            for gid in ids:
-                garment = wardrobe.get_visible(user["id"], gid)
-                if garment is None:
-                    raise HTTPException(404, f"garment {gid} not found in your wardrobe")
-                interactions.log(user["id"], gid, "tried_on", {"mode": "outfit"})
-                person_bytes = await tryon.run_tryon(person_bytes, garment, user["id"])
-        except tryon.ComfyUnavailable as ex:
-            raise HTTPException(503, str(ex)) from ex
-        out_dir = UPLOAD_DIR / str(user["id"]) / "out"
-        out_dir.mkdir(parents=True, exist_ok=True)
-        out_name = f"tryon_outfit_{int(time.time())}.png"
-        (out_dir / out_name).write_bytes(person_bytes)
-        result_url = f"/api/uploads/{out_name}"
-        outfit_id = _auto_save_outfit(
-            user["id"], ids, result_url, outfit_name or "",
-            person_photo_id=person_photo_id, person_url=person_url,
-        )
+        for mi, model in enumerate(models):
+            model_label = tryon.MODEL_LABELS.get(model, model)
+            try:
+                mbytes = person_bytes
+                for gid in ids:
+                    garment = wardrobe.get_visible(user["id"], gid)
+                    if garment is None:
+                        raise HTTPException(404, f"garment {gid} not found in your wardrobe")
+                    if mi == 0:
+                        interactions.log(user["id"], gid, "tried_on", {"mode": "outfit", "model": model})
+                    mbytes = await tryon.run_tryon_model(model, mbytes, garment, user["id"])
+            except tryon.ComfyUnavailable as ex:
+                results.append({"model": model, "label": model_label, "error": str(ex)})
+                continue
+            out_dir = UPLOAD_DIR / str(user["id"]) / "out"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            out_name = f"tryon_{model}_outfit_{int(time.time())}.png"
+            (out_dir / out_name).write_bytes(mbytes)
+            url = f"/api/uploads/{out_name}"
+            results.append({"model": model, "label": model_label, "result_url": url})
+            # the FIRST successful model's render becomes the primary result +
+            # the auto-saved Outfit card; extra models are comparison renders.
+            if result_url == "":
+                result_url = url
+                outfit_id = _auto_save_outfit(
+                    user["id"], ids, url, outfit_name or "",
+                    person_photo_id=person_photo_id, person_url=person_url,
+                )
+        if not results:
+            raise HTTPException(503, "all selected try-on models failed")
     elif base_result:
         # garment-free refine of an existing render — nothing new to draw, so
         # return the same image without writing a duplicate file.
         result_url = base_result
+        results = [{"model": "none", "label": "image", "result_url": base_result}]
     else:
         # first saved-image refine from a person photo: serve the photo as a
         # stable result so the UI can compare base vs result (one file only).
@@ -145,9 +208,11 @@ async def do_tryon_outfit(
         out_name = f"tryon_refine_{int(time.time())}.png"
         (out_dir / out_name).write_bytes(person_bytes)
         result_url = f"/api/uploads/{out_name}"
+        results = [{"model": "none", "label": "image", "result_url": result_url}]
     return {
-        "result_url": result_url, "garment_ids": ids, "prompt": prompt or "",
-        "outfit_id": outfit_id, "person_photo_id": person_photo_id, "person_url": person_url,
+        "result_url": result_url, "results": results, "garment_ids": ids,
+        "prompt": prompt or "", "outfit_id": outfit_id,
+        "person_photo_id": person_photo_id, "person_url": person_url,
     }
 
 

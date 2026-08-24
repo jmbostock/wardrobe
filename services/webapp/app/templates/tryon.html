@@ -77,6 +77,15 @@
         </div>
       </div>
       <label style="display:flex;gap:8px;align-items:center;text-transform:none;margin-bottom:8px"><input type="checkbox" id="owned-only-look" /> Owned only</label>
+      <div class="block" id="tryon-models-block" hidden>
+        <label>Try-on models <span class="dev-tag">dev</span></label>
+        <div class="row" id="tryon-models" style="flex-wrap:wrap">
+          <label><input type="checkbox" value="catvton" checked /> CatVTON (fast)</label>
+          <label><input type="checkbox" value="idm_vton" /> IDM-VTON (SDXL)</label>
+          <label><input type="checkbox" value="flux_kontext" /> FLUX Kontext</label>
+        </div>
+        <p class="muted">Pick one or more — multiple queue up so you can compare outputs side by side. Dev-only.</p>
+      </div>
       <div class="row" style="align-items:center;gap:10px">
         <input type="text" id="outfit-name" placeholder="outfit name (optional)" class="field" style="max-width:230px;min-width:0" />
         <button id="tryon-btn" style="flex:none">Try on</button>

@@ -165,6 +165,16 @@ body.auth-page .app-version { display:none; }  /* login screen is a centered car
 .compare img { width:100%; border-radius:10px; border:1px solid var(--line); background:#000; }
 .compare figcaption { color:var(--mut); font-size:12px; text-transform:uppercase; letter-spacing:.5px; }
 
+/* ---- dev multi-model comparison grid ---- */
+#tryon-models label { display:flex; gap:6px; align-items:center; text-transform:none; padding:4px 8px; border:1px solid var(--line); border-radius:8px; }
+#tryon-models input:disabled + span, #tryon-models label:has(input:disabled) { opacity:.45; }
+.dev-tag { font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:#fff; background:#6e40c9; padding:1px 5px; border-radius:4px; vertical-align:middle; }
+.model-results { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:12px; margin-top:12px; }
+.model-results figure { margin:0; display:grid; gap:4px; }
+.model-results img { width:100%; border-radius:10px; border:1px solid var(--line); background:#000; }
+.model-results figcaption { color:var(--mut); font-size:12px; text-transform:uppercase; letter-spacing:.5px; text-align:center; }
+.model-err { color:#d9534f; font-size:12px; border:1px dashed #d9534f; border-radius:10px; padding:8px; word-break:break-word; }
+
 /* ---- Saved-image mode (saved outfit renders) — centered column ---- */
 #savedimg-row { display:flex; flex-direction:column; align-items:center; gap:10px; }
 #savedimg-row select { width:100%; max-width:340px; }
@@ -303,6 +313,7 @@ body:has(#view-suggest) .app-version { display:none; }
   /* one full-width image per row on phones — the whole garment is visible */
   #look-picker .photos { grid-template-columns:1fr; gap:12px; }
   .compare { grid-template-columns:1fr; }
+  .model-results { grid-template-columns:1fr; }
   #savedimg-preview { max-width:100%; }
   /* suggest page: minimal chat — chips and compose live in the thread */
   .suggest-chat-card { flex:1; min-height:0; }

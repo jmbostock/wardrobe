@@ -25,6 +25,16 @@ class Settings:
         # optional fixed seed for reproducible try-on (None = random per request)
         seed = os.getenv("TRYON_SEED", "")
         self.tryon_seed: int | None = int(seed) if seed.isdigit() else None
+        # --- try-on model backends (dev-selectable) ---
+        # "catvton" (SD1.5, fast/live) is always available. Higher-quality
+        # backends ("idm_vton" SDXL, "flux_kontext") are opt-in per host because
+        # they need their weights + workflow installed on the GPU box. The dev
+        # console / test account can pick which to render with (multi = queue).
+        self.tryon_models = [
+            m.strip()
+            for m in os.getenv("TRYON_MODELS", "catvton").split(",")
+            if m.strip()
+        ]
         # --- DeepSeek API (stylist chat — zero VRAM, keeps GPU free for CatVTON) ---
         self.deepseek_api_key: str = os.getenv("DEEPSEEK_API_KEY", "")
         self.deepseek_base_url: str = os.getenv(
@@ -33,6 +43,23 @@ class Settings:
         self.deepseek_chat_model: str = os.getenv(
             "DEEPSEEK_CHAT_MODEL", "deepseek-v4-flash"
         )
+        # --- dev accounts (admin + test) ---
+        # OFF by default — production must never enable them. When on, two
+        # fixed dev logins exist on the login page (username, not email):
+        #   admin  / <DEV_ADMIN_PASSWORD>  — can switch into ANY user and act as
+        #            them (see/adjust everything, as if they were the user)
+        #   test   / <DEV_TEST_PASSWORD>   — a sandbox whose data is a COPY of a
+        #            real user (snapshot at copy time); changes only hit the copy
+        # Defaults are the requested dev creds; override via env if you like.
+        self.dev_admin_enabled: bool = os.getenv("DEV_ADMIN_ENABLED", "").strip().lower() in (
+            "1", "true", "yes", "on",
+        )
+        self.dev_admin_login: str = os.getenv("DEV_ADMIN_LOGIN", "admin")
+        self.dev_admin_password: str = os.getenv("DEV_ADMIN_PASSWORD", "Rimmer256!")
+        self.dev_admin_email: str = os.getenv("DEV_ADMIN_EMAIL", "admin@dev.local")
+        self.dev_test_login: str = os.getenv("DEV_TEST_LOGIN", "test")
+        self.dev_test_password: str = os.getenv("DEV_TEST_PASSWORD", "Rimmer256!")
+        self.dev_test_email: str = os.getenv("DEV_TEST_EMAIL", "test@dev.local")
 
 
 settings = Settings()
