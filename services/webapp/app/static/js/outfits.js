@@ -59,17 +59,26 @@ async function openDetail(o) {
   const img = $('od-img');
   if (o.result_url) img.src = await authImageUrl(o.result_url);
   else { img.src = ''; img.style.background = 'linear-gradient(135deg,#2a3340,#1a1f27)'; }
-  // source person photo shown as context (reference only, not part of the set)
-  const srcBox = $('od-source');
-  srcBox.innerHTML = '';
-  if (o.person_url) {
-    const src = await authImageUrl(o.person_url);
-    if (src) {
-      srcBox.innerHTML = '<label>Source photo</label><div class="od-src-row">' +
-        '<img class="od-src" src="' + src + '" alt="source photo" />' +
-        (o.person_photo_id ? '<span class="muted">photo #' + o.person_photo_id + '</span>' : '') +
-        '</div>';
+  // wardrobe items used to make this look — shown as a 2-wide grid of the
+  // garment photos below the render (the source person photo stays in the DB,
+  // it's just not shown on the card anymore)
+  const gridBox = $('od-garment-grid');
+  gridBox.innerHTML = '';
+  const gs = o.garments || [];
+  if (gs.length) {
+    let html = '';
+    for (const g of gs) {
+      const label = (g.category ? g.category.replace(/^./, (c) => c.toUpperCase()) + ': ' : '') + (g.name || '');
+      html += '<div class="od-g-item"><div class="od-g-img">' +
+        (g.has_image
+          ? '<img data-gid="' + g.id + '" alt="' + (g.name || '') + '">'
+          : '<div class="od-g-swatch" style="background:' + (g.color_hex || '#555') + '"></div>') +
+        '</div><div class="od-g-name">' + label + '</div></div>';
     }
+    gridBox.innerHTML = html;
+    gridBox.querySelectorAll('.od-g-img img[data-gid]').forEach((im) => {
+      authImageUrl('/api/wardrobe/' + im.dataset.gid + '/image').then((u) => { im.src = u; }).catch(() => {});
+    });
   }
   // motion clip: show the webp if it exists, plus a make-a-clip action.
   // If a clip is already running for this outfit (e.g. started on the Try-on

@@ -96,9 +96,14 @@ body.auth-page .app-version { display:none; }  /* login screen is a centered car
 #garment-detail .row .field { min-width:0; width:100%; }
 #garment-detail img.full { max-height:48vh; }
 #outfit-detail #od-clip img { max-height:300px; }
-#od-source label { font-size:12px; color:var(--mut); text-transform:uppercase; }
-.od-src-row { display:flex; align-items:center; gap:10px; margin-top:6px; }
-.od-src { width:72px; max-height:96px; object-fit:contain; background:#000; border-radius:8px; border:1px solid var(--line); flex:none; }
+/* saved-outfit detail: the wardrobe items that made the look — 2-wide grid of
+   garment photos below the render (source person photo stays in the DB only) */
+#od-garment-grid { display:grid; grid-template-columns:repeat(2, 1fr); gap:10px; }
+.od-g-item { border:1px solid var(--line); border-radius:10px; overflow:hidden; background:#0f1216; }
+.od-g-img { aspect-ratio:3/4; background:#000; }
+.od-g-img img { width:100%; height:100%; object-fit:contain; display:block; }
+.od-g-swatch { width:100%; height:100%; }
+.od-g-name { padding:6px 8px; font-size:12px; line-height:1.3; color:var(--txt); }
 /* lightbox — full-screen image viewer inside a sheet */
 #lightbox .panel { display:flex; flex-direction:column; }
 #lightbox .body { flex:1; display:flex; flex-direction:column; min-height:0; padding:0 18px 34px; }
