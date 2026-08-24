@@ -198,24 +198,19 @@ function currentLookIds() {
   return ids;
 }
 
-$('tryon-use-reco').addEventListener('click', async () => {
+// When the user taps "Try it on" from the Suggest chat, we arrive here with the
+// recommendation already in RECO_KEY — fill the look automatically (no separate
+// "Use recommendation" button needed anymore).
+function applySavedReco() {
   const status = $('look-status');
-  status.textContent = '…';
   let outfit = null;
   try { outfit = JSON.parse(localStorage.getItem(RECO_KEY) || 'null')?.outfit || null; } catch (e) { /* ignore */ }
-  if (!outfit) {
-    try {
-      const data = await apiJson('/api/recommend', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ activity: 'office', prompt: null }),
-      });
-      outfit = data.outfit;
-    } catch (e) { status.textContent = 'recommend failed: ' + e.message; return; }
-  }
+  if (!outfit || !Object.keys(outfit).length) return;
   applyOutfitToLook(outfit);
-  status.textContent = 'look set from recommendation — tweak if you like';
+  const label = (() => { try { return JSON.parse(localStorage.getItem(RECO_KEY))?.activity || ''; } catch (e) { return ''; } })();
+  status.textContent = 'look set from your suggestion' + (label ? ' (' + label + ')' : '') + ' — tweak if you like';
   autoPickBestPhoto();
-});
+}
 $('tryon-reset').addEventListener('click', () => {
   LOOK_ROLES.forEach((role) => {
     document.querySelector('.look-select[data-role="' + role + '"]').value = '';
@@ -435,7 +430,7 @@ async function loadSavedImages() {
     }
   } catch (e) { /* ignore */ }
 }
-loadSavedImages(); populateLook();
+loadSavedImages(); populateLook().then(() => { applySavedReco(); });
 // Show the quality score for the pre-selected (default) saved photo right away,
 // without making the user interact with the dropdown first.
 loadSavedPhotos().then(() => { checkPersonImage(); autoPickBestPhoto(); });
@@ -534,7 +529,7 @@ $('tryon-btn').addEventListener('click', async () => {
     document.querySelector('input[name=psrc][value=saved]').checked = true;
   }
   const ids = currentLookIds();
-  if (!ids.length) { alert('pick at least one garment in the look, or click "Use recommendation"'); return; }
+  if (!ids.length) { alert('pick at least one garment in the look, or tap "Try it on" from the Suggest chat'); return; }
   const btn = $('tryon-btn'); btn.disabled = true; btn.textContent = 'Rendering…';
   try { await runTryon(ids, null, null); }
   finally { btn.disabled = false; btn.textContent = 'Try on'; }

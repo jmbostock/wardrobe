@@ -26,9 +26,7 @@
       <label>Look</label>
       <p class="muted">Build it from your wardrobe (top / bottom / dress) or pull it from the recommendation. Only garments with a photo are listed.</p>
       <div class="row" style="margin-bottom:10px">
-        <button id="tryon-use-reco" class="ghost">Use recommendation</button>
         <button id="tryon-reset" class="ghost">Reset look</button>
-        <input type="text" id="outfit-name" placeholder="outfit name (optional)" class="field" style="max-width:230px" />
         <span class="muted" id="look-status"></span>
       </div>
       <div id="look">
@@ -79,7 +77,10 @@
         </div>
       </div>
       <label style="display:flex;gap:8px;align-items:center;text-transform:none;margin-bottom:8px"><input type="checkbox" id="owned-only-look" /> Owned only</label>
-      <button id="tryon-btn">Try on</button>
+      <div class="row" style="align-items:center;gap:10px">
+        <input type="text" id="outfit-name" placeholder="outfit name (optional)" class="field" style="max-width:230px;min-width:0" />
+        <button id="tryon-btn" style="flex:none">Try on</button>
+      </div>
       <div id="garment-qa" hidden></div>
     </div>
     <div id="result" style="margin-top:12px"></div>
