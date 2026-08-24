@@ -198,8 +198,9 @@ function _renderRecommendBubble({ intro, outfit }) {
 }
 
 // Suggested-prompt chips live INSIDE the scrollable chat (Open-WebUI style) —
-// no static compose bar eating screen space. Re-appended at the bottom after
-// every turn so they're always right where the user is looking.
+// no static compose bar eating screen space. They show on a fresh conversation
+// and are REMOVED once the first message/recommendation exists (no need to
+// keep offering the occasion pills mid-conversation).
 const _SUGGEST_CHIPS = [
   ['office', 'Office / work'],
   ['casual', 'Casual'],
@@ -209,9 +210,18 @@ const _SUGGEST_CHIPS = [
   ['formal', 'Formal'],
 ];
 
+let _conversationStarted = false;
+
 function _appendSuggestionChips() {
   const msgs = $('chat-messages');
   if (!msgs) return;
+  // once a conversation has started the pills are not needed — remove any
+  // leftover row and don't re-append
+  if (_conversationStarted) {
+    const old = msgs.querySelector('.suggest-chips');
+    if (old) old.remove();
+    return;
+  }
   const old = msgs.querySelector('.suggest-chips');
   if (old) old.remove();
   const row = document.createElement('div');
@@ -252,6 +262,7 @@ async function suggestOutfit(activity) {
     // weather of 87°F …") — the old #weather bar element was removed, so don't
     // try to write to it (would throw on a null node and mask the real outfit).
     _renderRecommendBubble({ intro: data.intro, outfit: data.outfit });
+    _conversationStarted = true;
   } catch (e) {
     _addBubble('assistant', `⚠ Couldn't put together a look: ${e.message}`);
     _scrollChat();
@@ -318,6 +329,7 @@ async function restoreChat() {
     if (!msgs.length) return; // empty session → keep the intro bubble
     _clearChat();
     msgs.forEach(renderMessage);
+    _conversationStarted = true; // restored thread → occasion pills not needed
   } catch (e) {
     // Stale / deleted session — start fresh
     _sessionId = null;
@@ -330,6 +342,7 @@ function _setStatus(txt) { $('chat-status').textContent = txt; }
 async function sendChat(message) {
   if (_chatStreaming || !message.trim()) return;
   _chatStreaming = true;
+  _conversationStarted = true;
   $('chat-send').disabled = true;
   _setStatus('Cher is typing…');
 
@@ -478,6 +491,7 @@ $('chat-clear').addEventListener('click', async () => {
   _sessionId = null;
   sessionStorage.removeItem('cher_session');
   _lastOutfit = null;
+  _conversationStarted = false;
   _clearChat();
   _introBubble('Hi! I\'m Cher, your personal stylist. Tap an occasion below or just ask me anything — I\'ll put together a look right here.');
   _appendSuggestionChips();

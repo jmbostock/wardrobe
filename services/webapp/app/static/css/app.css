@@ -245,8 +245,17 @@ body:has(#view-suggest) .app-version { display:none; }
 /* assistant chat replies that carry inline garment photos stack too */
 .chat-bubble.assistant:has(.chat-garments) { flex-direction:column; align-items:stretch; }
 .chat-bubble.assistant:has(.chat-garments) > .bubble-text { align-self:flex-start; }
-.recommend-outfit { display:grid; gap:8px; margin-top:10px; background:#0f1216;
+.recommend-outfit { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; background:#0f1216;
   border:1px solid var(--line); border-radius:12px; padding:10px; }
+/* compact single-line look (OpenWebUI vibe): each piece is a small vertical
+   tile — thumbnail on top, tiny label + name below — so the whole outfit
+   reads as one tight row instead of a tall labeled grid. */
+.recommend-outfit .outfit-slot-card { flex-direction:column; align-items:center; gap:6px;
+  padding:8px; min-width:76px; max-width:104px; flex:1 1 auto; text-align:center; }
+.recommend-outfit .slot-label { width:auto; font-size:10px; }
+.recommend-outfit .slot-img { width:56px; height:72px; }
+.recommend-outfit .slot-info { flex-direction:column; align-items:center; gap:2px; }
+.recommend-outfit .slot-name { font-size:11px; line-height:1.3; white-space:normal; overflow:visible; text-align:center; }
 .recommend-tryon { margin-top:0; flex:none; padding:9px 16px; border-radius:9px;
   background:var(--acc); color:#0f1216; font-weight:700; font-size:13px; }
 /* feedback + Try it on share ONE compact row (like a real chat action bar).
@@ -302,7 +311,8 @@ body:has(#view-suggest) .app-version { display:none; }
 @media (min-width: 641px) {
   .sheet .panel { border-left:1px solid var(--line); border-right:1px solid var(--line); }
   .sheet .grab { display:none; }
-  .recommend-outfit { grid-template-columns:repeat(2, 1fr); }
+  .recommend-outfit .outfit-slot-card { min-width:88px; max-width:120px; }
+  .recommend-outfit .slot-img { width:64px; height:82px; }
 }
 
 /* ---- PWA standalone (iPhone): clear the notch + home indicator ---- */
