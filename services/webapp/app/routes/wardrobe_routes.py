@@ -11,11 +11,13 @@ from .. import aifill, imglink, interactions, render, sharing
 from ..deps import get_current_user
 from ..media import (
     COLOR_HEX,
+    IMAGE_CACHE_CONTROL,
     SIZE_SCHEMAS,
     WARDROBE_CATEGORIES,
     fetch_product_image,
     fetch_url_bytes,
     garment_dict,
+    garment_image_file,
     garment_image_path,
     detect_color,
     infer_formality,
@@ -218,21 +220,22 @@ def garment_image_from_url(
 
 
 @router.get("/api/wardrobe/{garment_id}/image")
-def garment_image(garment_id: int, user: dict = Depends(get_current_user)) -> FileResponse:
+def garment_image(garment_id: int, size: str = "detail",
+                  user: dict = Depends(get_current_user)) -> FileResponse:
     # get_visible: family viewers can see images of garments shared to them
     g = wardrobe.get_visible(user["id"], garment_id)
     if g is None:
         raise HTTPException(404, "garment not found")
-    path = garment_image_path(g.user_id, garment_id)  # images live under the owner's dir
+    if size not in ("thumb", "detail", "full"):
+        size = "detail"
+    # images live under the owner's dir; thumb/detail are WebP, full is the original
+    path, mtype = garment_image_file(g.user_id, garment_id, size)
     if path is None:
         raise HTTPException(404, "no image for this garment")
-    media = {
-        ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-        ".webp": "image/webp", ".gif": "image/gif",
-    }.get(path.suffix.lower(), "application/octet-stream")
-    # no-store: rotate / upload rewrite the same file & URL — without this the
-    # browser serves the stale image and the detail card looks unchanged.
-    return FileResponse(path, media_type=media, headers={"Cache-Control": "no-store"})
+    # cached: grids/detail reuse the same URL (?v=<mtime> from the frontend); an
+    # edit rewrites the file -> new mtime -> new ?v -> new URL -> fresh fetch.
+    return FileResponse(path, media_type=mtype,
+                        headers={"Cache-Control": IMAGE_CACHE_CONTROL})
 
 
 @router.post("/api/wardrobe/{garment_id}/rotate")

@@ -3,10 +3,13 @@
 let editingItem = null;   // garment being edited in the detail card
 let wardrobeFilter = 'all';
 let wardrobeSort = 'newest';
-// cache-busting garment image URL — rotate/upload rewrite the same file/URL, so
-// a ?v= param forces the browser to fetch the fresh image (otherwise the detail
-// card keeps showing the old cached photo after Rotate 180°).
-function gimg(id) { return '/api/wardrobe/' + id + '/image?v=' + Date.now(); }
+// Versioned, size-aware garment image URL. The ?v=<mtime> is the cache-buster:
+// rotate/upload rewrite the file -> the backend returns a fresh image_version ->
+// this URL changes -> the browser fetches the new image instead of the cached one.
+// size=thumb for grids (~300px WebP), size=detail for the sheet (~768px WebP).
+function gimg(g, size) {
+  return '/api/wardrobe/' + g.id + '/image?size=' + (size || 'thumb') + '&v=' + (g.image_version || 0);
+}
 
 // 64-bit dHash Hamming distance (hex-string phash). Lower = more similar.
 function phashHamming(a, b) {
@@ -41,6 +44,66 @@ function similarOrder(items) {
   return out.concat(rest);
 }
 
+// Build the meta block for a grid card (safe textContent, no HTML injection).
+function buildMeta(g) {
+  const meta = document.createElement('div'); meta.className = 'meta';
+  const badge = document.createElement('span'); badge.className = 'badge'; badge.textContent = g.category;
+  const name = document.createElement('div'); name.textContent = g.name; name.style.fontSize = '13px';
+  meta.appendChild(badge); meta.appendChild(name);
+  const facts = [];
+  if (g.brand) facts.push(g.brand);
+  if (g.sizes) facts.push('sizes ' + g.sizes);
+  if (facts.length) {
+    const d = document.createElement('div'); d.className = 'muted'; d.style.fontSize = '12px';
+    d.textContent = facts.join(' · ');
+    meta.appendChild(d);
+  }
+  if (g.near_dup_of) {
+    const n = document.createElement('div'); n.className = 'muted'; n.style.fontSize = '12px'; n.style.color = '#d4a72c';
+    n.textContent = '⚠ similar to ' + g.near_dup_of.name;
+    meta.appendChild(n);
+  }
+  if (!g.owned) {
+    const want = document.createElement('span'); want.className = 'badge'; want.textContent = 'to buy';
+    want.style.background = '#d4a72c';
+    meta.appendChild(want);
+  }
+  if (g.shared) {
+    const sh = document.createElement('span'); sh.className = 'badge'; sh.textContent = 'shared';
+    sh.style.background = '#2ea043';
+    meta.appendChild(sh);
+  }
+  if (g.rating) {
+    const r = document.createElement('div'); r.className = 'muted'; r.style.fontSize = '12px';
+    r.textContent = '★ ' + g.rating + '/10';
+    meta.appendChild(r);
+  }
+  return meta;
+}
+
+// Refresh ONE grid card after an edit — no full-grid reload, no re-downloading
+// every other garment's image. Image only re-fetches when the version changed
+// (so a name/rating save never touches the network for the photo).
+function updateCard(g) {
+  const card = document.querySelector('.photo[data-gid="' + g.id + '"]');
+  if (!card) return;
+  card._garment = g;
+  const img = card.querySelector('img');
+  if (img) {
+    if (g.has_image) {
+      const v = String(g.image_version || 0);
+      if (img.dataset.v !== v) {
+        img.dataset.v = v;
+        setAuthImage(img, gimg(g, 'thumb'));
+      }
+    } else {
+      img.src = ''; img.style.background = g.color_hex || '#333';
+    }
+  }
+  const meta = card.querySelector('.meta');
+  if (meta) meta.replaceWith(buildMeta(g));
+}
+
 // ---------- grid ----------
 async function loadWardrobe() {
   const grid = $('wardrobe');
@@ -67,50 +130,21 @@ async function loadWardrobe() {
   grid.innerHTML = '';
   for (const g of items) {
     const card = document.createElement('div'); card.className = 'photo';
-    const img = document.createElement('img'); img.alt = g.name;
+    card.dataset.gid = g.id; card._garment = g;
+    const img = document.createElement('img'); img.alt = g.name; img.loading = 'lazy';
     if (g.has_image) {
-      const url = await authImageUrl(gimg(g.id));
-      img.src = url;
+      img.dataset.v = g.image_version || 0;
+      // parallel + cached thumbnails (~300px WebP) — no serial await, so the
+      // grid renders immediately and images stream in concurrently
+      setAuthImage(img, gimg(g, 'thumb'));
     } else {
       img.style.background = g.color_hex || '#333';
       img.title = 'no image yet — add one in the detail card';
     }
-    const meta = document.createElement('div'); meta.className = 'meta';
-    const badge = document.createElement('span'); badge.className = 'badge'; badge.textContent = g.category;
-    const name = document.createElement('div'); name.textContent = g.name; name.style.fontSize = '13px';
-    meta.appendChild(badge); meta.appendChild(name);
-    const facts = [];
-    if (g.brand) facts.push(g.brand);
-    if (g.sizes) facts.push('sizes ' + g.sizes);
-    if (facts.length) {
-      const d = document.createElement('div'); d.className = 'muted'; d.style.fontSize = '12px';
-      d.textContent = facts.join(' · ');
-      meta.appendChild(d);
-    }
-    if (g.near_dup_of) {
-      const n = document.createElement('div'); n.className = 'muted'; n.style.fontSize = '12px'; n.style.color = '#d4a72c';
-      n.textContent = '⚠ similar to ' + g.near_dup_of.name;
-      meta.appendChild(n);
-    }
-    if (!g.owned) {
-      const want = document.createElement('span'); want.className = 'badge'; want.textContent = 'to buy';
-      want.style.background = '#d4a72c';
-      meta.appendChild(want);
-    }
-    if (g.shared) {
-      const sh = document.createElement('span'); sh.className = 'badge'; sh.textContent = 'shared';
-      sh.style.background = '#2ea043';
-      meta.appendChild(sh);
-    }
-    if (g.rating) {
-      const r = document.createElement('div'); r.className = 'muted'; r.style.fontSize = '12px';
-      r.textContent = '★ ' + g.rating + '/10';
-      meta.appendChild(r);
-    }
     // outfits-style: clicking the card opens the detail card (no Edit button)
-    card.addEventListener('click', () => openGarmentDetail(g));
+    card.addEventListener('click', () => openGarmentDetail(card._garment));
     card.style.cursor = 'pointer';
-    card.appendChild(img); card.appendChild(meta);
+    card.appendChild(img); card.appendChild(buildMeta(g));
     grid.appendChild(card);
   }
 }
@@ -263,7 +297,9 @@ function openGarmentDetail(g) {
   const img = $('gd-img');
   img.style.background = g.color_hex || '#333'; img.src = '';
   if (g.has_image) {
-    authImageUrl(gimg(g.id)).then((u) => { img.src = u; }).catch(() => {});
+    // detail-size WebP — same cached file as the grid at a higher resolution,
+    // so it appears immediately (browser cache) and never blocks the sheet
+    setAuthImage(img, gimg(g, 'detail'));
   }
   $('gd-near').textContent = g.near_dup_of
     ? '⚠ looks similar to "' + g.near_dup_of.name + '" — possible duplicate'
@@ -274,8 +310,7 @@ function openGarmentDetail(g) {
 function closeGarmentDetail() { closeSheet($('garment-detail')); editingItem = null; }
 async function refreshDetailImage() {
   if (editingItem && editingItem.has_image) {
-    try { $('gd-img').src = await authImageUrl(gimg(editingItem.id)); }
-    catch (e) { /* ignore */ }
+    setAuthImage($('gd-img'), gimg(editingItem, 'detail'));
   }
 }
 $('gd-close').addEventListener('click', closeGarmentDetail);
@@ -289,7 +324,8 @@ $('gd-file').addEventListener('change', async () => {
     const resp = await apiJson('/api/wardrobe/' + editingItem.id + '/image', { method: 'POST', body: fd });
     $('gd-status').textContent = 'photo saved'; $('gd-file').value = '';
     if (resp.near_dup_of) toast('⚠ near-duplicate of "' + resp.near_dup_of.name + '"');
-    refreshDetailImage(); loadWardrobe();
+    editingItem = Object.assign({}, editingItem, resp);
+    refreshDetailImage(); updateCard(editingItem);
   } catch (e) { alert(e.message); }
 });
 $('gd-url-btn').addEventListener('click', async () => {
@@ -301,7 +337,8 @@ $('gd-url-btn').addEventListener('click', async () => {
     });
     $('gd-status').textContent = 'photo saved'; $('gd-url').value = '';
     if (resp.near_dup_of) toast('⚠ near-duplicate of "' + resp.near_dup_of.name + '"');
-    refreshDetailImage(); loadWardrobe();
+    editingItem = Object.assign({}, editingItem, resp);
+    refreshDetailImage(); updateCard(editingItem);
   } catch (e) { alert(e.message); }
 });
 $('gd-rotate').addEventListener('click', async () => {
@@ -313,13 +350,13 @@ $('gd-rotate').addEventListener('click', async () => {
     const resp = await apiJson('/api/wardrobe/' + editingItem.id + '/rotate', { method: 'POST' });
     $('gd-status').textContent = 'rotated 90°';
     if (resp.near_dup_of) toast('⚠ near-duplicate of "' + resp.near_dup_of.name + '"');
-    editingItem.near_dup_of = resp.near_dup_of || null;
+    editingItem = Object.assign({}, editingItem, resp);
     $('gd-near').textContent = resp.near_dup_of
       ? '⚠ looks similar to "' + resp.near_dup_of.name + '" — possible duplicate'
       : '';
-    await refreshDetailImage();  // fresh, cache-busted fetch -> shows rotated photo
+    await refreshDetailImage();  // fresh, versioned URL -> shows rotated photo
     img.style.opacity = '1';
-    loadWardrobe();
+    updateCard(editingItem);
   } catch (e) { img.style.opacity = '1'; $('gd-status').textContent = e.message; }
 });
 // family sharing + per-person fit (rec-engine v2) — quick actions in the detail card
@@ -370,11 +407,12 @@ $('gd-save').addEventListener('click', async () => {
     owned: $('gd-owned').checked,
   };
   try {
-    await apiJson('/api/wardrobe/' + editingItem.id, {
+    const resp = await apiJson('/api/wardrobe/' + editingItem.id, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
     });
     $('gd-status').textContent = 'saved'; toast('garment updated');
-    loadWardrobe();
+    editingItem = Object.assign({}, editingItem, resp);
+    updateCard(editingItem);
   } catch (e) { $('gd-status').textContent = e.message; }
 });
 $('gd-delete').addEventListener('click', async () => {
@@ -382,7 +420,9 @@ $('gd-delete').addEventListener('click', async () => {
   if (!confirm('delete "' + editingItem.name + '"?')) return;
   try { await apiJson('/api/wardrobe/' + editingItem.id, { method: 'DELETE' }); toast('deleted'); }
   catch (e) { alert(e.message); }
-  closeGarmentDetail(); loadWardrobe();
+  const card = document.querySelector('.photo[data-gid="' + editingItem.id + '"]');
+  if (card) card.remove();
+  closeGarmentDetail();
 });
 
 // ---------- add garment form ----------

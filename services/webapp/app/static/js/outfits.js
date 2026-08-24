@@ -18,10 +18,10 @@ async function loadSavedOutfits() {
   box.innerHTML = '';
   for (const o of items) {
     const card = document.createElement('div'); card.className = 'photo';
-    const img = document.createElement('img'); img.alt = o.name;
+    const img = document.createElement('img'); img.alt = o.name; img.loading = 'lazy';
     if (o.result_url) {
-      const u = await authImageUrl(o.result_url);
-      img.src = u;
+      // thumb WebP variant of the render (renders are immutable URLs — cacheable)
+      setAuthImage(img, o.result_url + '?size=thumb');
     } else {
       img.style.background = 'linear-gradient(135deg,#2a3340,#1a1f27)';
       img.title = 'no render for this outfit yet';
@@ -57,7 +57,7 @@ async function openDetail(o) {
   $('od-status').textContent = '';
   $('od-garments').textContent = (o.garments || []).map((g) => g.name).join(' + ') || '—';
   const img = $('od-img');
-  if (o.result_url) img.src = await authImageUrl(o.result_url);
+  if (o.result_url) setAuthImage(img, o.result_url + '?size=detail');
   else { img.src = ''; img.style.background = 'linear-gradient(135deg,#2a3340,#1a1f27)'; }
   // wardrobe items used to make this look — shown as a 2-wide grid of the
   // garment photos below the render (the source person photo stays in the DB,
@@ -65,6 +65,7 @@ async function openDetail(o) {
   const gridBox = $('od-garment-grid');
   gridBox.innerHTML = '';
   const gs = o.garments || [];
+  const gmap = {}; gs.forEach((g) => { gmap[g.id] = g; });
   if (gs.length) {
     let html = '';
     for (const g of gs) {
@@ -77,7 +78,9 @@ async function openDetail(o) {
     }
     gridBox.innerHTML = html;
     gridBox.querySelectorAll('.od-g-img img[data-gid]').forEach((im) => {
-      authImageUrl('/api/wardrobe/' + im.dataset.gid + '/image').then((u) => { im.src = u; }).catch(() => {});
+      const g = gmap[Number(im.dataset.gid)];
+      setAuthImage(im, g ? garmentImg(g, 'thumb')
+                        : ('/api/wardrobe/' + im.dataset.gid + '/image?size=thumb&v=0'));
     });
   }
   // motion clip: show the webp if it exists, plus a make-a-clip action.
@@ -86,8 +89,9 @@ async function openDetail(o) {
   const clipBox = $('od-clip');
   clipBox.innerHTML = '';
   if (o.motion_url) {
-    const c = document.createElement('img'); c.src = await authImageUrl(o.motion_url); c.alt = 'motion clip';
+    const c = document.createElement('img'); c.alt = 'motion clip';
     c.style.width = '100%'; c.style.borderRadius = '10px';
+    setAuthImage(c, o.motion_url + '?size=detail');
     clipBox.appendChild(c);
   }
   if (o.result_url) {

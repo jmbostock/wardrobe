@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import io
 import math
+import os
 import statistics
 from pathlib import Path
 from urllib.parse import urljoin
@@ -24,6 +25,24 @@ from .imglink import (
     is_image_bytes,
 )
 from .store import wardrobe
+
+# --------------------------------------------------------------------------- #
+# Responsive image sizes (served per viewing context; iPhone-first)
+#   thumb  ~300px  -> grids / chat cards / pickers
+#   detail ~768px  -> detail sheets (enough for 3x Retina phones)
+#   full   original -> lightbox / try-on pipeline (server-side)
+# Variants are lazy-generated WebP files next to the original:
+#   <gid>.thumb.webp / <gid>.detail.webp
+# --------------------------------------------------------------------------- #
+THUMB_PX = 300
+DETAIL_PX = 768
+WEBP_QUALITY = 80
+VARIANT_SUFFIXES = (".thumb.webp", ".detail.webp")
+
+# Cache: private (authed images, browser-only cache — never a shared CDN cache)
+# + max-age + immutable. Freshness comes from the ?v=<mtime> version in the URL:
+# an edit rewrites the file -> new mtime -> new URL -> browser fetches fresh.
+IMAGE_CACHE_CONTROL = "private, max-age=86400, immutable"
 
 # iPhone photos come in as HEIC — pillow-heif adds a PIL opener so we can
 # decode (and normalize to JPEG on save) without any system libheif.
@@ -239,15 +258,101 @@ def refine_color(coarse: str, data: bytes) -> str:
     return px if px in family else base
 
 
+def _is_variant(p: Path) -> bool:
+    """True for our generated <stem>.thumb.webp / .detail.webp files — these
+    must never be mistaken for the original image (e.g. by garment_image_path)."""
+    name = p.name.lower()
+    return any(name.endswith(sfx) for sfx in VARIANT_SUFFIXES)
+
+
 def garment_image_path(user_id: int, garment_id: int) -> Path | None:
-    """Find the on-disk image for a garment (any supported extension)."""
+    """Find the on-disk ORIGINAL image for a garment (any supported extension),
+    skipping generated WebP variants."""
     d = WARDROBE_DIR / str(user_id)
     if not d.is_dir():
         return None
     for p in sorted(d.glob(f"{garment_id}.*")):
-        if p.is_file() and p.suffix.lower() in IMAGE_EXTS:
+        if p.is_file() and p.suffix.lower() in IMAGE_EXTS and not _is_variant(p):
             return p
     return None
+
+
+def media_type_for(path: Path) -> str:
+    return {
+        ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+        ".webp": "image/webp", ".gif": "image/gif",
+    }.get(path.suffix.lower(), "application/octet-stream")
+
+
+def _atomic_write_webp(img, dest: Path) -> None:
+    """Save a PIL image as WebP next to `dest`, atomically (tmp + replace) so
+    concurrent lazy-generation can't serve a half-written file."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dest.with_name(dest.name + ".tmp")
+    img.save(tmp, "WEBP", quality=WEBP_QUALITY, method=4)
+    os.replace(tmp, dest)
+
+
+def _variant_path(orig: Path, size: str) -> Path:
+    return orig.with_name(f"{orig.stem}.{size}.webp")
+
+
+def image_variant(orig: Path, size: str = "thumb") -> Path:
+    """Return a WebP variant of `orig` at the requested size, generating it
+    lazily (and caching it to disk) on first request. Falls back to the
+    original if the file can't be decoded."""
+    px = DETAIL_PX if size == "detail" else THUMB_PX
+    vp = _variant_path(orig, size)
+    if not vp.is_file():
+        try:
+            with Image.open(io.BytesIO(orig.read_bytes())) as img:
+                img = ImageOps.exif_transpose(img).convert("RGB")
+                img.thumbnail((px, px), Image.LANCZOS)
+                _atomic_write_webp(img, vp)
+        except Exception:  # noqa: BLE001 — thumbnailing is best-effort
+            return orig
+    return vp
+
+
+def _write_variants(data: bytes, orig: Path) -> None:
+    """Generate both thumb+detail WebP variants beside `orig` from raw bytes
+    (used at save time so first serve is instant). Best-effort — never raises."""
+    try:
+        img = Image.open(io.BytesIO(data))
+        img = ImageOps.exif_transpose(img).convert("RGB")
+        for size, px in (("thumb", THUMB_PX), ("detail", DETAIL_PX)):
+            im = img.copy()
+            im.thumbnail((px, px), Image.LANCZOS)
+            _atomic_write_webp(im, _variant_path(orig, size))
+    except Exception:  # noqa: BLE001 — thumbnails are best-effort
+        pass
+
+
+def garment_image_file(
+    user_id: int, garment_id: int, size: str = "detail"
+) -> tuple[Path | None, str]:
+    """Resolve the file + media type to serve for a garment image at a size.
+    size: 'thumb' | 'detail' | 'full' (original). Returns (None, '') if none."""
+    orig = garment_image_path(user_id, garment_id)
+    if orig is None:
+        return None, ""
+    if size == "full":
+        return orig, media_type_for(orig)
+    path = image_variant(orig, size if size in ("thumb", "detail") else "detail")
+    return path, media_type_for(path)
+
+
+def garment_image_version(user_id: int, garment_id: int) -> int:
+    """mtime of the original image, used as the ?v= cache-buster. An edit that
+    rewrites the file bumps the version -> the frontend requests a new URL ->
+    the browser fetches fresh instead of serving the cached old image."""
+    p = garment_image_path(user_id, garment_id)
+    if p is None:
+        return 0
+    try:
+        return int(p.stat().st_mtime)
+    except OSError:
+        return 0
 
 
 def validate_image(data: bytes) -> str:
@@ -352,6 +457,8 @@ def save_garment_image(user_id: int, garment_id: int, data: bytes, ext: str,
         ext = norm_ext
     path = d / f"{garment_id}.{ext}"
     path.write_bytes(data)
+    # generate responsive WebP variants (thumb/detail) so grids never serve full-res
+    _write_variants(data, path)
     # record image + perceptual hash + color fingerprint for near-dup detection
     wardrobe.update(user_id, garment_id, image_path=path.name,
                     phash=phash.image_phash(data), color_sig=phash.image_color_class(data))
@@ -521,7 +628,9 @@ def garment_dict(user_id: int, g) -> dict:
     d = g.to_dict()
     # images live under the OWNER's wardrobe dir — shared garments must resolve
     # to g.user_id (== user_id for the owner, owner for a family viewer)
-    d["has_image"] = garment_image_path(g.user_id, g.id) is not None
+    orig = garment_image_path(g.user_id, g.id)
+    d["has_image"] = orig is not None
+    d["image_version"] = int(orig.stat().st_mtime) if orig else 0
     # nearest existing garment this one is a near-duplicate of (for "similar to
     # X" notes) — scoped to the owner's collection, same category + dominant color
     nd = (nearest_dup(g.user_id, g.phash, g.color_sig, exclude_id=g.id,

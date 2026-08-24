@@ -99,8 +99,10 @@ function _renderChatGarments(bubble, items) {
   grid.insertAdjacentHTML('beforeend', html);
   grid.querySelectorAll('.slot-img').forEach((img) => {
     if (img.src) return;
-    authImageUrl('/api/wardrobe/' + img.dataset.gid + '/image')
-      .then((u) => { img.src = u; }).catch(() => {});
+    const it = items.find((x) => String(x.id) === img.dataset.gid);
+    setAuthImage(img, (it && it.image_version)
+      ? ('/api/wardrobe/' + it.id + '/image?size=thumb&v=' + it.image_version)
+      : ('/api/wardrobe/' + img.dataset.gid + '/image?size=thumb&v=0'));
   });
   // every recommendation gets thumbs up/down + Try it on (same as the
   // Suggest-button card) so the engine learns from chat picks too
@@ -184,9 +186,15 @@ function _renderRecommendBubble({ intro, outfit }) {
     (outfit.accessories || []).forEach((g) => { html += _garmentCard(g, 'accessory'); });
     grid.innerHTML = html;
     wrap.appendChild(grid);
-    // load the garment thumbnails (async; authImageUrl already cache-busts)
+    // load the garment thumbnails (parallel, cached, versioned)
     grid.querySelectorAll('.slot-img').forEach((img) => {
-      authImageUrl('/api/wardrobe/' + img.dataset.gid + '/image').then((u) => { img.src = u; }).catch(() => {});
+      const g = outfit.top && outfit.top.id === Number(img.dataset.gid) ? outfit.top :
+        (outfit.bottom && outfit.bottom.id === Number(img.dataset.gid) ? outfit.bottom :
+        (outfit.outerwear && outfit.outerwear.id === Number(img.dataset.gid) ? outfit.outerwear :
+        (outfit.footwear && outfit.footwear.id === Number(img.dataset.gid) ? outfit.footwear :
+        (outfit.accessories || []).find((x) => String(x.id) === img.dataset.gid)))));
+      setAuthImage(img, g ? garmentImg(g, 'thumb')
+                         : ('/api/wardrobe/' + img.dataset.gid + '/image?size=thumb&v=0'));
     });
     // one compact action row: thumbs + Try it on (like a chat action bar)
     _addFeedbackActions(wrap, outfit);

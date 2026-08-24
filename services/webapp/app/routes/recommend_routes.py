@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from .. import db, interactions, recommender, stylist, weather
 from ..deps import get_current_user
-from ..media import garment_image_path
+from ..media import garment_image_path, garment_image_version
 from ..recommender import Weather
 from ..store import wardrobe
 
@@ -113,6 +113,7 @@ def _with_image_flags(user_id: int, outfit: dict) -> dict:
     def flag(g):
         if isinstance(g, dict) and g.get("id"):
             g["has_image"] = garment_image_path(user_id, g["id"]) is not None
+            g["image_version"] = garment_image_version(user_id, g["id"])
         return g
     for key, val in outfit.items():
         if isinstance(val, list):
@@ -442,7 +443,9 @@ def _resolve_outfit_items(user_id: int, names: list[str]) -> list[dict]:
         g = by_name.get(n)
         if g and g.id not in seen:
             seen.add(g.id)
-            items.append({"id": g.id, "name": g.name, "category": g.category})
+            items.append({"id": g.id, "name": g.name, "category": g.category,
+                          "has_image": garment_image_path(user_id, g.id) is not None,
+                          "image_version": garment_image_version(user_id, g.id)})
     return items[:6]
 
 

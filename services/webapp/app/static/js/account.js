@@ -1,4 +1,87 @@
-// account page — profile, location, password, person photos, sign out.
+// account page — profile, location, password, person photos, sign out,
+// plus the DEV console for the `admin` account (act as any user) and the
+// `test` sandbox (a copy of a user's data that never touches real accounts).
+const ADMIN_TOKEN_KEY = 'altacloset_admin_token';
+function getAdminToken() { return localStorage.getItem(ADMIN_TOKEN_KEY); }
+function setAdminToken(t) { t ? localStorage.setItem(ADMIN_TOKEN_KEY, t) : localStorage.removeItem(ADMIN_TOKEN_KEY); }
+
+async function adminApi(path, opts = {}) {
+  const headers = new Headers(opts.headers || {});
+  const t = getAdminToken();
+  if (t) headers.set('Authorization', 'Bearer ' + t);
+  const res = await fetch(path, { ...opts, headers });
+  if (!res.ok) {
+    const j = await res.json().catch(() => ({}));
+    throw new Error(typeof j.detail === 'string' ? j.detail : 'http ' + res.status);
+  }
+  return res.json();
+}
+
+// ---------- DEV console (admin account only) ----------
+async function loadDevUsers() {
+  let data;
+  try { data = await adminApi('/api/admin/users'); }
+  catch (e) { $('dev-status').textContent = e.message; return; }
+  const sel = $('dev-user'); sel.innerHTML = '';
+  for (const u of data.users || []) {
+    const o = document.createElement('option');
+    o.value = u.id;
+    o.textContent = `${u.email}  ·  ${u.garment_count ?? 0} garments, ${u.outfit_count ?? 0} outfits`;
+    sel.appendChild(o);
+  }
+  loadTestInfo();
+}
+
+async function loadTestInfo() {
+  let info;
+  try { info = await adminApi('/api/admin/test'); }
+  catch (e) { $('dev-test-info').textContent = ''; return; }
+  const c = info.counts || {};
+  $('dev-test-info').textContent =
+    `test sandbox (${info.email}) — ${c.garments ?? 0} garments, ${c.outfits ?? 0} outfits copied.`;
+}
+
+async function devAct() {
+  const userId = Number($('dev-user').value);
+  if (!userId) return;
+  setAdminToken(getToken());   // stash the admin token so "Exit to admin" can return
+  try {
+    const data = await adminApi('/api/admin/impersonate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: userId }),
+    });
+    setToken(data.token);      // active token now acts AS that user
+    location.href = '/suggest';
+  } catch (e) { setAdminToken(null); $('dev-status').textContent = e.message; }
+}
+
+async function refreshTestCopy() {
+  const userId = Number($('dev-user').value);
+  if (!userId) return;
+  $('dev-status').textContent = 'copying…';
+  try {
+    const data = await adminApi('/api/admin/test-copy', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: userId }),
+    });
+    $('dev-status').textContent = 'test copy refreshed from ' + data.copied_from;
+    toast('test sandbox updated — copy of ' + data.copied_from);
+    loadTestInfo();
+  } catch (e) { $('dev-status').textContent = e.message; }
+}
+
+function devExit() {
+  const adminToken = getAdminToken();
+  setToken(adminToken || null);   // back to the admin token (or signed out)
+  location.href = '/account';
+}
+
+async function devAdminExit() {
+  try { await api('/api/auth/logout', { method: 'POST' }); } catch (e) { /* ignore */ }
+  setToken(null); setAdminToken(null);
+  location.href = '/login';
+}
+
 async function loadAccount() {
   try {
     const a = await apiJson('/api/account');
@@ -74,12 +157,16 @@ async function loadPhotos() {
     grid.innerHTML = '';
     if (!items.length) { grid.innerHTML = '<p class="muted">no photos yet — upload one</p>'; return; }
     for (const p of items) {
-      const url = await authImageUrl(p.url);
       const card = document.createElement('div');
       card.className = 'photo';
       const img = document.createElement('img');
-      img.src = url; img.alt = 'photo ' + p.id;
-      img.addEventListener('click', () => openLightbox(url));
+      img.alt = 'photo ' + p.id; img.loading = 'lazy';
+      setAuthImage(img, p.url + '?size=thumb');
+      img.addEventListener('click', () => {
+        // lightbox shows the full-res original, not the grid thumb
+        openLightbox('');
+        setAuthImage($('lightbox-img'), p.url + '?size=full');
+      });
       const meta = document.createElement('div'); meta.className = 'meta';
       if (p.is_default) { const b = document.createElement('span'); b.className = 'badge'; b.textContent = 'default'; meta.appendChild(b); }
       const desc = document.createElement('input');
@@ -157,4 +244,35 @@ async function attachPhotoQa(card, photoId) {
   } catch (e) { /* ignore */ }
 }
 
-loadAccount(); loadPhotos();
+// ---------- boot: admin / acting-as / test sandbox / normal user ----------
+async function boot() {
+  let me;
+  try { me = await apiJson('/api/auth/me'); } catch (e) { return; }
+  const isAdmin = !!(me && me.admin);
+  const acting = !!(me && me.dev && me.dev.acting_as);
+  const isTest = !!(me && me.dev && me.dev.test_copy);
+
+  // dev card state
+  $('dev-card').hidden = !(isAdmin || acting || isTest);
+  $('dev-admin-console').hidden = !isAdmin;
+  $('dev-acting').hidden = !acting;
+  $('dev-test-note').hidden = !isTest;
+  if (acting && me.dev) $('dev-acting-email').textContent = me.dev.acting_as.email || 'a user';
+  if (isAdmin) loadDevUsers();
+
+  // normal account content only makes sense for a real user (or acting-as /
+  // test — both resolve to a user row and can see their own account page)
+  if (isAdmin) {
+    for (const card of document.querySelectorAll('#view-account > .card:not(#dev-card)')) card.hidden = true;
+  } else {
+    loadAccount();
+    loadPhotos();
+  }
+}
+
+$('dev-act').addEventListener('click', devAct);
+$('dev-test-copy').addEventListener('click', refreshTestCopy);
+$('dev-admin-exit').addEventListener('click', devAdminExit);
+$('dev-exit').addEventListener('click', devExit);
+
+boot();

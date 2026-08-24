@@ -26,12 +26,14 @@ function roleMatches(role, category) {
 }
 let lookPickingRole = null;  // which category the look picker modal is open for
 // cache-busting garment image URL (rotate/upload rewrite the same file/URL).
-function gimg(id) { return '/api/wardrobe/' + id + '/image?v=' + Date.now(); }
+function gimg(g, size) {
+  return '/api/wardrobe/' + g.id + '/image?size=' + (size || 'thumb') + '&v=' + (g.image_version || 0);
+}
 
 async function photoBaseUrl(pid) {
   const p = savedPhotos.find((x) => String(x.id) === String(pid));
   if (!p) return null;
-  return authImageUrl(p.url);
+  return authImageUrl(p.url + '?size=detail');
 }
 
 function setSelectedSaved() {
@@ -61,7 +63,7 @@ function hideCompare() {
 async function showSavedImagePreview() {
   const img = $('savedimg-preview');
   if (!selectedSaved) { img.hidden = true; img.src = ''; return; }
-  const url = await authImageUrl(selectedSaved.result_url);
+  const url = await authImageUrl(selectedSaved.result_url + '?size=detail');
   if (url) { img.src = url; img.hidden = false; }
   // Fresh saved-image selection: drop any stale render so the previous image
   // isn't mistaken for the selected saved image, and the chat bases on THIS one.
@@ -107,7 +109,7 @@ function syncLookRows() {
       thumb.innerHTML = '';
       if (g && g.has_image) {
         const img = document.createElement('img'); img.alt = g.name;
-        authImageUrl(gimg(g.id)).then((u) => { img.src = u; }).catch(() => {});
+        setAuthImage(img, gimg(g, 'thumb'));
         thumb.appendChild(img);
       }
     }
@@ -143,8 +145,8 @@ function openLookPicker(role) {
   for (const g of items) {
     const card = document.createElement('div'); card.className = 'photo';
     const img = document.createElement('img'); img.alt = g.name;
-    img.style.cursor = 'pointer';
-    authImageUrl(gimg(g.id)).then((u) => { img.src = u; }).catch(() => {});
+    img.style.cursor = 'pointer'; img.loading = 'lazy';
+    setAuthImage(img, gimg(g, 'thumb'));
     const meta = document.createElement('div'); meta.className = 'meta';
     const name = document.createElement('div'); name.textContent = g.name; name.style.fontSize = '13px';
     meta.appendChild(name);
@@ -249,7 +251,7 @@ async function submitClip() {
         clearInterval(timer);
         btn.disabled = false;
         status.textContent = 'clip ready — ' + secs + 's';
-        const url = await authImageUrl(st.result_url);
+        const url = await authImageUrl(st.result_url + '?size=detail');
         const box = $('clip-box');
         box.innerHTML = '';
         const img = document.createElement('img'); img.src = url; img.alt = 'motion clip';
@@ -445,7 +447,7 @@ async function runTryon(ids, baseResult, prompt) {
   if (baseResult) {
     fd.append('base_result', baseResult);      // last render or saved outfit render as the base
     if (prompt) fd.append('prompt', prompt);
-    baseUrl = await authImageUrl(baseResult);
+    baseUrl = await authImageUrl(baseResult + '?size=detail');
   } else {
     const src = document.querySelector('input[name=psrc]:checked')?.value || 'saved';
     if (src === 'saved') {
@@ -501,7 +503,7 @@ async function runTryon(ids, baseResult, prompt) {
     lastResultLook = JSON.stringify(ids);
     lastIds = ids;
     lastOutfitId = data.outfit_id || null;
-    const url = await authImageUrl(data.result_url);
+    const url = await authImageUrl(data.result_url + '?size=detail');
     $('result').innerHTML = '';
     const img = document.createElement('img'); img.src = url; $('result').appendChild(img);
     // before/after only makes sense when altering (chat re-render / saved-image

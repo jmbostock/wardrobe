@@ -10,7 +10,12 @@ from fastapi.responses import FileResponse
 
 from .. import editor, interactions, photos, svd, tryon
 from ..deps import get_current_user
-from ..media import UPLOAD_DIR
+from ..media import (
+    IMAGE_CACHE_CONTROL,
+    UPLOAD_DIR,
+    image_variant,
+    media_type_for,
+)
 from ..store import clips, outfits, wardrobe
 
 router = APIRouter()
@@ -161,18 +166,18 @@ def _auto_save_outfit(
 
 
 @router.get("/api/uploads/{filename}")
-def get_result(filename: str, user: dict = Depends(get_current_user)) -> FileResponse:
+def get_result(filename: str, size: str = "full",
+               user: dict = Depends(get_current_user)) -> FileResponse:
     """Serve a try-on result (or SVD webp clip) only to the user who owns it
-    (path-traversal safe)."""
+    (path-traversal safe). size=thumb/detail serve lazy WebP variants."""
     safe = Path(filename).name  # strips any directory components
     path = UPLOAD_DIR / str(user["id"]) / "out" / safe
     if not path.is_file():
         raise HTTPException(404, "not found")
-    media = {
-        ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-        ".webp": "image/webp", ".gif": "image/gif",
-    }
-    return FileResponse(path, media_type=media.get(path.suffix.lower(), "application/octet-stream"))
+    if size in ("thumb", "detail"):
+        path = image_variant(path, size)
+    return FileResponse(path, media_type=media_type_for(path),
+                        headers={"Cache-Control": IMAGE_CACHE_CONTROL})
 
 
 @router.post("/api/tryon/edit")

@@ -1,11 +1,13 @@
 // common.js — shared helpers for every page (loaded before page scripts).
 const $ = (id) => document.getElementById(id);
 const TOKEN_KEY = 'altacloset_token';
+const ADMIN_TOKEN_KEY = 'altacloset_admin_token';
 const RECO_KEY = 'altacloset_last_reco';
 
 // ---------- token helpers ----------
 function getToken() { return localStorage.getItem(TOKEN_KEY); }
 function setToken(t) { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY); }
+function getAdminToken() { return localStorage.getItem(ADMIN_TOKEN_KEY); }
 
 // ---------- toast ----------
 function toast(msg) {
@@ -43,18 +45,82 @@ async function apiJson(path, opts = {}) {
   return res.json();
 }
 async function authImageUrl(path) {
-  // cache:'no-store' + the backend's Cache-Control: no-store means images that
-  // change in place (rotate/upload/edit) always show the fresh version — the
-  // browser can never serve a stale copy of the same URL.
-  const res = await api(path, { cache: 'no-store' });
+  // cache:'default' (NOT no-store) — the backend serves images with
+  // `Cache-Control: private, max-age=86400, immutable`, so repeat loads hit the
+  // browser HTTP cache instead of re-downloading. Edits change the ?v= version
+  // in the URL -> cache miss -> fresh fetch. Callers that create a blob with
+  // this helper should revoke it via URL.revokeObjectURL when done (or use
+  // setAuthImage, which revokes automatically).
+  const res = await api(path, { cache: 'default' });
   return URL.createObjectURL(await res.blob());
+}
+
+// Load an authed image into an <img> element, cache-friendly and leak-free:
+// fetches with the default cache policy (repeat loads are instant), then revokes
+// the blob URL after the browser has decoded the image.
+async function setAuthImage(img, path) {
+  if (!img || !path) return;
+  let url = null;
+  try {
+    const res = await api(path, { cache: 'default' });
+    if (!res.ok) return;
+    url = URL.createObjectURL(await res.blob());
+  } catch (e) { return; }
+  const done = () => { if (url) URL.revokeObjectURL(url); };
+  img.onload = done; img.onerror = done;
+  img.src = url;
+}
+
+// Versioned, size-aware URL for a garment object (from /api/wardrobe, which now
+// carries id + image_version). size: 'thumb' (grids/pickers) | 'detail' |
+// 'full'. ?v=<mtime> is the cache-buster: an edit bumps it -> new URL -> fresh.
+function garmentImg(g, size) {
+  return '/api/wardrobe/' + g.id + '/image?size=' + (size || 'thumb') + '&v=' + (g.image_version || 0);
 }
 
 // ---------- auth guard (runs on every authenticated page) ----------
 async function requireAuth() {
-  try { await apiJson('/api/auth/me'); }
+  let me = null;
+  try { me = await apiJson('/api/auth/me'); }
   catch (e) { /* api() already redirected on 401 */ }
+  if (me && me.admin) {
+    // dev `admin` tokens have no personal account — park them on /account
+    // where the switch-user console lives
+    if (location.pathname !== '/account') location.href = '/account';
+    return;
+  }
+  if (me && me.dev) showDevBanner(me.dev);
 }
+
+// ---------- DEV banner (dev accounts only) ----------
+//   acting_as  → the admin is acting AS a real user (dev instance; changes apply
+//                to that user's data on this dev box, never production)
+//   test_copy  → the `test` sandbox, whose data is a copy of a real user
+function showDevBanner(dev) {
+  const b = $('dev-banner');
+  if (!b) return;
+  const msg = $('dev-banner-msg');
+  const btn = $('dev-banner-exit');
+  if (dev.acting_as) {
+    msg.textContent = 'Acting as ' + (dev.acting_as.email || 'a user') +
+      ' (MASTER admin) — changes apply LIVE to their data on this dev instance, never production.';
+    btn.hidden = false;
+  } else if (dev.test_copy) {
+    msg.textContent = 'Sandbox — data is a copy; changes never affect real accounts.';
+    btn.hidden = true;  // test can't "exit to admin"
+  } else {
+    return;
+  }
+  b.hidden = false;
+}
+(function wireDevBannerExit() {
+  const btn = $('dev-banner-exit');
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    setToken(getAdminToken());   // drop the acting-as token, back to the admin token
+    location.href = '/account';  // Account page, where the switch console lives
+  });
+})();
 
 // ---------- full-page sheets: scroll-lock while open + swipe-down to close ----------
 // Every overlay ("pick a top" / garment / outfit / lightbox) is a `.sheet`: it

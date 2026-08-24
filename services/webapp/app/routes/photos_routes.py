@@ -9,10 +9,16 @@ from pydantic import BaseModel, Field
 
 from .. import photopick, photos
 from ..deps import get_current_user
-from ..media import garment_image_path
+from ..media import IMAGE_CACHE_CONTROL, garment_image_path, media_type_for
 from ..store import wardrobe
 
 router = APIRouter()
+
+
+def _photo_variant(path: Path, size: str) -> Path:
+    """Lazy WebP variant for a person photo (next to the original)."""
+    from ..media import image_variant
+    return image_variant(path, size)
 
 
 class PhotoDescriptionRequest(BaseModel):
@@ -94,10 +100,14 @@ def delete_photo(photo_id: int, user: dict = Depends(get_current_user)) -> dict:
 
 
 @router.get("/api/photos/{photo_id}/image")
-def photo_image(photo_id: int, user: dict = Depends(get_current_user)) -> FileResponse:
+def photo_image(photo_id: int, size: str = "detail",
+                user: dict = Depends(get_current_user)) -> FileResponse:
+    """Serve a person/base photo (thumb/detail WebP variants, or the original)."""
     try:
         path = photos.photo_path(user["id"], photo_id)
     except photos.PhotoError as ex:
         raise HTTPException(404, str(ex)) from ex
-    return FileResponse(path, media_type="image/jpeg",
-                        headers={"Cache-Control": "no-store"})
+    if size in ("thumb", "detail"):
+        path = _photo_variant(path, size)
+    return FileResponse(path, media_type=media_type_for(path),
+                        headers={"Cache-Control": IMAGE_CACHE_CONTROL})
