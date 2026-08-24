@@ -131,11 +131,11 @@ async function loadWardrobe() {
   for (const g of items) {
     const card = document.createElement('div'); card.className = 'photo';
     card.dataset.gid = g.id; card._garment = g;
-    const img = document.createElement('img'); img.alt = g.name; img.loading = 'lazy';
+    const img = document.createElement('img'); img.alt = g.name;
     if (g.has_image) {
       img.dataset.v = g.image_version || 0;
       // parallel + cached thumbnails (~300px WebP) — no serial await, so the
-      // grid renders immediately and images stream in concurrently
+      // grid renders immediately and images decode as they arrive
       setAuthImage(img, gimg(g, 'thumb'));
     } else {
       img.style.background = g.color_hex || '#333';

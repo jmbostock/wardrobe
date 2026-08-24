@@ -145,7 +145,7 @@ function openLookPicker(role) {
   for (const g of items) {
     const card = document.createElement('div'); card.className = 'photo';
     const img = document.createElement('img'); img.alt = g.name;
-    img.style.cursor = 'pointer'; img.loading = 'lazy';
+    img.style.cursor = 'pointer';
     setAuthImage(img, gimg(g, 'thumb'));
     const meta = document.createElement('div'); meta.className = 'meta';
     const name = document.createElement('div'); name.textContent = g.name; name.style.fontSize = '13px';

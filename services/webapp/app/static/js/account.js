@@ -160,7 +160,7 @@ async function loadPhotos() {
       const card = document.createElement('div');
       card.className = 'photo';
       const img = document.createElement('img');
-      img.alt = 'photo ' + p.id; img.loading = 'lazy';
+      img.alt = 'photo ' + p.id;
       setAuthImage(img, p.url + '?size=thumb');
       img.addEventListener('click', () => {
         // lightbox shows the full-res original, not the grid thumb

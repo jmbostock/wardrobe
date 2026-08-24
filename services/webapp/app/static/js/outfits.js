@@ -18,7 +18,7 @@ async function loadSavedOutfits() {
   box.innerHTML = '';
   for (const o of items) {
     const card = document.createElement('div'); card.className = 'photo';
-    const img = document.createElement('img'); img.alt = o.name; img.loading = 'lazy';
+    const img = document.createElement('img'); img.alt = o.name;
     if (o.result_url) {
       // thumb WebP variant of the render (renders are immutable URLs — cacheable)
       setAuthImage(img, o.result_url + '?size=thumb');
