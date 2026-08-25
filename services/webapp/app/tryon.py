@@ -228,27 +228,20 @@ async def _render_idm_garment(
     user_id: int,
     seed: int | None,
 ) -> tuple[bytes, float | None]:
-    """Two-pass IDM render of ONE garment onto an already-uploaded person
-    (uploaded once and shared across an outfit's garments). Bottoms get a
-    PANTS-shaped mask + a clear "pants" description so they read as pants, not
-    a dress. Returns (render_bytes, waist_fraction_or_None)."""
+    """One IDM-VTON render of ONE garment onto an already-uploaded person.
+
+    LET THE MODEL DECIDE: we hand IDM the raw AutoMasker garment mask and the
+    model's own default description (it reads the garment from the reference
+    image). No injected garment descriptions, no reshaped masks — earlier
+    "helpful" masks/descriptions (pants-shape, top-trim, verbose text) were
+    interference that degraded quality/color. Returns (render, None)."""
     garment_bytes = _load_garment_image(garment, user_id)
     cloth_type = CLOTH_TYPE.get(garment.category, "upper")
-    description = _GARMENT_DESCRIPTIONS.get(cloth_type, _DEFAULT_GARMENT_DESC)
-    # pass 1: AutoMasker mask — run BEFORE the pipeline loads
     mask_bytes = await _automasker(client, person_name, cloth_type)
-    waist = None
-    if cloth_type == "lower":
-        mask_bytes, waist = _to_pants_mask(mask_bytes)
-    elif cloth_type == "upper":
-        # On a one-piece dress the 'upper' mask covers the WHOLE dress, which
-        # makes IDM paint the top as a dress-length garment (the 'grey
-        # long-sleeve as a dress' failure). Trim it at the waist so the top
-        # renders with its hem at the waist — a proper TOP, not a dress.
-        mask_bytes = _to_top_mask(mask_bytes, _waist_fraction(mask_bytes))
-    # pass 2: IDM-VTON with the pre-made mask + DensePose pose
-    render = await _idm_render(client, person_name, garment_bytes, mask_bytes, seed, description)
-    return render, waist
+    render = await _idm_render(
+        client, person_name, garment_bytes, mask_bytes, seed, _DEFAULT_GARMENT_DESC
+    )
+    return render, None
 
 
 async def _automasker(client: httpx.AsyncClient, person_name: str, cloth_type: str) -> bytes:
@@ -314,16 +307,11 @@ async def _run_idm_vton_outfit(
 ) -> bytes:
     """IDM-VTON complete outfit (multiple garments, e.g. top + bottom).
 
-    Strategy — TWO INDEPENDENT STEPS (user design, 2026-08-25):
-      1. CatVTON chains ALL garments → a COMPLETE, correct outfit image. It is
-         a true inpainter, so it establishes the boundaries: top meets jeans at
-         the waist with NO seam, real full-length jeans even on a shorts base.
-      2. IDM re-wears EACH garment as a SINGLE pass onto that CatVTON image
-         (per-step-fixed, sharp at 768x1024), then blends IDM's garment
-         textures INTO the CatVTON image — keeping CatVTON's OWN pixels in the
-         feathered waist band, so IDM's re-generated hems can never open a gap.
-      Result: CatVTON-correct geometry + sharp IDM texture, no seam.
-    """
+    LET THE MODEL DECIDE (user-directed 2026-08-25): strip out all injected
+    interference (no CatVTON base, no compositing, no reshaped masks, no
+    garment descriptions). Just chain ONE natural IDM single-garment render per
+    garment onto the previous result — raw AutoMasker mask + default
+    description, exactly how the stock model is meant to be driven."""
     if not garments:
         raise ComfyUnavailable("no garments to render")
     if len(garments) == 1:
@@ -332,26 +320,16 @@ async def _run_idm_vton_outfit(
         raise ComfyUnavailable("workflows/idm_vton*.json missing — see workflows/README.md")
     if seed is None:
         seed = settings.tryon_seed if settings.tryon_seed is not None else random.randint(0, 2**31)
-    # step 1 — CatVTON builds the complete correct outfit (boundaries, no seam).
-    cat_base = person_bytes
-    for g in garments:
-        cat_base = await run_tryon(cat_base, g, user_id)
-    person_bytes = _prep_person(cat_base)
+    person_bytes = _prep_person(person_bytes)
 
     async with httpx.AsyncClient(timeout=30) as client:
         await _free_models(client)
-        person_name = await _upload(client, "person.png", person_bytes)
-        # step 2 — one IDM single-pass re-wear per garment onto the CatVTON image.
-        renders: list[tuple[bytes, float | None]] = []
+        current = person_bytes
         for g in garments:
-            render, waist = await _render_idm_garment(client, person_name, g, user_id, seed)
-            renders.append((render, waist))
+            pn = await _upload(client, "person.png", current)
+            current, _ = await _render_idm_garment(client, pn, g, user_id, seed)
             await _free_models(client)
-        result = renders[0][0]
-        # blend IDM's textures INTO the CatVTON image (CatVTON anchors the seam).
-        if len(renders) == 2 and renders[1][1] is not None:
-            result = _composite_idm_into_catvton(cat_base, renders[0][0], renders[1][0], renders[1][1])
-        return result
+        return current
 
 
 def _waist_fraction(mask_bytes: bytes) -> float:
