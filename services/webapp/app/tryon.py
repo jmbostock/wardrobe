@@ -314,16 +314,15 @@ async def _run_idm_vton_outfit(
 ) -> bytes:
     """IDM-VTON complete outfit (multiple garments, e.g. top + bottom).
 
-    Strategy — SINGLE-PASS COMPOSITE (quality-tuned 2026-08-25):
-      0. Render EACH garment as a SINGLE IDM pass onto the ORIGINAL person
-         photo — never chained, never onto an AI base. Chaining re-generates
-         the whole body per garment and compounds blur (edge_std 29); re-
-         generating from an AI (CatVTON) base caps sharpness (33); the
-         original photo base stays SHARP (47.9 at 768x1024).
-      1. Composite the top + bottom renders at the bottom's waist (feathered,
-         `_composite_at_waist`) — sharp, seamless, full-length jeans (the
-         per-step reference-encode fix + pants mask handle the rest).
-      Result: sharp IDM texture, correct full-length jeans, no seam.
+    Strategy — TWO INDEPENDENT STEPS (user design, 2026-08-25):
+      1. CatVTON chains ALL garments → a COMPLETE, correct outfit image. It is
+         a true inpainter, so it establishes the boundaries: top meets jeans at
+         the waist with NO seam, real full-length jeans even on a shorts base.
+      2. IDM re-wears EACH garment as a SINGLE pass onto that CatVTON image
+         (per-step-fixed, sharp at 768x1024), then blends IDM's garment
+         textures INTO the CatVTON image — keeping CatVTON's OWN pixels in the
+         feathered waist band, so IDM's re-generated hems can never open a gap.
+      Result: CatVTON-correct geometry + sharp IDM texture, no seam.
     """
     if not garments:
         raise ComfyUnavailable("no garments to render")
@@ -333,25 +332,25 @@ async def _run_idm_vton_outfit(
         raise ComfyUnavailable("workflows/idm_vton*.json missing — see workflows/README.md")
     if seed is None:
         seed = settings.tryon_seed if settings.tryon_seed is not None else random.randint(0, 2**31)
-    # step 0 — single sharp IDM pass per garment onto the ORIGINAL person photo
-    # (NOT chained, NOT onto an AI base — re-generating from an AI base caps
-    # sharpness: measured edge_std 33 vs 48 for the original photo base).
-    person_bytes = _prep_person(person_bytes)
+    # step 1 — CatVTON builds the complete correct outfit (boundaries, no seam).
+    cat_base = person_bytes
+    for g in garments:
+        cat_base = await run_tryon(cat_base, g, user_id)
+    person_bytes = _prep_person(cat_base)
 
     async with httpx.AsyncClient(timeout=30) as client:
         await _free_models(client)
         person_name = await _upload(client, "person.png", person_bytes)
-        # one SHARP single-pass IDM render per garment onto the SAME original
-        # base (no chaining, no AI base) — each stays sharp.
+        # step 2 — one IDM single-pass re-wear per garment onto the CatVTON image.
         renders: list[tuple[bytes, float | None]] = []
         for g in garments:
             render, waist = await _render_idm_garment(client, person_name, g, user_id, seed)
             renders.append((render, waist))
             await _free_models(client)
         result = renders[0][0]
-        # composite top + bottom at the bottom's waist (feathered seam).
+        # blend IDM's textures INTO the CatVTON image (CatVTON anchors the seam).
         if len(renders) == 2 and renders[1][1] is not None:
-            result = _composite_at_waist(renders[0][0], renders[1][0], renders[1][1])
+            result = _composite_idm_into_catvton(cat_base, renders[0][0], renders[1][0], renders[1][1])
         return result
 
 
@@ -477,6 +476,44 @@ def _composite_at_waist(top_bytes: bytes, bottom_bytes: bytes, waist_fraction: f
     buf = io.BytesIO()
     # a (top) wins where the mask is white (above waist); b (bottom) below.
     Image.composite(a, b, mask).save(buf, "PNG")
+    return buf.getvalue()
+
+
+def _composite_idm_into_catvton(
+    cat_bytes: bytes, top_bytes: bytes, bottom_bytes: bytes, waist_fraction: float
+) -> bytes:
+    """Blend IDM's single-pass top/jeans textures INTO CatVTON's correct outfit
+    image (the two-step design: CatVTON builds boundaries, IDM adds texture).
+
+    Above the waist → IDM's top render; below → IDM's jeans render; in a
+    feathered band around the waist → CatVTON's OWN pixels, because CatVTON
+    already has the correct top→jeans seam there. Anchoring to CatVTON in the
+    band means IDM's re-generated garment hems can never open a gap."""
+    cat = Image.open(io.BytesIO(cat_bytes)).convert("RGB")
+    top = Image.open(io.BytesIO(top_bytes)).convert("RGB").resize(cat.size, Image.LANCZOS)
+    bot = Image.open(io.BytesIO(bottom_bytes)).convert("RGB").resize(cat.size, Image.LANCZOS)
+    w, h = cat.size
+    wy = int(waist_fraction * h)
+    feather = max(16, int(h * 0.05))
+    cp, tp, bp = cat.load(), top.load(), bot.load()
+    for y in range(h):
+        if y <= wy - feather:
+            for x in range(w):
+                cp[x, y] = tp[x, y]
+        elif y >= wy + feather:
+            for x in range(w):
+                cp[x, y] = bp[x, y]
+        else:
+            # feathered band centered on CatVTON's pixels (its seam is correct).
+            t = (y - (wy - feather)) / (2 * feather)
+            g = tp if t < 0.5 else bp
+            k = abs(t - 0.5) * 2
+            for x in range(w):
+                c = cp[x, y]
+                gg = g[x, y]
+                cp[x, y] = tuple(int(c[i] * (1 - k) + gg[i] * k) for i in range(3))
+    buf = io.BytesIO()
+    cat.save(buf, "PNG")
     return buf.getvalue()
 
 
