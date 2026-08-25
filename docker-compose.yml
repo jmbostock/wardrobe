@@ -15,6 +15,9 @@ services:
       - HF_HOME=/models/huggingface
       - COMFYUI_URL=${COMFYUI_URL:-http://comfyui:8188}
       - OLLAMA_URL=http://ollama:11434
+      # opt-in higher-quality backends (need weights+workflow on the GPU box);
+      # see app/config.py TRYON_MODELS. Set e.g. TRYON_MODELS=catvton,idm_vton
+      - TRYON_MODELS=${TRYON_MODELS:-catvton}
     volumes:
       - ./data/wardrobe:/data/wardrobe
       - ./data/uploads:/data/uploads
