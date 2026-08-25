@@ -256,9 +256,11 @@ body:has(#view-suggest) .app-version { display:none; }
    .chat-bubble is display:flex (row) which crushed text/photos/thumbs/try-on
    side-by-side; a recommendation must stack like a real chat message. */
 .recommend-bubble { max-width:100%; flex-direction:column; align-items:stretch; }
+/* photos use the FULL thread width (overrides the bubble's flex-start shrink-wrap) */
+.chat-bubble.assistant.recommend-bubble { align-self:stretch; }
 .recommend-bubble > .bubble-text { align-self:flex-start; background:#1a2230; border:1px solid #2a3550; }
 /* assistant chat replies that carry inline garment photos stack too */
-.chat-bubble.assistant:has(.chat-garments) { flex-direction:column; align-items:stretch; max-width:100%; }
+.chat-bubble.assistant:has(.chat-garments) { flex-direction:column; align-items:stretch; max-width:100%; align-self:stretch; }
 .chat-bubble.assistant:has(.chat-garments) > .bubble-text { align-self:flex-start; }
 /* recommendation photos are IMAGES INSIDE the chat — no nested card box, no
    label/name/rating chrome — just the garment photos (2-up on phones, big
