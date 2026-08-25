@@ -219,10 +219,11 @@ const _SUGGEST_CHIPS = [
   ['formal', 'Formal'],
 ];
 
-// Desktop chat cards show BIG garment photos -> request the 768px detail WebP
-// so they stay crisp; phones keep the small 300px thumb.
+// Chat recommendation photos are now BIG on every screen (2-up on phones,
+// large tiles on desktop) — always request the 768px detail WebP so they stay
+// crisp on Retina displays (media.py: detail ~768px ≈ enough for 3x Retina).
 function chatImgSize() {
-  return window.matchMedia('(min-width: 641px)').matches ? 'detail' : 'thumb';
+  return 'detail';
 }
 
 let _conversationStarted = false;

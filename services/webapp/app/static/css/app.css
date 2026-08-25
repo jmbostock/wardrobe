@@ -206,7 +206,7 @@ body:has(#view-suggest) main { flex:1; min-height:0; max-width:none; width:100%;
 body:has(#view-suggest) .app-version { display:none; }
 #view-suggest { flex:1; min-height:0; display:flex; flex-direction:column; }
 #view-suggest .suggest-chat-card { flex:1; min-height:0; height:auto; max-width:none; width:100%;
-  margin:0; border:0; border-radius:0; }
+  margin:0; border:0; border-radius:0; background:transparent; }
 .suggest-chat-card { height:auto; }
 .full-width { width:100%; margin-top:4px; }
 /* Try-on page — full-width, horizontal Try on CTA (hint text removed) */
@@ -228,8 +228,8 @@ body:has(#view-suggest) .app-version { display:none; }
 /* ---- Cher stylist chat panel ---- */
 .chat-card { display:flex; flex-direction:column; height:520px; padding:0; overflow:hidden; }
 .chat-header { display:flex; align-items:center; justify-content:space-between;
-  padding:14px 16px 12px; border-bottom:1px solid var(--line); flex:none; }
-.chat-title { font-size:14px; font-weight:700; display:flex; align-items:center; gap:8px; }
+  padding:8px 14px; border-bottom:1px solid var(--line); flex:none; }
+.chat-title { font-size:13px; font-weight:700; display:flex; align-items:center; gap:8px; }
 .chat-title .badge { font-size:10px; }
 .chat-messages { flex:1; overflow-y:auto; padding:14px 16px; display:flex; flex-direction:column; gap:10px; }
 .chat-bubble { display:flex; max-width:88%; }
@@ -258,19 +258,18 @@ body:has(#view-suggest) .app-version { display:none; }
 .recommend-bubble { max-width:100%; flex-direction:column; align-items:stretch; }
 .recommend-bubble > .bubble-text { align-self:flex-start; background:#1a2230; border:1px solid #2a3550; }
 /* assistant chat replies that carry inline garment photos stack too */
-.chat-bubble.assistant:has(.chat-garments) { flex-direction:column; align-items:stretch; }
+.chat-bubble.assistant:has(.chat-garments) { flex-direction:column; align-items:stretch; max-width:100%; }
 .chat-bubble.assistant:has(.chat-garments) > .bubble-text { align-self:flex-start; }
-.recommend-outfit { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; background:#0f1216;
-  border:1px solid var(--line); border-radius:12px; padding:10px; }
-/* compact single-line look (OpenWebUI vibe): each piece is a small vertical
-   tile — thumbnail on top, tiny label + name below — so the whole outfit
-   reads as one tight row instead of a tall labeled grid. */
-.recommend-outfit .outfit-slot-card { flex-direction:column; align-items:center; gap:6px;
-  padding:8px; min-width:76px; max-width:104px; flex:1 1 auto; text-align:center; }
-.recommend-outfit .slot-label { width:auto; font-size:10px; }
-.recommend-outfit .slot-img { width:56px; height:72px; }
-.recommend-outfit .slot-info { flex-direction:column; align-items:center; gap:2px; }
-.recommend-outfit .slot-name { font-size:11px; line-height:1.3; white-space:normal; overflow:visible; text-align:center; }
+/* recommendation photos are IMAGES INSIDE the chat — no nested card box, no
+   label/name/rating chrome — just the garment photos (2-up on phones, big
+   tiles on desktop). */
+.recommend-outfit { display:flex; flex-wrap:wrap; gap:10px; margin-top:10px; }
+.recommend-outfit .outfit-slot-card { flex-direction:column; align-items:center;
+  background:transparent; border:0; padding:0; min-width:0; max-width:none; text-align:center; }
+.recommend-outfit .slot-label { display:none; }
+.recommend-outfit .slot-info { display:none; }
+.recommend-outfit .slot-img { width:180px; height:240px; }
+.recommend-outfit .slot-swatch { width:180px; height:240px; border-radius:8px; }
 .recommend-tryon { margin-top:0; flex:none; padding:9px 16px; border-radius:9px;
   background:var(--acc); color:#0f1216; font-weight:700; font-size:13px; }
 /* feedback + Try it on share ONE compact row (like a real chat action bar).
@@ -317,22 +316,28 @@ body:has(#view-suggest) .app-version { display:none; }
   #savedimg-preview { max-width:100%; }
   /* suggest page: minimal chat — chips and compose live in the thread */
   .suggest-chat-card { flex:1; min-height:0; }
-  .chat-header { flex-wrap:wrap; gap:8px; }
-  /* chat recommendations: compact photos, actions stay on one line */
-  .slot-img { width:60px; height:80px; }
-  .slot-name { white-space:normal; overflow:visible; }
+  /* slim header strip: Cher/new-chat chrome is tiny so the thread gets the room */
+  .chat-header { padding:6px 12px; gap:6px; }
+  .chat-title { font-size:12px; }
+  #chat-clear { padding:3px 8px; font-size:11px; }
+  .chat-messages { padding:10px 12px; }
+  /* recommendation photos: IMAGES IN THE CHAT, 2-up, filling the screen width —
+     no labels/names, no card box around them */
+  .recommend-outfit { gap:8px; margin-top:10px; }
+  .recommend-outfit .outfit-slot-card { flex:0 0 calc(50% - 4px); }
+  .recommend-outfit .slot-img { width:100%; height:auto; aspect-ratio:3/4; }
+  .recommend-outfit .slot-swatch { width:100%; height:auto; aspect-ratio:3/4; }
 }
 
 /* ---- full-page sheets on desktop: centered full-height panel ---- */
 @media (min-width: 641px) {
   .sheet .panel { border-left:1px solid var(--line); border-right:1px solid var(--line); }
   .sheet .grab { display:none; }
-  /* desktop: chat recommendation tiles are MUCH bigger so the garment photos
-     are easy to see (phones keep the compact filmstrip) */
-  .recommend-outfit .outfit-slot-card { min-width:150px; max-width:230px; padding:12px; gap:8px; }
-  .recommend-outfit .slot-img { width:180px; height:240px; }
-  .recommend-outfit .slot-name { font-size:13px; }
-  .recommend-outfit .slot-label { font-size:11px; }
+  /* desktop: recommendation photos are big inline tiles (labels/names are hidden —
+     the chat is just the images) */
+  .recommend-outfit { gap:14px; }
+  .recommend-outfit .slot-img { width:200px; height:266px; }
+  .recommend-outfit .slot-swatch { width:200px; height:266px; }
 }
 
 /* ---- PWA standalone (iPhone): clear the notch + home indicator ---- */

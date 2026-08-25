@@ -2,4 +2,4 @@
 
 Bump this on every release so /health and the UI footer agree.
 """
-__version__ = "0.38.6"
+__version__ = "0.39.0"
