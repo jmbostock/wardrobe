@@ -191,8 +191,11 @@ def test_photo_style_from_mask():
 
     # dress: the 'lower' mask covers the torso too (starts high, ~20%)
     assert tryon.photo_style_from_mask(mask_start(40)) == "dress"
-    # separates: the mask is confined to the lower body (starts ~60%)
-    assert tryon.photo_style_from_mask(mask_start(120)) == "separates"
+    # a maxi dress / long skirt also starts ~40% -> still a dress
+    assert tryon.photo_style_from_mask(mask_start(80)) == "dress"   # 80/200=0.40
+    # separates: the mask is confined to the lower body (starts ~50-60%)
+    assert tryon.photo_style_from_mask(mask_start(100)) == "separates"  # 100/200=0.50
+    assert tryon.photo_style_from_mask(mask_start(120)) == "separates"  # 120/200=0.60
 
 
 if __name__ == "__main__":

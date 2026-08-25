@@ -303,14 +303,15 @@ _PHOTO_STYLE_CACHE: dict[str, str] = {}
 def photo_style_from_mask(mask_bytes: bytes) -> str:
     """'dress' | 'separates' — from where the AutoMasker 'lower' mask starts
     vertically. On a one-piece dress the lower mask starts high (it covers the
-    torso too); on separates it starts low (confined to the lower body)."""
+    torso too); on separates it starts low (confined to the lower body).
+    Threshold 0.45: a maxi dress / long skirt starts ~0.40, jeans+shirt ~0.50."""
     m = Image.open(io.BytesIO(mask_bytes)).convert("L")
     w, h = m.size
     need = max(3, w // 50)
     for y in range(0, h, 8):
         white = sum(1 for x in range(0, w, 8) if m.getpixel((x, y)) > 128)
         if white >= need:
-            return "dress" if (y / h) < 0.38 else "separates"
+            return "dress" if (y / h) < 0.45 else "separates"
     return "separates"
 
 
