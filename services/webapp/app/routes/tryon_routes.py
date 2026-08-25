@@ -12,6 +12,7 @@ from .. import editor, interactions, photos, svd, tryon
 from ..deps import get_current_user
 from ..media import (
     IMAGE_CACHE_CONTROL,
+    UPLOADS_CACHE_CONTROL,
     UPLOAD_DIR,
     image_variant,
     media_type_for,
@@ -249,7 +250,7 @@ def get_result(filename: str, size: str = "full",
     if size in ("thumb", "detail"):
         path = image_variant(path, size)
     return FileResponse(path, media_type=media_type_for(path),
-                        headers={"Cache-Control": IMAGE_CACHE_CONTROL})
+                        headers={"Cache-Control": UPLOADS_CACHE_CONTROL})
 
 
 @router.post("/api/tryon/edit")

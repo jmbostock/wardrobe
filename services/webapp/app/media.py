@@ -43,6 +43,10 @@ VARIANT_SUFFIXES = (".thumb.webp", ".detail.webp")
 # + max-age + immutable. Freshness comes from the ?v=<mtime> version in the URL:
 # an edit rewrites the file -> new mtime -> new URL -> browser fetches fresh.
 IMAGE_CACHE_CONTROL = "private, max-age=86400, immutable"
+# Try-on render URLs are unique per render but users have hit stale images
+# being served from the browser cache — `immutable` let a stale copy persist
+# across hard reloads. Revalidate every time so a render can never stay stale.
+UPLOADS_CACHE_CONTROL = "private, no-cache"
 
 # iPhone photos come in as HEIC — pillow-heif adds a PIL opener so we can
 # decode (and normalize to JPEG on save) without any system libheif.
