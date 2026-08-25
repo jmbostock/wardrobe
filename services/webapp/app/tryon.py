@@ -186,105 +186,88 @@ _GARMENT_DESCRIPTIONS = {
 _DEFAULT_GARMENT_DESC = "The garment shown in the reference image."
 
 
-async def _run_idm_vton(
-    person_bytes: bytes, garment: Garment, user_id: int, seed: int | None = None
-) -> bytes:
-    """IDM-VTON (SDXL) try-on of ONE garment onto a person image."""
-    render, _ = await _idm_render_mask(person_bytes, garment, user_id, seed)
-    return render
-
-
-async def _idm_render_mask(
-    person_bytes: bytes, garment: Garment, user_id: int, seed: int | None = None
-) -> tuple[bytes, float | None]:
-    """IDM-VTON (SDXL) try-on of one garment, returning (render, waist) so an
-    outfit can composite renders. Two passes, never sharing VRAM:
-      pass 0 — free any resident models (CatVTON / a previous IDM pipeline).
-      pass 1 — CatVTON's LoadAutoMasker/AutoMasker builds the garment mask
-               (~2GB); a bottom garment's mask is reshaped into PANTS (two
-               legs) so the jeans are never painted as a full-length dress.
-      pass 2 — the IDM-VTON pipeline (~13GB) renders with the pre-made mask +
-               controlnet_aux DensePose pose image.
-      pass 3 — free the pipeline again so the next render's mask pass fits.
-    Returns (render_bytes, waist_fraction) — waist is None unless this was a
-    bottom (then it is the row fraction where the pants begin, used for the
-    outfit composite's waist seam)."""
-    if not IDM_WORKFLOW_PATH.exists() or not IDM_MASK_WORKFLOW_PATH.exists():
-        raise ComfyUnavailable("workflows/idm_vton*.json missing — see workflows/README.md")
-    person_bytes = _prep_person(person_bytes)
-
-    async with httpx.AsyncClient(timeout=30) as client:
-        await _free_models(client)  # clear CatVTON / previous IDM pipeline first
-        person_name = await _upload(client, "person.png", person_bytes)
-        render, waist = await _render_idm_garment(client, person_name, garment, user_id, seed)
-        await _free_models(client)
-        return render, waist
-
-
-async def _render_idm_garment(
+async def _idm_cleanup_garment(
     client: httpx.AsyncClient,
     person_name: str,
     garment: Garment,
     user_id: int,
-    seed: int | None,
-) -> tuple[bytes, float | None]:
-    """One IDM-VTON render of ONE garment onto an already-uploaded person.
+    seed: int,
+    area_mask: bytes | None = None,
+) -> bytes:
+    """Per-piece try-on of ONE garment — CatVTON defines the area, IDM cleans
+    up the texture (user-directed architecture 2026-08-25).
 
-    LET THE MODEL DECIDE: we hand IDM the AutoMasker garment mask and the
-    model's own default description (it reads the garment from the reference
-    image). No injected garment descriptions, no compositing — earlier
-    "helpful" masks/descriptions (pants-shape, top-trim, verbose text) were
-    interference that degraded quality/color. The ONE exception is geometry:
-    a SHORTS garment gets its 'lower' mask capped at the thigh (the mask is
-    the region IDM warps into — AutoMasker has no shorts/pants distinction and
-    its 'lower' mask runs to the ankles on bare legs, which stretches shorts
-    into long pants). Returns (render, None)."""
+      pass 1 — CatVTON (a reliable inpainter) places the garment correctly and
+               its AutoMasker mask IS the area. We capture both from ONE prompt
+               (an extra SaveImage on AutoMasker). `area_mask` can instead be
+               supplied by the caller (outfit phase 1) so the area is reused.
+      pass 2 — IDM-VTON re-renders ONLY that area (the same mask) on the
+               CatVTON result, so it sees the correct boundaries + the rest of
+               the outfit as context, and re-textures the piece from the
+               flat-lay reference. The mask is the only geometry given — no
+               injected garment descriptions (LET THE MODEL DECIDE on texture).
+
+    Returns the composite (CatVTON person with this piece's IDM texture)."""
     garment_bytes = _load_garment_image(garment, user_id)
     cloth_type = CLOTH_TYPE.get(garment.category, "upper")
-    mask_bytes = await _automasker(client, person_name, cloth_type)
-    if cloth_type == "lower" and _is_shorts(garment):
-        mask_bytes = _to_shorts_mask(mask_bytes)
-    render = await _idm_render(
-        client, person_name, garment_bytes, mask_bytes, seed, _DEFAULT_GARMENT_DESC
-    )
-    return render, None
-
-
-async def _automasker(client: httpx.AsyncClient, person_name: str, cloth_type: str) -> bytes:
-    """Pass 1 of IDM: CatVTON's LoadAutoMasker/AutoMasker builds the garment
-    mask (cloth_type from the category); ~2GB."""
-    mask_workflow = json.loads(IDM_MASK_WORKFLOW_PATH.read_text())
-    mn = IDM_MASK_NODE_IDS
-    mask_workflow[mn["person_image"]]["inputs"]["image"] = person_name
-    mask_workflow[mn["automasker"]]["inputs"]["cloth_type"] = cloth_type
-    mask_entry = await _poll(client, await _submit(client, mask_workflow))
-    return await _fetch_output(client, mask_entry)
-
-
-async def _idm_render(
-    client: httpx.AsyncClient,
-    person_name: str,
-    garment_bytes: bytes,
-    mask_bytes: bytes,
-    seed: int | None,
-    garment_description: str,
-) -> bytes:
-    """Pass 2 of IDM: the ~13GB pipeline renders the garment onto the person
-    using the pre-made mask + DensePose pose. The description gives the model
-    clear instructions about what kind of garment this is (top vs pants)."""
-    mask_name = await _upload(client, "mask.png", mask_bytes)
-    workflow = json.loads(IDM_WORKFLOW_PATH.read_text())
     garment_name = await _upload(client, "garment.png", garment_bytes)
-    n = IDM_NODE_IDS
-    workflow[n["person_image"]]["inputs"]["image"] = person_name
-    workflow[n["garment_image"]]["inputs"]["image"] = garment_name
-    workflow[n["mask_image"]]["inputs"]["image"] = mask_name
-    workflow[n["idm"]]["inputs"]["garment_description"] = garment_description
+
+    if area_mask is None:
+        # --- pass 1: CatVTON defines the area (render + AutoMasker mask) ---
+        cat = json.loads(WORKFLOW_PATH.read_text())
+        cn = NODE_IDS  # catvton node ids
+        cat[cn["person_image"]]["inputs"]["image"] = person_name
+        cat[cn["garment_image"]]["inputs"]["image"] = garment_name
+        cat[cn["automasker"]]["inputs"]["cloth_type"] = cloth_type
+        cat[cn["catvton"]]["inputs"]["seed"] = seed
+        # extra SaveImage on AutoMasker so we get the garment's area back
+        cat["19"] = {
+            "class_type": "SaveImage",
+            "inputs": {"images": [cn["automasker"], 0], "filename_prefix": "idm_area_mask"},
+        }
+        entry = await _poll(client, await _submit(client, cat))
+        outs = await _fetch_outputs(client, entry, {cn["output"], "19"})
+        cat_render = outs[cn["output"]]
+        area = outs.get("19", cat_render)
+        if cloth_type == "lower" and _is_shorts(garment):
+            area = _to_shorts_mask(area)  # cap at the thigh, not the ankles
+        human_name = await _upload(client, "catvton.png", cat_render)
+    else:
+        # Caller already has the CatVTON render + area (outfit phase 1): the
+        # passed person_name IS the CatVTON composite — no CatVTON pass here.
+        human_name = person_name
+        area = area_mask
+
+    # --- pass 2: IDM cleans up the texture within the defined area ---
+    await _free_models(client)  # drop CatVTON (~6GB) before the ~13.7GB pipeline
+    mask_name = await _upload(client, "mask.png", area)
+    idm = json.loads(IDM_WORKFLOW_PATH.read_text())
+    in_ = IDM_NODE_IDS
+    idm[in_["person_image"]]["inputs"]["image"] = human_name  # CatVTON result = context
+    idm[in_["garment_image"]]["inputs"]["image"] = garment_name
+    idm[in_["mask_image"]]["inputs"]["image"] = mask_name  # area = CatVTON's defined piece
+    idm[in_["idm"]]["inputs"]["garment_description"] = _DEFAULT_GARMENT_DESC
+    idm[in_["idm"]]["inputs"]["seed"] = seed
+    entry = await _poll(client, await _submit(client, idm))
+    return await _fetch_output(client, entry)
+
+
+async def _run_idm_vton(
+    person_bytes: bytes, garment: Garment, user_id: int, seed: int | None = None
+) -> bytes:
+    """Per-piece IDM try-on of ONE garment: CatVTON defines the area, IDM
+    cleans up the texture (see _idm_cleanup_garment)."""
+    if not IDM_WORKFLOW_PATH.exists() or not WORKFLOW_PATH.exists():
+        raise ComfyUnavailable("workflows/idm_vton.json / catvton.json missing — see workflows/README.md")
+    person_bytes = _prep_person(person_bytes)
     if seed is None:
         seed = settings.tryon_seed if settings.tryon_seed is not None else random.randint(0, 2**31)
-    workflow[n["idm"]]["inputs"]["seed"] = seed
-    entry = await _poll(client, await _submit(client, workflow))
-    return await _fetch_output(client, entry)
+    async with httpx.AsyncClient(timeout=30) as client:
+        await _free_models(client)
+        person_name = await _upload(client, "person.png", person_bytes)
+        render = await _idm_cleanup_garment(client, person_name, garment, user_id, seed)
+        await _free_models(client)
+        return render
 
 
 # --- best-source-photo selection -------------------------------------------
@@ -311,34 +294,67 @@ def photo_style_from_mask(mask_bytes: bytes) -> str:
 async def _run_idm_vton_outfit(
     person_bytes: bytes, garments: list[Garment], user_id: int, seed: int | None = None
 ) -> bytes:
-    """IDM-VTON complete outfit (multiple garments, e.g. top + bottom).
+    """IDM-VTON complete outfit — per-piece (user-directed 2026-08-25).
 
-    LET THE MODEL DECIDE (user-directed 2026-08-25): strip out all injected
-    interference (no CatVTON base, no compositing, no reshaped masks, no
-    garment descriptions). Just chain ONE natural IDM single-garment render per
-    garment onto the previous result — raw AutoMasker mask + default
-    description, exactly how the stock model is meant to be driven. (The single
-    geometry exception: a SHORTS garment gets its 'lower' mask capped at the
-    thigh inside _render_idm_garment — the mask is input, not model
-    instruction.)"""
+    Each garment is an INDEPENDENT piece: CatVTON defines its area (correct
+    placement + mask), IDM cleans up its texture. Pieces share a CatVTON
+    composite as context (they reference each other) but are processed one at a
+    time — a failure in one piece never cascades and no mask spans two pieces.
+
+      phase 1 — CatVTON chains all garments onto the person (it is a reliable
+                inpainter) and captures each garment's area mask → the outfit
+                base with correct boundaries for every piece.
+      phase 2 — for each garment, IDM re-renders ONLY that garment's area on
+                the shared composite (the same mask = the piece's area; shorts
+                get the mask capped at the thigh) → per-piece high-quality
+                texture."""
     if not garments:
         raise ComfyUnavailable("no garments to render")
     if len(garments) == 1:
         return await _run_idm_vton(person_bytes, garments[0], user_id, seed)
-    if not IDM_WORKFLOW_PATH.exists() or not IDM_MASK_WORKFLOW_PATH.exists():
-        raise ComfyUnavailable("workflows/idm_vton*.json missing — see workflows/README.md")
+    if not IDM_WORKFLOW_PATH.exists() or not WORKFLOW_PATH.exists():
+        raise ComfyUnavailable("workflows/idm_vton.json / catvton.json missing — see workflows/README.md")
     if seed is None:
         seed = settings.tryon_seed if settings.tryon_seed is not None else random.randint(0, 2**31)
     person_bytes = _prep_person(person_bytes)
 
     async with httpx.AsyncClient(timeout=30) as client:
         await _free_models(client)
+        # --- phase 1: CatVTON defines every area (chained) + captures masks ---
         current = person_bytes
+        masks: list[tuple[Garment, bytes]] = []
         for g in garments:
             pn = await _upload(client, "person.png", current)
-            current, _ = await _render_idm_garment(client, pn, g, user_id, seed)
+            gb = _load_garment_image(g, user_id)
+            gn = await _upload(client, "garment.png", gb)
+            cloth = CLOTH_TYPE.get(g.category, "upper")
+            cat = json.loads(WORKFLOW_PATH.read_text())
+            cn = NODE_IDS
+            cat[cn["person_image"]]["inputs"]["image"] = pn
+            cat[cn["garment_image"]]["inputs"]["image"] = gn
+            cat[cn["automasker"]]["inputs"]["cloth_type"] = cloth
+            cat[cn["catvton"]]["inputs"]["seed"] = seed
+            cat["19"] = {
+                "class_type": "SaveImage",
+                "inputs": {"images": [cn["automasker"], 0], "filename_prefix": "idm_area_mask"},
+            }
+            entry = await _poll(client, await _submit(client, cat))
+            outs = await _fetch_outputs(client, entry, {cn["output"], "19"})
+            current = outs[cn["output"]]
+            area = outs.get("19", current)
+            if cloth == "lower" and _is_shorts(g):
+                area = _to_shorts_mask(area)
+            masks.append((g, area))
+            await _free_models(client)  # drop CatVTON between chained garments
+        # --- phase 2: per-garment IDM cleanup on the shared composite ---
+        composite = current
+        for g, area in masks:
+            comp_name = await _upload(client, "person.png", composite)
+            composite = await _idm_cleanup_garment(
+                client, comp_name, g, user_id, seed, area_mask=area
+            )
             await _free_models(client)
-        return current
+        return composite
 
 
 def _waist_fraction(mask_bytes: bytes) -> float:
@@ -686,3 +702,28 @@ async def _fetch_output(client: httpx.AsyncClient, entry: dict) -> bytes:
             r.raise_for_status()
             return r.content
     raise ComfyUnavailable("ComfyUI finished but produced no image")
+
+
+async def _fetch_outputs(
+    client: httpx.AsyncClient, entry: dict, wanted: set[str]
+) -> dict[str, bytes]:
+    """Fetch rendered images from SPECIFIC output node ids (e.g. the CatVTON
+    render AND its AutoMasker area mask from one prompt).
+    `entry["outputs"]` is keyed by node id."""
+    out: dict[str, bytes] = {}
+    for nid, node_out in entry.get("outputs", {}).items():
+        if nid not in wanted:
+            continue
+        for img in node_out.get("images", []):
+            r = await client.get(
+                f"{settings.comfyui_url}/view",
+                params={
+                    "filename": img["filename"],
+                    "subfolder": img.get("subfolder", ""),
+                    "type": img.get("type", "output"),
+                },
+            )
+            r.raise_for_status()
+            out[nid] = r.content
+            break
+    return out
