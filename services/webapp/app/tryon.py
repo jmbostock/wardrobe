@@ -230,14 +230,20 @@ async def _render_idm_garment(
 ) -> tuple[bytes, float | None]:
     """One IDM-VTON render of ONE garment onto an already-uploaded person.
 
-    LET THE MODEL DECIDE: we hand IDM the raw AutoMasker garment mask and the
+    LET THE MODEL DECIDE: we hand IDM the AutoMasker garment mask and the
     model's own default description (it reads the garment from the reference
-    image). No injected garment descriptions, no reshaped masks — earlier
+    image). No injected garment descriptions, no compositing — earlier
     "helpful" masks/descriptions (pants-shape, top-trim, verbose text) were
-    interference that degraded quality/color. Returns (render, None)."""
+    interference that degraded quality/color. The ONE exception is geometry:
+    a SHORTS garment gets its 'lower' mask capped at the thigh (the mask is
+    the region IDM warps into — AutoMasker has no shorts/pants distinction and
+    its 'lower' mask runs to the ankles on bare legs, which stretches shorts
+    into long pants). Returns (render, None)."""
     garment_bytes = _load_garment_image(garment, user_id)
     cloth_type = CLOTH_TYPE.get(garment.category, "upper")
     mask_bytes = await _automasker(client, person_name, cloth_type)
+    if cloth_type == "lower" and _is_shorts(garment):
+        mask_bytes = _to_shorts_mask(mask_bytes)
     render = await _idm_render(
         client, person_name, garment_bytes, mask_bytes, seed, _DEFAULT_GARMENT_DESC
     )
@@ -311,7 +317,10 @@ async def _run_idm_vton_outfit(
     interference (no CatVTON base, no compositing, no reshaped masks, no
     garment descriptions). Just chain ONE natural IDM single-garment render per
     garment onto the previous result — raw AutoMasker mask + default
-    description, exactly how the stock model is meant to be driven."""
+    description, exactly how the stock model is meant to be driven. (The single
+    geometry exception: a SHORTS garment gets its 'lower' mask capped at the
+    thigh inside _render_idm_garment — the mask is input, not model
+    instruction.)"""
     if not garments:
         raise ComfyUnavailable("no garments to render")
     if len(garments) == 1:
@@ -366,6 +375,60 @@ def _to_top_mask(mask_bytes: bytes, waist: float) -> bytes:
     for y in range(wy, h):
         for x in range(w):
             m.putpixel((x, y), 0)
+    buf = io.BytesIO()
+    m.save(buf, "PNG")
+    return buf.getvalue()
+
+
+def _is_shorts(garment: Garment) -> bool:
+    """A bottom garment whose name says shorts.
+
+    AutoMasker's 'lower' mask needs to be capped at the thigh for a shorts
+    garment (else IDM stretches it into long pants). Category is 'bottom' for
+    both shorts and pants, so the name is the signal — and a "shortsleeve top"
+    (category 'top') is correctly excluded."""
+    return garment.category == "bottom" and "short" in (garment.name or "").lower()
+
+
+def _to_shorts_mask(mask_bytes: bytes) -> bytes:
+    """Cap an AutoMasker 'lower' mask at mid-thigh so a SHORTS garment renders
+    as shorts, not long pants.
+
+    AutoMasker has no shorts/pants distinction — on a bare-leg (shorts-wearing)
+    base its 'lower' mask runs waist -> ankles, so IDM stretches the shorts
+    fabric down the whole mask. This trims the mask to the true shorts
+    footprint: waist (mask top) down to mid-thigh (~38% of the way to the
+    ankles, clamped to 0.50-0.72h), with the hem feathered so the legs emerge
+    softly instead of a hard cut. This is the opposite of `_to_pants_mask`
+    (which EXTENDS a shorts mask down to the ankles to make jeans) — correct
+    *input* geometry, not model interference."""
+    m = Image.open(io.BytesIO(mask_bytes)).convert("L")
+    w, h = m.size
+    rows = []
+    for y in range(h):
+        xs = [x for x in range(w) if m.getpixel((x, y)) > 128]
+        if xs:
+            rows.append((y, min(xs), max(xs)))
+    if not rows:
+        return mask_bytes
+    y_top = rows[0][0]
+    y_bot = rows[-1][0]
+    # mid-thigh = ~38% of the way from the waist to the ankles (where the mask
+    # bottom sits on a bare-leg base); clamp to a sane shorts length.
+    ankle = max(y_bot, int(h * 0.95))
+    hem = int(y_top + (ankle - y_top) * 0.38)
+    hem = min(int(h * 0.72), max(int(h * 0.50), hem))
+    for y in range(hem, h):
+        for x in range(w):
+            m.putpixel((x, y), 0)
+    # feathered hem: fade the mask to 0 over the last `feather` rows above the
+    # cut so the warp has a soft edge where the bare legs emerge below.
+    feather = max(8, int(h * 0.02))
+    for y in range(max(0, hem - feather), hem):
+        v = int(255 * (hem - y) / feather)
+        for x in range(w):
+            if m.getpixel((x, y)) > 128:
+                m.putpixel((x, y), v)
     buf = io.BytesIO()
     m.save(buf, "PNG")
     return buf.getvalue()

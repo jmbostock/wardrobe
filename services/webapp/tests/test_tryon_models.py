@@ -235,6 +235,59 @@ def test_photo_style_from_mask():
     assert tryon.photo_style_from_mask(mask_start(120)) == "separates"  # 120/200=0.60
 
 
+def test_to_shorts_mask_caps_below_thigh():
+    """A bare-leg base gives a 'lower' mask running waist -> ankles; the shorts
+    mask must cut it at mid-thigh so IDM renders shorts, not long pants."""
+    from io import BytesIO
+
+    from PIL import Image
+
+    m = Image.new("L", (100, 200), 0)
+    for y in range(90, 195):  # waist (90) down to ankles (195) — bare-leg base
+        for x in range(35, 65):
+            m.putpixel((x, y), 255)
+    buf = BytesIO()
+    m.save(buf, "PNG")
+
+    shorts = tryon._to_shorts_mask(buf.getvalue())
+    s = Image.open(BytesIO(shorts)).convert("L")
+    assert s.getpixel((50, 95)) > 128     # waist still covered
+    assert s.getpixel((50, 130)) == 0     # below mid-thigh: trimmed
+    assert s.getpixel((50, 190)) == 0     # ankles: trimmed
+    # the hem lands at mid-thigh (~0.60-0.70h) — still covered near there
+    assert s.getpixel((50, int(200 * 0.62))) > 0
+
+
+def test_to_shorts_mask_empty_mask_unchanged():
+    from io import BytesIO
+
+    from PIL import Image
+
+    m = Image.new("L", (100, 200), 0)
+    buf = BytesIO()
+    m.save(buf, "PNG")
+    assert tryon._to_shorts_mask(buf.getvalue()) == buf.getvalue()
+
+
+def test_is_shorts_detects_by_name():
+    class G:  # noqa: D106
+        category = "bottom"
+        name = "Black shorts"
+
+    assert tryon._is_shorts(G()) is True
+    G.name = "Cargo shorts"
+    assert tryon._is_shorts(G()) is True
+    G.name = "Shorts"  # bare name
+    assert tryon._is_shorts(G()) is True
+    G.name = "Blue jeans"
+    assert tryon._is_shorts(G()) is False
+    G.name = "Athletic pants"
+    assert tryon._is_shorts(G()) is False
+    G.category = "top"
+    G.name = "shortsleeve top"  # 'short' substring, but not a bottom
+    assert tryon._is_shorts(G()) is False
+
+
 if __name__ == "__main__":
     import traceback
 
