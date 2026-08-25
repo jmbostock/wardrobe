@@ -33,6 +33,16 @@ async function loadSavedOutfits() {
     const desc = document.createElement('div'); desc.className = 'muted'; desc.style.fontSize = '12px';
     desc.textContent = (o.garments || []).map((g) => g.name).join(' + ') || 'n/a';
     meta.appendChild(badge); meta.appendChild(name); meta.appendChild(desc);
+    if (o.ref_id) {
+      const ref = document.createElement('div'); ref.className = 'monospace muted';
+      ref.style.fontSize = '11px'; ref.style.cursor = 'pointer'; ref.textContent = o.ref_id;
+      ref.title = 'reference id — click to copy';
+      ref.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        navigator.clipboard && navigator.clipboard.writeText(o.ref_id);
+      });
+      meta.appendChild(ref);
+    }
     if (o.rating) {
       const r = document.createElement('div'); r.className = 'muted'; r.style.fontSize = '12px';
       r.textContent = '★ ' + o.rating + '/10';
@@ -56,6 +66,11 @@ async function openDetail(o) {
   $('od-name').value = o.name;
   $('od-status').textContent = '';
   $('od-garments').textContent = (o.garments || []).map((g) => g.name).join(' + ') || '—';
+  const refEl = $('od-ref');
+  if (refEl) {
+    refEl.textContent = o.ref_id || '—';
+    refEl.onclick = () => { navigator.clipboard && navigator.clipboard.writeText(o.ref_id || ''); };
+  }
   const img = $('od-img');
   if (o.result_url) setAuthImage(img, o.result_url + '?size=detail');
   else { img.src = ''; img.style.background = 'linear-gradient(135deg,#2a3340,#1a1f27)'; }

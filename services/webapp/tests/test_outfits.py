@@ -33,6 +33,21 @@ def test_create_list_delete():
     assert store.list(uid) == []
 
 
+def test_generated_ref_id():
+    """Every saved outfit gets a short, unique reference id (e.g. O-9F3K2M)
+    so a render can be cited in chat."""
+    ua = auth.create_user("oRef@example.com", "password123")
+    uid = ua["id"]
+    g = w.create(uid, "Tee", "top")
+    o1 = store.create(uid, "Look A", [g.id])
+    o2 = store.create(uid, "Look B", [g.id])
+    assert o1["ref_id"] and o1["ref_id"].startswith("O-"), o1["ref_id"]
+    assert o2["ref_id"] and o2["ref_id"] != o1["ref_id"]
+    # persisted + returned on get/list
+    assert store.get(uid, o1["id"])["ref_id"] == o1["ref_id"]
+    assert {o["ref_id"] for o in store.list(uid)} == {o1["ref_id"], o2["ref_id"]}
+
+
 def test_create_stores_person_mapping():
     """Outfits record which source person photo produced the render (metadata
     only — no image copies)."""

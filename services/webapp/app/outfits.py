@@ -30,12 +30,15 @@ class OutfitStore:
         person_photo_id: int = 0, person_url: str = "",
     ) -> dict[str, Any]:
         with self._lock:
+            existing = {r[0] for r in self._conn.execute(
+                "SELECT ref_id FROM outfits WHERE ref_id != ''").fetchall()}
+            ref_id = db.new_ref_id(existing)
             cur = self._conn.execute(
                 """INSERT INTO outfits (user_id, name, garment_ids, result_url,
-                                        person_photo_id, person_url)
-                   VALUES (?,?,?,?,?,?)""",
+                                        person_photo_id, person_url, ref_id)
+                   VALUES (?,?,?,?,?,?,?)""",
                 (user_id, name, json.dumps([int(x) for x in garment_ids]),
-                 result_url or "", person_photo_id or 0, person_url or ""),
+                 result_url or "", person_photo_id or 0, person_url or "", ref_id),
             )
             self._conn.commit()
             row = self._conn.execute(
@@ -87,5 +90,6 @@ class OutfitStore:
             "person_photo_id": r["person_photo_id"] if "person_photo_id" in r.keys() else 0,
             "person_url": r["person_url"] if "person_url" in r.keys() else "",
             "rating": r["rating"] if "rating" in r.keys() else 0,
+            "ref_id": r["ref_id"] if "ref_id" in r.keys() else "",
             "created_at": r["created_at"],
         }

@@ -76,6 +76,7 @@ CREATE TABLE IF NOT EXISTS outfits (
     person_photo_id INTEGER NOT NULL DEFAULT 0,  -- source person photo id (0 = upload)
     person_url      TEXT NOT NULL DEFAULT '',    -- snapshot of the exact source person image
     rating          INTEGER NOT NULL DEFAULT 0,  -- user rating 0..10 (0 = unrated)
+    ref_id          TEXT NOT NULL DEFAULT '',    -- generated short reference id (e.g. O-9F3K2M)
     created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_outfits_user ON outfits(user_id);
@@ -102,6 +103,20 @@ CREATE TABLE IF NOT EXISTS chat_sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_chat_user ON chat_sessions(user_id);
 """
+
+
+_REF_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
+
+def new_ref_id(existing: set[str], prefix: str = "O-") -> str:
+    """Short, human-friendly reference id (e.g. 'O-9F3K2M') for saved outfits
+    so a render can be cited in chat. Excludes confusing chars (0/O, 1/I/L)."""
+    import secrets
+
+    while True:
+        code = prefix + "".join(secrets.choice(_REF_ALPHABET) for _ in range(6))
+        if code not in existing:
+            return code
 
 
 def init() -> sqlite3.Connection:
@@ -175,6 +190,15 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE outfits ADD COLUMN person_photo_id INTEGER NOT NULL DEFAULT 0")
     if "person_url" not in ocols:
         conn.execute("ALTER TABLE outfits ADD COLUMN person_url TEXT NOT NULL DEFAULT ''")
+    # ref_id (added 2026-08-25) — generated short reference for citing a render
+    if "ref_id" not in ocols:
+        conn.execute("ALTER TABLE outfits ADD COLUMN ref_id TEXT NOT NULL DEFAULT ''")
+    existing_refs = {r[0] for r in conn.execute(
+        "SELECT ref_id FROM outfits WHERE ref_id != ''").fetchall()}
+    for (oid,) in conn.execute("SELECT id FROM outfits WHERE ref_id = ''").fetchall():
+        code = new_ref_id(existing_refs)
+        conn.execute("UPDATE outfits SET ref_id=? WHERE id=?", (code, oid))
+        existing_refs.add(code)
     # clips table (added 2026-08-22) for async SVD motion generation
     conn.execute(
         """CREATE TABLE IF NOT EXISTS clips (
