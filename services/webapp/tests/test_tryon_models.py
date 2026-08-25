@@ -130,6 +130,48 @@ def test_composite_at_waist_splits_top_and_bottom():
     assert b > r, (r, g, b)  # below waist = jeans
 
 
+def test_to_top_mask_trims_below_waist():
+    """A whole-dress 'upper' mask must be trimmed at the waist so a top
+    renders as a top (hem at the waist), not a dress-length garment."""
+    from io import BytesIO
+
+    from PIL import Image
+
+    m = Image.new("L", (100, 200), 0)
+    for y in range(20, 190):  # whole-dress blob (upper mask on a one-piece)
+        for x in range(25, 75):
+            m.putpixel((x, y), 255)
+    buf = BytesIO()
+    m.save(buf, "PNG")
+
+    trimmed = tryon._to_top_mask(buf.getvalue(), 0.5)
+    t = Image.open(BytesIO(trimmed)).convert("L")
+    assert t.getpixel((50, 60)) > 128   # above the waist: still covered
+    assert t.getpixel((50, 150)) == 0   # below the waist: trimmed
+    assert t.getpixel((50, 199)) == 0
+
+
+def test_waist_fraction_mid_band():
+    """The waist is the narrowest row in the mid-band of the body blob (not the
+    top edge of the silhouette)."""
+    from io import BytesIO
+
+    from PIL import Image
+
+    m = Image.new("L", (100, 200), 0)
+    # A-line blob: wide at top (chest) + bottom (skirt), narrow at waist (row 90)
+    for y in range(20, 200):
+        half = 20 + int((y - 20) / 180 * 20)
+        if 80 <= y <= 100:
+            half = 8  # the waist pinch
+        for x in range(50 - half, 50 + half + 1):
+            m.putpixel((x, y), 255)
+    buf = BytesIO()
+    m.save(buf, "PNG")
+    wf = tryon._waist_fraction(buf.getvalue())
+    assert 0.3 < wf < 0.7, wf
+
+
 if __name__ == "__main__":
     import traceback
 

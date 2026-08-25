@@ -240,6 +240,12 @@ async def _render_idm_garment(
     waist = None
     if cloth_type == "lower":
         mask_bytes, waist = _to_pants_mask(mask_bytes)
+    elif cloth_type == "upper":
+        # On a one-piece dress the 'upper' mask covers the WHOLE dress, which
+        # makes IDM paint the top as a dress-length garment (the 'grey
+        # long-sleeve as a dress' failure). Trim it at the waist so the top
+        # renders with its hem at the waist — a proper TOP, not a dress.
+        mask_bytes = _to_top_mask(mask_bytes, _waist_fraction(mask_bytes))
     # pass 2: IDM-VTON with the pre-made mask + DensePose pose
     render = await _idm_render(client, person_name, garment_bytes, mask_bytes, seed, description)
     return render, waist
@@ -321,13 +327,10 @@ async def _run_idm_vton_outfit(
         return current
 
 
-def _to_pants_mask(mask_bytes: bytes) -> tuple[bytes, float]:
-    """Reshape a 'lower' AutoMasker mask (a wide A-line dress blob when the
-    source photo is a dress) into a PANTS shape: a solid waistband + two
-    straight leg columns that separate as they go down. This gives IDM the
-    geometry of "pants", so the jeans are painted as two legs instead of a
-    full-length dress. Also returns the waist row as a fraction of the mask
-    height (used as the composite's waist seam)."""
+def _waist_fraction(mask_bytes: bytes) -> float:
+    """Anatomical waist row as a fraction of mask height: the narrowest row in
+    the 42-62% band of the mask blob's vertical extent (works for a whole-dress
+    silhouette too)."""
     m = Image.open(io.BytesIO(mask_bytes)).convert("L")
     w, h = m.size
     rows = []
@@ -336,19 +339,58 @@ def _to_pants_mask(mask_bytes: bytes) -> tuple[bytes, float]:
         if xs:
             rows.append((y, min(xs), max(xs)))
     if not rows:
-        return mask_bytes, 0.5
+        return 0.5
     y_top = rows[0][0]
     y_bot = rows[-1][0]
     lo = y_top + (y_bot - y_top) * 0.42
     hi = y_top + (y_bot - y_top) * 0.62
     mid = [r for r in rows if lo <= r[0] <= hi]
-    if mid:
-        wy, wx0, wx1 = min(mid, key=lambda r: r[2] - r[1])
+    if not mid:
+        return (y_top + y_bot) / 2 / h
+    return min(mid, key=lambda r: r[2] - r[1])[0] / h
+
+
+def _to_top_mask(mask_bytes: bytes, waist: float) -> bytes:
+    """Trim an AutoMasker 'upper' mask to end at the waist so a top renders as
+    a TOP (hem at the waist), not a dress-length garment. On a one-piece dress
+    the 'upper' mask covers the whole dress; without this trim IDM paints the
+    top over the whole body (the 'grey long-sleeve as a dress' failure)."""
+    m = Image.open(io.BytesIO(mask_bytes)).convert("L")
+    w, h = m.size
+    wy = int(waist * h)
+    for y in range(wy, h):
+        for x in range(w):
+            m.putpixel((x, y), 0)
+    buf = io.BytesIO()
+    m.save(buf, "PNG")
+    return buf.getvalue()
+
+
+def _to_pants_mask(mask_bytes: bytes) -> tuple[bytes, float]:
+    """Reshape a 'lower' AutoMasker mask (a wide A-line dress blob when the
+    source photo is a dress) into a PANTS shape: a solid waistband + two
+    straight leg columns that separate as they go down. This gives IDM the
+    geometry of "pants", so the jeans are painted as two legs instead of a
+    full-length dress. Returns the pants mask + the waist row fraction."""
+    m = Image.open(io.BytesIO(mask_bytes)).convert("L")
+    w, h = m.size
+    waist = _waist_fraction(mask_bytes)
+    wy = int(waist * h)
+    row_xs = [x for x in range(w) if m.getpixel((x, wy)) > 128]
+    if row_xs:
+        cx0, cx1 = min(row_xs), max(row_xs)
     else:
-        wy = (y_top + y_bot) // 2
-        wx0, wx1 = 0, w
-    cy = (wx0 + wx1) / 2
-    leg_w = max(70, min(120, int((wx1 - wx0) * 0.5)))
+        rows = []
+        for y in range(h):
+            xs = [x for x in range(w) if m.getpixel((x, y)) > 128]
+            if xs:
+                rows.append((y, min(xs), max(xs)))
+        if not rows:
+            return mask_bytes, 0.5
+        cx0, cx1 = rows[0][1], rows[0][2]
+    cy = (cx0 + cx1) / 2
+    leg_w = max(70, min(120, int((cx1 - cx0) * 0.5)))
+    y_bot = max((y for y in range(h) if any(m.getpixel((x, y)) > 128 for x in range(w))), default=wy)
     out = Image.new("L", (w, h), 0)
     for y in range(max(0, wy - 6), min(h, wy + 12)):  # waistband
         for x in range(max(0, int(cy - leg_w)), min(w, int(cy + leg_w) + 1)):
@@ -362,7 +404,7 @@ def _to_pants_mask(mask_bytes: bytes) -> tuple[bytes, float]:
             out.putpixel((x, y), 255)
     buf = io.BytesIO()
     out.save(buf, "PNG")
-    return buf.getvalue(), wy / h
+    return buf.getvalue(), waist
 
 
 def _composite_at_waist(top_bytes: bytes, bottom_bytes: bytes, waist_fraction: float) -> bytes:
