@@ -172,6 +172,29 @@ def test_waist_fraction_mid_band():
     assert 0.3 < wf < 0.7, wf
 
 
+def test_photo_style_from_mask():
+    """A dress source gives a high-starting 'lower' mask (dress); a separates
+    source gives a low-starting mask (separates) — the logic that auto-picks
+    the best person photo for a top+bottom look."""
+    from io import BytesIO
+
+    from PIL import Image
+
+    def mask_start(start_y):
+        m = Image.new("L", (100, 200), 0)
+        for y in range(start_y, 200):
+            for x in range(30, 70):
+                m.putpixel((x, y), 255)
+        buf = BytesIO()
+        m.save(buf, "PNG")
+        return buf.getvalue()
+
+    # dress: the 'lower' mask covers the torso too (starts high, ~20%)
+    assert tryon.photo_style_from_mask(mask_start(40)) == "dress"
+    # separates: the mask is confined to the lower body (starts ~60%)
+    assert tryon.photo_style_from_mask(mask_start(120)) == "separates"
+
+
 if __name__ == "__main__":
     import traceback
 

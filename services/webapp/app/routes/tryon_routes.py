@@ -94,6 +94,42 @@ async def do_tryon(
     return {"result_url": f"/api/uploads/{out_name}", "garment_id": garment_id}
 
 
+async def _pick_person_photo(user: dict, garments: list) -> int | None:
+    """Pick the best saved person photo to render an outfit onto. When the
+    outfit has a BOTTOM garment, prefer a photo where the person is wearing
+    SEPARATES (top + bottom) — a dress-wearing base makes bottoms render as a
+    SKIRT, a separates base lets them render as PANTS (verified: photo 29 =
+    jeans+shirt renders proper pants; photo 32 = dress renders a skirt).
+    Falls back to the default / newest photo."""
+    plist = photos.list(user["id"])
+    if not plist:
+        return None
+    needs_separates = any(
+        tryon.CLOTH_TYPE.get(g.category, "upper") == "lower" for g in garments
+    )
+    best_id: int | None = None
+    best_score = -1.0
+    for p in plist:
+        try:
+            style = await tryon.photo_style(user["id"], p["id"])
+        except Exception:  # noqa: BLE001 — masker hiccup, treat as neutral
+            style = "unknown"
+        score = 1.0
+        if needs_separates:
+            if style == "separates":
+                score += 3.0
+            elif style == "dress":
+                score -= 1.0
+        elif style == "dress":
+            score += 0.5
+        if p.get("is_default"):
+            score += 1.0
+        score += p["id"] / 100000.0  # newest tie-break
+        if score > best_score:
+            best_id, best_score = p["id"], score
+    return best_id
+
+
 @router.post("/api/tryon/outfit")
 async def do_tryon_outfit(
     garment_ids: str = Form(...),
@@ -135,6 +171,26 @@ async def do_tryon_outfit(
         raise HTTPException(400, "garment_ids must be a JSON array of ids") from ex
     if not ids and not (base_result or photo_id or person):
         raise HTTPException(400, "no garments selected (provide a look, or a base image to re-render)")
+    # Resolve the garments ONCE — they must be in the viewer's REAL wardrobe
+    # (hard requirement: a render must show real clothes) — and use them to
+    # auto-pick the best source person photo for the look.
+    garments = []
+    if ids:
+        for gid in ids:
+            g = wardrobe.get_visible(user["id"], gid)
+            if g is None:
+                raise HTTPException(404, f"garment {gid} not found in your wardrobe")
+            garments.append(g)
+    # Best-source-photo: a top+bottom look renders correctly only on a person
+    # who is already wearing SEPARATES (a dress-wearing base turns the jeans
+    # into a skirt). Auto-pick a separates photo for looks with a bottom, unless
+    # the caller uploaded a raw image / re-renders an existing render.
+    if ids and (not base_result) and person is None and any(
+        tryon.CLOTH_TYPE.get(g.category, "upper") == "lower" for g in garments
+    ):
+        picked = await _pick_person_photo(user, garments)
+        if picked is not None:
+            photo_id = picked
     if base_result:
         safe = Path(base_result).name  # strips any directory components
         path = UPLOAD_DIR / str(user["id"]) / "out" / safe
@@ -166,14 +222,6 @@ async def do_tryon_outfit(
     outfit_id: int | None = None
     result_url = ""
     if ids:
-        # Resolve the garments ONCE — they must be in the viewer's REAL
-        # wardrobe (hard requirement: a render must show real clothes).
-        garments = []
-        for gid in ids:
-            g = wardrobe.get_visible(user["id"], gid)
-            if g is None:
-                raise HTTPException(404, f"garment {gid} not found in your wardrobe")
-            garments.append(g)
         for mi, model in enumerate(models):
             model_label = tryon.MODEL_LABELS.get(model, model)
             try:
