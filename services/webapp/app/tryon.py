@@ -115,11 +115,11 @@ async def run_tryon_outfit_model(
 
     catvton  — chains render-onto-render (CatVTON is a true inpainter, so the
                previously-applied garment survives — this is the proven path).
-    idm_vton — renders each garment onto the ORIGINAL person (bottoms get a
-               PANTS-shaped mask + a clear "pants" description) and composites
-               at the waist; chaining render-onto-render DROPS the first
-               garment because IDM regenerates the whole body each pass, and a
-               dress-length mask makes jeans come out as a dress (verified).
+    idm_vton — CHAINS render-onto-render but gives bottoms a PANTS-shaped mask
+               (AutoMasker 'lower' reshaped into two legs) + a clear "pants"
+               description, so the top from the input survives AND the jeans
+               come out as proper pants. (Plain chaining drops the top; a
+               dress-length mask makes a denim dress — both verified.)
     """
     if model == "catvton":
         out = person_bytes
@@ -287,16 +287,15 @@ async def _run_idm_vton_outfit(
 ) -> bytes:
     """IDM-VTON complete outfit (multiple garments, e.g. top + bottom).
 
-    IDM-VTON CANNOT be chained render-onto-render (the 2nd pass regenerates the
-    whole body and drops the 1st garment), and it cannot be given the raw
-    AutoMasker "lower" mask when the source photo is a dress (a dress-length
-    mask makes the jeans come out as a denim dress). So we:
-      1. render EACH garment onto the ORIGINAL person (same pose + same seed →
-         bodies align), giving bottoms a PANTS-shaped mask + a clear "pants"
-         description so they read as pants;
-      2. composite at the WAIST: the first (top) render wins above the waist
-         line, the bottom render wins below it, feathered so there is no seam.
-    The bottom's waist row comes from the pants-mask geometry."""
+    Strategy — CHAINED, with a PANTS-shaped mask for bottoms:
+      1. render the first garment onto the ORIGINAL person (a top, or a dress).
+      2. for each following garment, CHAIN onto that render, but a bottom uses
+         a PANTS-shaped mask (AutoMasker 'lower' reshaped into a waistband + two
+         legs) + a clear "pants" description. Because that mask only covers the
+         legs, IDM keeps the top from the input (no more dropped top) and paints
+         the jeans as proper PANTS (no more denim dress). Result is ONE cohesive
+         render — no composite seam.
+    """
     if not garments:
         raise ComfyUnavailable("no garments to render")
     if len(garments) == 1:
@@ -310,22 +309,16 @@ async def _run_idm_vton_outfit(
     async with httpx.AsyncClient(timeout=30) as client:
         await _free_models(client)
         person_name = await _upload(client, "person.png", person_bytes)
-        renders: list[bytes] = []
-        waists: list[float | None] = []
-        for g in garments:
-            render, waist = await _render_idm_garment(client, person_name, g, user_id, seed)
-            renders.append(render)
-            waists.append(waist)
-            await _free_models(client)  # so the next garment's mask pass fits
-    # Composite: the first render is the top/base; each bottom replaces it
-    # below its own waist line (feathered).
-    final = renders[0]
-    for render, waist in zip(renders[1:], waists[1:]):
-        if waist is not None:
-            final = _composite_at_waist(final, render, waist)
-        else:
-            final = render
-    return final
+        # garment 0 — onto the original person (a top, or a one-piece)
+        current, _ = await _render_idm_garment(client, person_name, garments[0], user_id, seed)
+        await _free_models(client)
+        # garments 1..n — chain onto the previous render; bottoms automatically
+        # get the pants mask + description inside _render_idm_garment.
+        for g in garments[1:]:
+            chained_name = await _upload(client, "chained.png", current)
+            current, _ = await _render_idm_garment(client, chained_name, g, user_id, seed)
+            await _free_models(client)
+        return current
 
 
 def _to_pants_mask(mask_bytes: bytes) -> tuple[bytes, float]:
