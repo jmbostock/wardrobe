@@ -314,14 +314,19 @@ async def _run_idm_vton_outfit(
 ) -> bytes:
     """IDM-VTON complete outfit (multiple garments, e.g. top + bottom).
 
-    Strategy — CHAINED, with a PANTS-shaped mask for bottoms:
-      1. render the first garment onto the ORIGINAL person (a top, or a dress).
-      2. for each following garment, CHAIN onto that render, but a bottom uses
-         a PANTS-shaped mask (AutoMasker 'lower' reshaped into a waistband + two
-         legs) + a clear "pants" description. Because that mask only covers the
-         legs, IDM keeps the top from the input (no more dropped top) and paints
-         the jeans as proper PANTS (no more denim dress). Result is ONE cohesive
-         render — no composite seam.
+    Strategy — HYBRID, CatVTON-first (user-approved, 2026-08-25):
+      0. CatVTON chains ALL garments onto the original person FIRST. CatVTON is
+         a true inpainter: it establishes the correct garment BOUNDARIES — it
+         paints real full-length jeans even when the base photo shows the
+         person in shorts/bare legs, which IDM-VTON fundamentally cannot do
+         (it warps fabric over existing clothing and can't GENERATE pants over
+         bare skin).
+      1. IDM then CHAINS the same garments ON TOP of that CatVTON render. The
+         base already shows the outfit, so IDM is "re-wearing" garments onto
+         existing fabric (its reliable mode, verified on photo 29) — warping
+         them with its better texture/drape. Bottoms still get the PANTS-shaped
+         mask + clear "pants" description so they stay two legs, never a dress.
+      Result: CatVTON-correct geometry with IDM-level quality.
     """
     if not garments:
         raise ComfyUnavailable("no garments to render")
@@ -331,7 +336,12 @@ async def _run_idm_vton_outfit(
         raise ComfyUnavailable("workflows/idm_vton*.json missing — see workflows/README.md")
     if seed is None:
         seed = settings.tryon_seed if settings.tryon_seed is not None else random.randint(0, 2**31)
-    person_bytes = _prep_person(person_bytes)
+    # step 0 — CatVTON establishes correct boundaries (true inpainter).
+    cat_base = person_bytes
+    for g in garments:
+        cat_base = await run_tryon(cat_base, g, user_id)
+    # step 1 — IDM re-wears each garment onto that render (better texture).
+    person_bytes = _prep_person(cat_base)
 
     async with httpx.AsyncClient(timeout=30) as client:
         await _free_models(client)
