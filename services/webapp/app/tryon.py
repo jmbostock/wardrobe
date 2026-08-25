@@ -115,9 +115,11 @@ async def run_tryon_outfit_model(
 
     catvton  — chains render-onto-render (CatVTON is a true inpainter, so the
                previously-applied garment survives — this is the proven path).
-    idm_vton — renders each garment onto the ORIGINAL person and composites by
-               mask; chaining render-onto-render DROPS the first garment because
-               IDM regenerates the whole body each pass (verified empirically).
+    idm_vton — renders each garment onto the ORIGINAL person (bottoms get a
+               PANTS-shaped mask + a clear "pants" description) and composites
+               at the waist; chaining render-onto-render DROPS the first
+               garment because IDM regenerates the whole body each pass, and a
+               dress-length mask makes jeans come out as a dress (verified).
     """
     if model == "catvton":
         out = person_bytes
@@ -171,29 +173,42 @@ async def _free_models(client: httpx.AsyncClient) -> None:
         pass
 
 
+# IDM-VTON interprets the garment partly from the free-text description — the
+# default ("The garment shown...") leaves it to guess. Give category-aware,
+# plain instructions so a "bottom" is never read as a dress/skirt (hard
+# requirement: top vs bottom must be respected — a pair of jeans must stay
+# pants).
+_GARMENT_DESCRIPTIONS = {
+    "upper": "a top worn on the upper body, covering the torso from the shoulders to the waist, with sleeves for the arms",
+    "lower": "a pair of pants (jeans) worn on the lower body — each leg covers one leg from the hips down to the ankles, with a waistband at the waist. It is NOT a dress and NOT a skirt.",
+    "overall": "a one-piece garment (dress or overall) covering the torso and the legs",
+}
+_DEFAULT_GARMENT_DESC = "The garment shown in the reference image."
+
+
 async def _run_idm_vton(
     person_bytes: bytes, garment: Garment, user_id: int, seed: int | None = None
 ) -> bytes:
-    """IDM-VTON (SDXL) try-on of ONE garment onto a person image. For multi-
-    garment outfits use `_run_idm_vton_outfit` (chaining render-onto-render
-    DROPS the first garment — IDM regenerates the whole body each pass)."""
+    """IDM-VTON (SDXL) try-on of ONE garment onto a person image."""
     render, _ = await _idm_render_mask(person_bytes, garment, user_id, seed)
     return render
 
 
 async def _idm_render_mask(
     person_bytes: bytes, garment: Garment, user_id: int, seed: int | None = None
-) -> tuple[bytes, bytes]:
-    """IDM-VTON (SDXL) try-on of one garment, returning (render, mask) so the
-    caller can composite multi-garment outfits. Two passes, never sharing VRAM:
+) -> tuple[bytes, float | None]:
+    """IDM-VTON (SDXL) try-on of one garment, returning (render, waist) so an
+    outfit can composite renders. Two passes, never sharing VRAM:
       pass 0 — free any resident models (CatVTON / a previous IDM pipeline).
       pass 1 — CatVTON's LoadAutoMasker/AutoMasker builds the garment mask
-               (cloth_type from the category); ~2GB.
-      pass 2 — the IDM-VTON pipeline (~13GB on the 5060 Ti) renders using the
-               pre-made mask + controlnet_aux DensePose pose image.
+               (~2GB); a bottom garment's mask is reshaped into PANTS (two
+               legs) so the jeans are never painted as a full-length dress.
+      pass 2 — the IDM-VTON pipeline (~13GB) renders with the pre-made mask +
+               controlnet_aux DensePose pose image.
       pass 3 — free the pipeline again so the next render's mask pass fits.
-    Heavier than CatVTON — meant for the dev / batch (overnight) path where the
-    vision llama-server + ollama are stopped first."""
+    Returns (render_bytes, waist_fraction) — waist is None unless this was a
+    bottom (then it is the row fraction where the pants begin, used for the
+    outfit composite's waist seam)."""
     if not IDM_WORKFLOW_PATH.exists() or not IDM_MASK_WORKFLOW_PATH.exists():
         raise ComfyUnavailable("workflows/idm_vton*.json missing — see workflows/README.md")
     person_bytes = _prep_person(person_bytes)
@@ -201,44 +216,70 @@ async def _idm_render_mask(
     async with httpx.AsyncClient(timeout=30) as client:
         await _free_models(client)  # clear CatVTON / previous IDM pipeline first
         person_name = await _upload(client, "person.png", person_bytes)
-        garment_bytes = _load_garment_image(garment, user_id)
-        cloth_type = CLOTH_TYPE.get(garment.category, "upper")
-        out, mask = await _idm_render_mask_for(client, person_name, garment_bytes, cloth_type, seed)
+        render, waist = await _render_idm_garment(client, person_name, garment, user_id, seed)
         await _free_models(client)
-        return out, mask
+        return render, waist
 
 
-async def _idm_render_mask_for(
+async def _render_idm_garment(
     client: httpx.AsyncClient,
     person_name: str,
-    garment_bytes: bytes,
-    cloth_type: str,
+    garment: Garment,
+    user_id: int,
     seed: int | None,
-) -> tuple[bytes, bytes]:
-    """The two IDM passes against an already-uploaded person (the person is
-    uploaded once and shared across the garments of one outfit). Returns
-    (render_bytes, mask_bytes)."""
-    # pass 1: garment mask (AutoMasker) — run BEFORE the pipeline loads
+) -> tuple[bytes, float | None]:
+    """Two-pass IDM render of ONE garment onto an already-uploaded person
+    (uploaded once and shared across an outfit's garments). Bottoms get a
+    PANTS-shaped mask + a clear "pants" description so they read as pants, not
+    a dress. Returns (render_bytes, waist_fraction_or_None)."""
+    garment_bytes = _load_garment_image(garment, user_id)
+    cloth_type = CLOTH_TYPE.get(garment.category, "upper")
+    description = _GARMENT_DESCRIPTIONS.get(cloth_type, _DEFAULT_GARMENT_DESC)
+    # pass 1: AutoMasker mask — run BEFORE the pipeline loads
+    mask_bytes = await _automasker(client, person_name, cloth_type)
+    waist = None
+    if cloth_type == "lower":
+        mask_bytes, waist = _to_pants_mask(mask_bytes)
+    # pass 2: IDM-VTON with the pre-made mask + DensePose pose
+    render = await _idm_render(client, person_name, garment_bytes, mask_bytes, seed, description)
+    return render, waist
+
+
+async def _automasker(client: httpx.AsyncClient, person_name: str, cloth_type: str) -> bytes:
+    """Pass 1 of IDM: CatVTON's LoadAutoMasker/AutoMasker builds the garment
+    mask (cloth_type from the category); ~2GB."""
     mask_workflow = json.loads(IDM_MASK_WORKFLOW_PATH.read_text())
     mn = IDM_MASK_NODE_IDS
     mask_workflow[mn["person_image"]]["inputs"]["image"] = person_name
     mask_workflow[mn["automasker"]]["inputs"]["cloth_type"] = cloth_type
     mask_entry = await _poll(client, await _submit(client, mask_workflow))
-    mask_bytes = await _fetch_output(client, mask_entry)
+    return await _fetch_output(client, mask_entry)
+
+
+async def _idm_render(
+    client: httpx.AsyncClient,
+    person_name: str,
+    garment_bytes: bytes,
+    mask_bytes: bytes,
+    seed: int | None,
+    garment_description: str,
+) -> bytes:
+    """Pass 2 of IDM: the ~13GB pipeline renders the garment onto the person
+    using the pre-made mask + DensePose pose. The description gives the model
+    clear instructions about what kind of garment this is (top vs pants)."""
     mask_name = await _upload(client, "mask.png", mask_bytes)
-    # pass 2: IDM-VTON with the pre-made mask + DensePose pose
     workflow = json.loads(IDM_WORKFLOW_PATH.read_text())
     garment_name = await _upload(client, "garment.png", garment_bytes)
     n = IDM_NODE_IDS
     workflow[n["person_image"]]["inputs"]["image"] = person_name
     workflow[n["garment_image"]]["inputs"]["image"] = garment_name
     workflow[n["mask_image"]]["inputs"]["image"] = mask_name
+    workflow[n["idm"]]["inputs"]["garment_description"] = garment_description
     if seed is None:
         seed = settings.tryon_seed if settings.tryon_seed is not None else random.randint(0, 2**31)
     workflow[n["idm"]]["inputs"]["seed"] = seed
     entry = await _poll(client, await _submit(client, workflow))
-    out = await _fetch_output(client, entry)
-    return out, mask_bytes
+    return await _fetch_output(client, entry)
 
 
 async def _run_idm_vton_outfit(
@@ -246,14 +287,16 @@ async def _run_idm_vton_outfit(
 ) -> bytes:
     """IDM-VTON complete outfit (multiple garments, e.g. top + bottom).
 
-    IDM-VTON CANNOT be chained render-onto-render: when the 2nd garment's pass
-    takes the 1st render as its "person", the model re-generates the WHOLE body
-    and drops the previously-applied garment (verified: a chained top+jeans
-    render lost the grey top). Instead we render EACH garment onto the ORIGINAL
-    person photo (same pose + same seed → the bodies align), keep the AutoMasker
-    mask per garment, then composite: each later garment wins only inside its
-    own mask region, feathered at the boundary so there is no hard seam.
-    Garment ORDER doesn't matter for upper/lower (non-overlapping regions)."""
+    IDM-VTON CANNOT be chained render-onto-render (the 2nd pass regenerates the
+    whole body and drops the 1st garment), and it cannot be given the raw
+    AutoMasker "lower" mask when the source photo is a dress (a dress-length
+    mask makes the jeans come out as a denim dress). So we:
+      1. render EACH garment onto the ORIGINAL person (same pose + same seed →
+         bodies align), giving bottoms a PANTS-shaped mask + a clear "pants"
+         description so they read as pants;
+      2. composite at the WAIST: the first (top) render wins above the waist
+         line, the bottom render wins below it, feathered so there is no seam.
+    The bottom's waist row comes from the pants-mask geometry."""
     if not garments:
         raise ComfyUnavailable("no garments to render")
     if len(garments) == 1:
@@ -268,38 +311,91 @@ async def _run_idm_vton_outfit(
         await _free_models(client)
         person_name = await _upload(client, "person.png", person_bytes)
         renders: list[bytes] = []
-        masks: list[bytes] = []
+        waists: list[float | None] = []
         for g in garments:
-            garment_bytes = _load_garment_image(g, user_id)
-            cloth_type = CLOTH_TYPE.get(g.category, "upper")
-            render, mask = await _idm_render_mask_for(
-                client, person_name, garment_bytes, cloth_type, seed
-            )
+            render, waist = await _render_idm_garment(client, person_name, g, user_id, seed)
             renders.append(render)
-            masks.append(mask)
+            waists.append(waist)
             await _free_models(client)  # so the next garment's mask pass fits
-        return _composite_by_mask(renders, masks)
+    # Composite: the first render is the top/base; each bottom replaces it
+    # below its own waist line (feathered).
+    final = renders[0]
+    for render, waist in zip(renders[1:], waists[1:]):
+        if waist is not None:
+            final = _composite_at_waist(final, render, waist)
+        else:
+            final = render
+    return final
 
 
-def _composite_by_mask(renders: list[bytes], masks: list[bytes]) -> bytes:
-    """Merge per-garment IDM renders using their AutoMasker masks.
-
-    The FIRST render is the base; each later render replaces it ONLY inside
-    that garment's mask region (white = the garment area — the same polarity
-    AutoMasker feeds CatVTON/IDM), with the mask Gaussian-blurred so the
-    boundary feathers instead of a hard seam. All renders are the same size
-    (the IDM workflow's 640x896); masks are resized to match. Pure-PIL
-    (Image.composite is exactly the soft alpha blend we need)."""
-    base = Image.open(io.BytesIO(renders[0])).convert("RGB")
-    for render, mask in zip(renders[1:], masks[1:]):
-        m = Image.open(io.BytesIO(mask)).convert("L")
-        m = m.resize(base.size, Image.BILINEAR)
-        m = m.filter(ImageFilter.GaussianBlur(8))  # feather the seam
-        img = Image.open(io.BytesIO(render)).convert("RGB")
-        img = img.resize(base.size, Image.LANCZOS)
-        base = Image.composite(img, base, m)
+def _to_pants_mask(mask_bytes: bytes) -> tuple[bytes, float]:
+    """Reshape a 'lower' AutoMasker mask (a wide A-line dress blob when the
+    source photo is a dress) into a PANTS shape: a solid waistband + two
+    straight leg columns that separate as they go down. This gives IDM the
+    geometry of "pants", so the jeans are painted as two legs instead of a
+    full-length dress. Also returns the waist row as a fraction of the mask
+    height (used as the composite's waist seam)."""
+    m = Image.open(io.BytesIO(mask_bytes)).convert("L")
+    w, h = m.size
+    rows = []
+    for y in range(h):
+        xs = [x for x in range(w) if m.getpixel((x, y)) > 128]
+        if xs:
+            rows.append((y, min(xs), max(xs)))
+    if not rows:
+        return mask_bytes, 0.5
+    y_top = rows[0][0]
+    y_bot = rows[-1][0]
+    lo = y_top + (y_bot - y_top) * 0.42
+    hi = y_top + (y_bot - y_top) * 0.62
+    mid = [r for r in rows if lo <= r[0] <= hi]
+    if mid:
+        wy, wx0, wx1 = min(mid, key=lambda r: r[2] - r[1])
+    else:
+        wy = (y_top + y_bot) // 2
+        wx0, wx1 = 0, w
+    cy = (wx0 + wx1) / 2
+    leg_w = max(70, min(120, int((wx1 - wx0) * 0.5)))
+    out = Image.new("L", (w, h), 0)
+    for y in range(max(0, wy - 6), min(h, wy + 12)):  # waistband
+        for x in range(max(0, int(cy - leg_w)), min(w, int(cy + leg_w) + 1)):
+            out.putpixel((x, y), 255)
+    for y in range(wy + 12, y_bot + 1):  # two legs, gap widening downward
+        t = (y - (wy + 12)) / max(1, y_bot - (wy + 12))
+        gap = int(26 + 50 * t)
+        for x in range(max(0, int(cy - leg_w)), min(w, int(cy - gap / 2))):
+            out.putpixel((x, y), 255)
+        for x in range(max(0, int(cy + gap / 2)), min(w, int(cy + leg_w) + 1)):
+            out.putpixel((x, y), 255)
     buf = io.BytesIO()
-    base.save(buf, "PNG")
+    out.save(buf, "PNG")
+    return buf.getvalue(), wy / h
+
+
+def _composite_at_waist(top_bytes: bytes, bottom_bytes: bytes, waist_fraction: float) -> bytes:
+    """Blend the top render (above the waist) with the bottom render (below the
+    waist). The split follows the pants' waistband row, feathered over ~3% of
+    the image height so there is no hard line. Pure-PIL Image.composite."""
+    a = Image.open(io.BytesIO(top_bytes)).convert("RGB")
+    b = Image.open(io.BytesIO(bottom_bytes)).convert("RGB").resize(a.size, Image.LANCZOS)
+    w, h = a.size
+    wy = int(waist_fraction * h)
+    feather = max(12, int(h * 0.03))
+    mask = Image.new("L", (w, h), 0)
+    px = mask.load()
+    for y in range(h):
+        if y <= wy - feather:
+            v = 255
+        elif y >= wy + feather:
+            v = 0
+        else:
+            v = int(255 * (1 - (y - (wy - feather)) / (2 * feather)))
+        for x in range(w):
+            px[x, y] = v
+    mask = mask.filter(ImageFilter.GaussianBlur(max(3, feather // 4)))
+    buf = io.BytesIO()
+    # a (top) wins where the mask is white (above waist); b (bottom) below.
+    Image.composite(a, b, mask).save(buf, "PNG")
     return buf.getvalue()
 
 

@@ -71,10 +71,46 @@ def test_run_tryon_model_unknown_raises():
     raise AssertionError("expected ComfyUnavailable for unconfigured model")
 
 
-def test_composite_by_mask_preserves_each_garment_region():
-    """The IDM chained-outfit fix: later renders win only inside their own
-    AutoMasker region (white), so the first garment (e.g. the top) is never
-    dropped. Pure-PIL, no GPU needed."""
+def test_to_pants_mask_makes_two_legs():
+    """A dress-shaped 'lower' AutoMasker mask (wide A-line blob) must become a
+    PANTS shape: a waistband + two separate leg columns, and a waist fraction.
+    This is what stops IDM painting a pair of jeans as a denim dress."""
+    from io import BytesIO
+
+    from PIL import Image
+
+    m = Image.new("L", (100, 200), 0)
+    for y in range(40, 200):  # A-line: narrow at top, wide at bottom
+        half = 10 + int((y - 40) / 160 * 35)
+        for x in range(50 - half, 50 + half + 1):
+            m.putpixel((x, y), 255)
+    buf = BytesIO()
+    m.save(buf, "PNG")
+
+    pants, waist = tryon._to_pants_mask(buf.getvalue())
+    assert 0 < waist < 1
+    p = Image.open(BytesIO(pants)).convert("L")
+    # near the bottom the white must be TWO separated runs (two legs),
+    # never one wide blob (dress)
+    xs = [x for x in range(p.width) if p.getpixel((x, p.height - 10)) > 128]
+    runs = []
+    prev = None
+    for x in xs:
+        if prev is None or x - prev > 1:
+            runs.append([x, x])
+        else:
+            runs[-1][1] = x
+        prev = x
+    assert len(runs) >= 2, runs
+    # the waistband row (just above the legs) is one solid band
+    wy = int(waist * p.height)
+    band = [x for x in range(p.width) if p.getpixel((x, wy + 2)) > 128]
+    assert len(band) > 10, len(band)
+
+
+def test_composite_at_waist_splits_top_and_bottom():
+    """The top render wins above the waist, the bottom render below it
+    (feathered, so dominance not exact equality)."""
     from io import BytesIO
 
     from PIL import Image
@@ -85,29 +121,13 @@ def test_composite_by_mask_preserves_each_garment_region():
         im.save(buf, "PNG")
         return buf.getvalue()
 
-    top_render = _png((255, 0, 0))    # red = the top is everywhere here
-    bottom_render = _png((0, 0, 255))  # blue = the bottom is everywhere here
-    # AutoMasker for the lower garment: white (255) in the LOWER half
-    m = Image.new("L", (64, 64), 0)
-    for y in range(32, 64):
-        for x in range(64):
-            m.putpixel((x, y), 255)
-    mbuf = BytesIO()
-    m.save(mbuf, "PNG")
-    mask = mbuf.getvalue()
-
-    out = Image.open(BytesIO(tryon._composite_by_mask([top_render, bottom_render], [mask, mask])))
-    assert out.size == (64, 64)
-    # The blur feathers the seam, so assert DOMINANCE not exact equality:
-    # upper half stays the FIRST render (red wins) — the top is preserved
-    r, g, b = out.getpixel((32, 8))
-    assert r > b, (r, g, b)
-    # lower half becomes the SECOND render (blue wins) — the bottom is applied
-    r, g, b = out.getpixel((32, 56))
-    assert b > r, (r, g, b)
-    # right at the seam the two are blended (neither pure)
-    r, g, b = out.getpixel((32, 32))
-    assert 0 < r < 255 and 0 < b < 255, (r, g, b)
+    top = _png((255, 0, 0))     # red = the top
+    bottom = _png((0, 0, 255))  # blue = the jeans
+    out = Image.open(BytesIO(tryon._composite_at_waist(top, bottom, 0.5)))
+    r, g, b = out.getpixel((32, 16))
+    assert r > b, (r, g, b)  # above waist = top
+    r, g, b = out.getpixel((32, 48))
+    assert b > r, (r, g, b)  # below waist = jeans
 
 
 if __name__ == "__main__":
