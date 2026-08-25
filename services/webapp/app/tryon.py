@@ -388,30 +388,48 @@ def _to_top_mask(mask_bytes: bytes, waist: float) -> bytes:
 
 
 def _to_pants_mask(mask_bytes: bytes) -> tuple[bytes, float]:
-    """Reshape a 'lower' AutoMasker mask (a wide A-line dress blob when the
-    source photo is a dress) into a PANTS shape: a solid waistband + two
-    straight leg columns that separate as they go down. This gives IDM the
-    geometry of "pants", so the jeans are painted as two legs instead of a
-    full-length dress. Returns the pants mask + the waist row fraction."""
+    """Reshape a 'lower' AutoMasker mask into a PANTS shape: a solid waistband +
+    two straight leg columns that separate as they go down, so IDM paints the
+    jeans as two legs instead of a full-length dress.
+
+    Two "IDM renders shorts/skirt" failures this fixes:
+      * dress base — the 'lower' mask is a wide A-line blob covering the whole
+        dress; the waistband + two legs reshape it into pants geometry.
+      * shorts/skirt base — AutoMasker's 'lower' mask only covers the garment
+        the person is CURRENTLY wearing, so it stops at mid-thigh and IDM paints
+        SHORTS. We pin the waistband to the TOP of the lower garment (the true
+        waist on separates) and extend the legs down to the ankles (near the
+        bottom of the frame) so jeans always render FULL-length.
+    Returns the pants mask + the waist row fraction."""
     m = Image.open(io.BytesIO(mask_bytes)).convert("L")
     w, h = m.size
+    rows = []
+    for y in range(h):
+        xs = [x for x in range(w) if m.getpixel((x, y)) > 128]
+        if xs:
+            rows.append((y, min(xs), max(xs)))
+    if not rows:
+        return mask_bytes, 0.5
+    y_top = rows[0][0]
+    y_bot = rows[-1][0]
     waist = _waist_fraction(mask_bytes)
+    # Separates (shorts/pants): the lower garment's TOP is the natural waist —
+    # _waist_fraction's 42-62% band lands mid-shorts. A dress starts high
+    # (shoulders), so a low mask start means separates.
+    if (y_top / h) > 0.30:
+        waist = (y_top + (y_bot - y_top) * 0.04) / h
     wy = int(waist * h)
     row_xs = [x for x in range(w) if m.getpixel((x, wy)) > 128]
     if row_xs:
         cx0, cx1 = min(row_xs), max(row_xs)
     else:
-        rows = []
-        for y in range(h):
-            xs = [x for x in range(w) if m.getpixel((x, y)) > 128]
-            if xs:
-                rows.append((y, min(xs), max(xs)))
-        if not rows:
-            return mask_bytes, 0.5
         cx0, cx1 = rows[0][1], rows[0][2]
     cy = (cx0 + cx1) / 2
     leg_w = max(70, min(120, int((cx1 - cx0) * 0.5)))
-    y_bot = max((y for y in range(h) if any(m.getpixel((x, y)) > 128 for x in range(w))), default=wy)
+    # Extend the legs to the ankles: the mask stops at the current garment
+    # (shorts → mid-thigh), so without this the jeans would render as shorts.
+    # When the base already wears full-length pants (or a dress) this is a no-op.
+    y_bot = max(y_bot, int(h * 0.96))
     out = Image.new("L", (w, h), 0)
     for y in range(max(0, wy - 6), min(h, wy + 12)):  # waistband
         for x in range(max(0, int(cy - leg_w)), min(w, int(cy + leg_w) + 1)):

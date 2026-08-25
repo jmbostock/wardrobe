@@ -108,6 +108,43 @@ def test_to_pants_mask_makes_two_legs():
     assert len(band) > 10, len(band)
 
 
+def test_to_pants_mask_extends_legs_beyond_short_mask():
+    """A person wearing SHORTS gives a short 'lower' mask that stops at
+    mid-thigh. The pants mask must still extend the legs to the ankles (near
+    the bottom of the frame) and pin the waistband to the TOP of the shorts —
+    otherwise IDM paints the jeans as shorts (the "IDM can't find legs" bug)."""
+    from io import BytesIO
+
+    from PIL import Image
+
+    m = Image.new("L", (100, 200), 0)
+    for y in range(80, 125):  # shorts: waist (y=80) down to mid-thigh (y=125)
+        half = 15 if y < 115 else 10
+        for x in range(50 - half, 50 + half + 1):
+            m.putpixel((x, y), 255)
+    buf = BytesIO()
+    m.save(buf, "PNG")
+
+    pants, waist = tryon._to_pants_mask(buf.getvalue())
+    p = Image.open(BytesIO(pants)).convert("L")
+    # waistband pinned near the TOP of the shorts (~0.40h), not mid-shorts
+    assert 0.35 < waist < 0.50, waist
+    wy = int(waist * p.height)
+    band = [x for x in range(p.width) if p.getpixel((x, wy + 2)) > 128]
+    assert len(band) > 10, len(band)
+    # legs must reach the ankles (~0.95h), far below the 0.62h mask bottom
+    xs = [x for x in range(p.width) if p.getpixel((x, int(p.height * 0.95))) > 128]
+    runs = []
+    prev = None
+    for x in xs:
+        if prev is None or x - prev > 1:
+            runs.append([x, x])
+        else:
+            runs[-1][1] = x
+        prev = x
+    assert len(runs) >= 2, runs  # two legs, not one blob / not empty
+
+
 def test_composite_at_waist_splits_top_and_bottom():
     """The top render wins above the waist, the bottom render below it
     (feathered, so dominance not exact equality)."""
