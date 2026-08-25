@@ -110,45 +110,89 @@ async def run_tryon_model(
 
 # --- IDM-VTON (SDXL) backend ---
 IDM_WORKFLOW_PATH = Path(__file__).parent / "workflows" / "idm_vton.json"
+IDM_MASK_WORKFLOW_PATH = Path(__file__).parent / "workflows" / "idm_vton_mask.json"
 IDM_NODE_IDS = {
     "person_image": "10",
     "garment_image": "11",
-    "masker_pipe": "12",
-    "automasker": "13",
+    "mask_image": "13",
     "densepose": "14",
     "pipeline": "15",
     "idm": "16",
     "output": "17",
 }
+IDM_MASK_NODE_IDS = {
+    "person_image": "10",
+    "masker_pipe": "12",
+    "automasker": "13",
+    "output": "18",
+}
+
+
+async def _free_models(client: httpx.AsyncClient) -> None:
+    """Ask ComfyUI to unload all loaded models + clear the torch cache.
+
+    The IDM-VTON pipeline is ~13.7GB on the 5060 Ti and stays resident once
+    loaded (ComfyUI caches the PipelineLoader). Without this, a CHAINED outfit
+    (top → bottom) OOMs: the 2nd garment's mask pass (AutoMasker/DensePose)
+    runs while the 1st garment's pipeline is still loaded. We free at the START
+    (clear any leftover CatVTON/IDM models before the mask pass) and at the END
+    (unload the pipeline so the next chained render / next request fits).
+    Failures are ignored — a stale load just risks a later OOM, never a 500."""
+    try:
+        await client.post(
+            "/free",
+            json={"unload_models": True, "free_memory": True},
+            timeout=10,
+        )
+    except Exception:  # noqa: BLE001
+        pass
 
 
 async def _run_idm_vton(
     person_bytes: bytes, garment: Garment, user_id: int, seed: int | None = None
 ) -> bytes:
-    """IDM-VTON (SDXL) try-on via ComfyUI. Reuses CatVTON's LoadAutoMasker +
-    AutoMasker for the garment mask (cloth_type from the category) and
-    controlnet_aux's DensePose preprocessor for the pose image. Heavier than
-    CatVTON (~8-11GB VRAM) — meant for the dev / batch (overnight) path."""
-    if not IDM_WORKFLOW_PATH.exists():
-        raise ComfyUnavailable("workflows/idm_vton.json missing — see workflows/README.md")
-    workflow = json.loads(IDM_WORKFLOW_PATH.read_text())
+    """IDM-VTON (SDXL) try-on via ComfyUI in TWO passes so they never share VRAM:
+      pass 0 — free any resident models (CatVTON / a previous IDM pipeline).
+      pass 1 — CatVTON's LoadAutoMasker/AutoMasker builds the garment mask
+               (cloth_type from the category); ~2GB.
+      pass 2 — the IDM-VTON pipeline (~13GB on the 5060 Ti) renders using the
+               pre-made mask + controlnet_aux DensePose pose image.
+      pass 3 — free the pipeline again so a CHAINED outfit (top then bottom)
+               doesn't OOM on the next garment's mask pass.
+    Heavier than CatVTON — meant for the dev / batch (overnight) path where the
+    vision llama-server + ollama are stopped first."""
+    if not IDM_WORKFLOW_PATH.exists() or not IDM_MASK_WORKFLOW_PATH.exists():
+        raise ComfyUnavailable("workflows/idm_vton*.json missing — see workflows/README.md")
     garment_bytes = _load_garment_image(garment, user_id)
     cloth_type = CLOTH_TYPE.get(garment.category, "upper")
     person_bytes = _prep_person(person_bytes)
 
     async with httpx.AsyncClient(timeout=30) as client:
+        await _free_models(client)  # clear CatVTON / previous IDM pipeline first
         person_name = await _upload(client, "person.png", person_bytes)
+        # pass 1: garment mask (AutoMasker) — run BEFORE the pipeline loads
+        mask_workflow = json.loads(IDM_MASK_WORKFLOW_PATH.read_text())
+        mn = IDM_MASK_NODE_IDS
+        mask_workflow[mn["person_image"]]["inputs"]["image"] = person_name
+        mask_workflow[mn["automasker"]]["inputs"]["cloth_type"] = cloth_type
+        mask_entry = await _poll(client, await _submit(client, mask_workflow))
+        mask_bytes = await _fetch_output(client, mask_entry)
+        mask_name = await _upload(client, "mask.png", mask_bytes)
+        # pass 2: IDM-VTON with the pre-made mask + DensePose pose
+        workflow = json.loads(IDM_WORKFLOW_PATH.read_text())
         garment_name = await _upload(client, "garment.png", garment_bytes)
         n = IDM_NODE_IDS
         workflow[n["person_image"]]["inputs"]["image"] = person_name
         workflow[n["garment_image"]]["inputs"]["image"] = garment_name
-        workflow[n["automasker"]]["inputs"]["cloth_type"] = cloth_type
+        workflow[n["mask_image"]]["inputs"]["image"] = mask_name
         if seed is None:
             seed = settings.tryon_seed if settings.tryon_seed is not None else random.randint(0, 2**31)
         workflow[n["idm"]]["inputs"]["seed"] = seed
-        prompt_id = await _submit(client, workflow)
-        entry = await _poll(client, prompt_id)
-        return await _fetch_output(client, entry)
+        entry = await _poll(client, await _submit(client, workflow))
+        out = await _fetch_output(client, entry)
+        # pass 3: unload the ~13.7GB pipeline so the next chained render fits
+        await _free_models(client)
+        return out
 
 
 async def run_tryon(person_bytes: bytes, garment: Garment, user_id: int) -> bytes:

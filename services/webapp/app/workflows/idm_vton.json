@@ -7,17 +7,9 @@
     "class_type": "LoadImage",
     "inputs": {"image": "garment.png"}
   },
-  "12": {
-    "class_type": "LoadAutoMasker",
-    "inputs": {"catvton_path": "zhengchong/CatVTON"}
-  },
   "13": {
-    "class_type": "AutoMasker",
-    "inputs": {
-      "pipe": ["12", 0],
-      "target_image": ["10", 0],
-      "cloth_type": "upper"
-    }
+    "class_type": "LoadImage",
+    "inputs": {"image": "mask.png"}
   },
   "14": {
     "class_type": "DensePosePreprocessor",
@@ -42,8 +34,8 @@
       "garment_img": ["11", 0],
       "garment_description": "The garment shown in the reference image.",
       "negative_prompt": "lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry, bad feet",
-      "width": 768,
-      "height": 1024,
+      "width": 640,
+      "height": 896,
       "num_inference_steps": 30,
       "guidance_scale": 2.0,
       "strength": 1.0,
