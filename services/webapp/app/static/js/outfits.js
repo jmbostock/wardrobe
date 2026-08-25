@@ -85,13 +85,19 @@ async function openDetail(o) {
     let html = '';
     for (const g of gs) {
       const label = (g.category ? g.category.replace(/^./, (c) => c.toUpperCase()) + ': ' : '') + (g.name || '');
-      html += '<div class="od-g-item"><div class="od-g-img">' +
+      html += '<div class="od-g-item" data-gid="' + g.id + '" title="View ' + (g.name || 'this item') + '">' +
+        '<div class="od-g-img">' +
         (g.has_image
           ? '<img data-gid="' + g.id + '" alt="' + (g.name || '') + '">'
           : '<div class="od-g-swatch" style="background:' + (g.color_hex || '#555') + '"></div>') +
         '</div><div class="od-g-name">' + label + '</div></div>';
     }
     gridBox.innerHTML = html;
+    // click-through: tap a garment tile → open that item in the Wardrobe
+    gridBox.querySelectorAll('.od-g-item[data-gid]').forEach((item) => {
+      item.style.cursor = 'pointer';
+      item.addEventListener('click', () => { location.href = '/wardrobe?g=' + item.dataset.gid; });
+    });
     gridBox.querySelectorAll('.od-g-img img[data-gid]').forEach((im) => {
       const g = gmap[Number(im.dataset.gid)];
       setAuthImage(im, g ? garmentImg(g, 'thumb')

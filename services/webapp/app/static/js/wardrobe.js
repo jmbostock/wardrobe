@@ -585,3 +585,10 @@ async function loadMeta() {
 
 loadWardrobe();
 loadMeta();
+
+// auto-open a garment when the outfit click-through lands here (?g=<id>)
+const _gParam = new URLSearchParams(location.search).get('g');
+if (_gParam) {
+  const _card = document.querySelector('.photo[data-gid="' + Number(_gParam) + '"]');
+  if (_card) openGarmentDetail(_card._garment);
+}
