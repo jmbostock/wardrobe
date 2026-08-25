@@ -314,19 +314,16 @@ async def _run_idm_vton_outfit(
 ) -> bytes:
     """IDM-VTON complete outfit (multiple garments, e.g. top + bottom).
 
-    Strategy — HYBRID-COMPOSITE (user-approved, quality-tuned 2026-08-25):
-      0. CatVTON chains ALL garments onto the original person FIRST. CatVTON is
-         a true inpainter: it establishes the correct garment BOUNDARIES — real
-         full-length jeans even on a shorts-wearing base (which IDM alone can't
-         do, verified).
-      1. IDM re-wears EACH garment as a SINGLE pass onto that CatVTON base —
-         NOT chained. Chaining re-generates the whole body at every step and
-         compounds blur (measured edge_std 29 vs 47.9 for single-pass at
-         768x1024). Single passes stay sharp and each garment warps onto the
-         already-correct fabric.
-      2. Composite the top + bottom renders at the bottom's waist (feathered,
-         `_composite_at_waist`) — no chain-blur, no waist seam.
-      Result: CatVTON-correct boundaries with sharp IDM texture.
+    Strategy — SINGLE-PASS COMPOSITE (quality-tuned 2026-08-25):
+      0. Render EACH garment as a SINGLE IDM pass onto the ORIGINAL person
+         photo — never chained, never onto an AI base. Chaining re-generates
+         the whole body per garment and compounds blur (edge_std 29); re-
+         generating from an AI (CatVTON) base caps sharpness (33); the
+         original photo base stays SHARP (47.9 at 768x1024).
+      1. Composite the top + bottom renders at the bottom's waist (feathered,
+         `_composite_at_waist`) — sharp, seamless, full-length jeans (the
+         per-step reference-encode fix + pants mask handle the rest).
+      Result: sharp IDM texture, correct full-length jeans, no seam.
     """
     if not garments:
         raise ComfyUnavailable("no garments to render")
@@ -336,24 +333,23 @@ async def _run_idm_vton_outfit(
         raise ComfyUnavailable("workflows/idm_vton*.json missing — see workflows/README.md")
     if seed is None:
         seed = settings.tryon_seed if settings.tryon_seed is not None else random.randint(0, 2**31)
-    # step 0 — CatVTON establishes correct boundaries (true inpainter).
-    cat_base = person_bytes
-    for g in garments:
-        cat_base = await run_tryon(cat_base, g, user_id)
-    person_bytes = _prep_person(cat_base)
+    # step 0 — single sharp IDM pass per garment onto the ORIGINAL person photo
+    # (NOT chained, NOT onto an AI base — re-generating from an AI base caps
+    # sharpness: measured edge_std 33 vs 48 for the original photo base).
+    person_bytes = _prep_person(person_bytes)
 
     async with httpx.AsyncClient(timeout=30) as client:
         await _free_models(client)
         person_name = await _upload(client, "person.png", person_bytes)
-        # step 1 — one SHARP single-pass IDM render per garment onto the SAME
-        # CatVTON base (no chaining — that's what made the output fuzzy).
+        # one SHARP single-pass IDM render per garment onto the SAME original
+        # base (no chaining, no AI base) — each stays sharp.
         renders: list[tuple[bytes, float | None]] = []
         for g in garments:
             render, waist = await _render_idm_garment(client, person_name, g, user_id, seed)
             renders.append((render, waist))
             await _free_models(client)
         result = renders[0][0]
-        # step 2 — composite top + bottom at the bottom's waist (feathered seam).
+        # composite top + bottom at the bottom's waist (feathered seam).
         if len(renders) == 2 and renders[1][1] is not None:
             result = _composite_at_waist(renders[0][0], renders[1][0], renders[1][1])
         return result
