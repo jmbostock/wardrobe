@@ -71,6 +71,45 @@ def test_run_tryon_model_unknown_raises():
     raise AssertionError("expected ComfyUnavailable for unconfigured model")
 
 
+def test_composite_by_mask_preserves_each_garment_region():
+    """The IDM chained-outfit fix: later renders win only inside their own
+    AutoMasker region (white), so the first garment (e.g. the top) is never
+    dropped. Pure-PIL, no GPU needed."""
+    from io import BytesIO
+
+    from PIL import Image
+
+    def _png(color):
+        im = Image.new("RGB", (64, 64), color)
+        buf = BytesIO()
+        im.save(buf, "PNG")
+        return buf.getvalue()
+
+    top_render = _png((255, 0, 0))    # red = the top is everywhere here
+    bottom_render = _png((0, 0, 255))  # blue = the bottom is everywhere here
+    # AutoMasker for the lower garment: white (255) in the LOWER half
+    m = Image.new("L", (64, 64), 0)
+    for y in range(32, 64):
+        for x in range(64):
+            m.putpixel((x, y), 255)
+    mbuf = BytesIO()
+    m.save(mbuf, "PNG")
+    mask = mbuf.getvalue()
+
+    out = Image.open(BytesIO(tryon._composite_by_mask([top_render, bottom_render], [mask, mask])))
+    assert out.size == (64, 64)
+    # The blur feathers the seam, so assert DOMINANCE not exact equality:
+    # upper half stays the FIRST render (red wins) — the top is preserved
+    r, g, b = out.getpixel((32, 8))
+    assert r > b, (r, g, b)
+    # lower half becomes the SECOND render (blue wins) — the bottom is applied
+    r, g, b = out.getpixel((32, 56))
+    assert b > r, (r, g, b)
+    # right at the seam the two are blended (neither pure)
+    r, g, b = out.getpixel((32, 32))
+    assert 0 < r < 255 and 0 < b < 255, (r, g, b)
+
+
 if __name__ == "__main__":
     import traceback
 

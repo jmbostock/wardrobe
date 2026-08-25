@@ -165,17 +165,24 @@ async def do_tryon_outfit(
     outfit_id: int | None = None
     result_url = ""
     if ids:
+        # Resolve the garments ONCE — they must be in the viewer's REAL
+        # wardrobe (hard requirement: a render must show real clothes).
+        garments = []
+        for gid in ids:
+            g = wardrobe.get_visible(user["id"], gid)
+            if g is None:
+                raise HTTPException(404, f"garment {gid} not found in your wardrobe")
+            garments.append(g)
         for mi, model in enumerate(models):
             model_label = tryon.MODEL_LABELS.get(model, model)
             try:
-                mbytes = person_bytes
-                for gid in ids:
-                    garment = wardrobe.get_visible(user["id"], gid)
-                    if garment is None:
-                        raise HTTPException(404, f"garment {gid} not found in your wardrobe")
-                    if mi == 0:
-                        interactions.log(user["id"], gid, "tried_on", {"mode": "outfit", "model": model})
-                    mbytes = await tryon.run_tryon_model(model, mbytes, garment, user["id"])
+                if mi == 0:
+                    for g in garments:
+                        interactions.log(user["id"], g.id, "tried_on", {"mode": "outfit", "model": model})
+                # Each backend decides HOW to combine the garments (catvton
+                # chains render-onto-render; idm_vton composites per-garment
+                # renders by mask so the first garment is never dropped).
+                mbytes = await tryon.run_tryon_outfit_model(model, person_bytes, garments, user["id"])
             except tryon.ComfyUnavailable as ex:
                 results.append({"model": model, "label": model_label, "error": str(ex)})
                 continue
