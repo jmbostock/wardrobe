@@ -3,6 +3,9 @@
 let editingItem = null;   // garment being edited in the detail card
 let wardrobeFilter = 'all';
 let wardrobeSort = 'newest';
+// outfit click-through lands here as /wardrobe?g=<id> — auto-open that garment's detail
+// (read once at load; applied inside loadWardrobe() after the grid has rendered).
+const _gParam = new URLSearchParams(location.search).get('g');
 // Versioned, size-aware garment image URL. The ?v=<mtime> is the cache-buster:
 // rotate/upload rewrite the file -> the backend returns a fresh image_version ->
 // this URL changes -> the browser fetches the new image instead of the cached one.
@@ -146,6 +149,12 @@ async function loadWardrobe() {
     card.style.cursor = 'pointer';
     card.appendChild(img); card.appendChild(buildMeta(g));
     grid.appendChild(card);
+  }
+  // outfit click-through: auto-open the requested garment's detail now that the
+  // grid exists (the old top-level check ran before the async fetch resolved).
+  if (_gParam) {
+    const _card = grid.querySelector('.photo[data-gid="' + Number(_gParam) + '"]');
+    if (_card) openGarmentDetail(_card._garment);
   }
 }
 $('wardrobe-filter').addEventListener('change', (e) => { wardrobeFilter = e.target.value; loadWardrobe(); });
@@ -585,10 +594,3 @@ async function loadMeta() {
 
 loadWardrobe();
 loadMeta();
-
-// auto-open a garment when the outfit click-through lands here (?g=<id>)
-const _gParam = new URLSearchParams(location.search).get('g');
-if (_gParam) {
-  const _card = document.querySelector('.photo[data-gid="' + Number(_gParam) + '"]');
-  if (_card) openGarmentDetail(_card._garment);
-}
