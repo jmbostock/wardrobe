@@ -289,17 +289,11 @@ async def _idm_render(
 
 
 # --- best-source-photo selection -------------------------------------------
-# A person photo where the subject is wearing SEPARATES (top + bottom) is a far
-# better try-on base for a top+bottom outfit than a one-piece-dress photo: on a
-# dress the AutoMasker "lower" mask covers the WHOLE body, so the model paints
-# the jeans over the whole dress silhouette and they come out as a SKIRT; on a
-# separates photo the mask is pants-length and the jeans render as PANTS
-# (verified empirically — photo 29 vs photo 32). `photo_style` classifies a
-# saved photo with the AutoMasker "lower" mask (cached per file mtime), and the
-# try-on route picks the best base for the look.
-_PHOTO_STYLE_CACHE: dict[str, str] = {}
-
-
+# Photo selection is handled by the EXISTING photopick module (vision outfit-
+# match with a pure-PIL fallback), wired in tryon_routes._pick_person_photo.
+# `photo_style_from_mask` is a pure-PIL helper (dress vs separates from the
+# AutoMasker 'lower' mask start height) kept for tests + debugging — a dress
+# base makes bottoms render as a SKIRT, a separates base as PANTS.
 def photo_style_from_mask(mask_bytes: bytes) -> str:
     """'dress' | 'separates' — from where the AutoMasker 'lower' mask starts
     vertically. On a one-piece dress the lower mask starts high (it covers the
@@ -313,30 +307,6 @@ def photo_style_from_mask(mask_bytes: bytes) -> str:
         if white >= need:
             return "dress" if (y / h) < 0.45 else "separates"
     return "separates"
-
-
-async def photo_style(user_id: int, photo_id: int) -> str:
-    """Classify a saved person photo as 'dress' or 'separates', cached per
-    (user, photo, file mtime). Runs the AutoMasker 'lower' mask via ComfyUI."""
-    from .photos import photo_bytes, photo_path
-
-    try:
-        mtime = int(photo_path(user_id, photo_id).stat().st_mtime)
-    except Exception:  # noqa: BLE001
-        mtime = 0
-    key = f"{user_id}:{photo_id}:{mtime}"
-    cached = _PHOTO_STYLE_CACHE.get(key)
-    if cached:
-        return cached
-    data = photo_bytes(user_id, photo_id)
-    async with httpx.AsyncClient(timeout=30) as client:
-        await _free_models(client)
-        person_name = await _upload(client, "style.png", data)
-        mask = await _automasker(client, person_name, "lower")
-        await _free_models(client)
-    style = photo_style_from_mask(mask)
-    _PHOTO_STYLE_CACHE[key] = style
-    return style
 
 
 async def _run_idm_vton_outfit(

@@ -8,12 +8,13 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
-from .. import editor, interactions, photos, svd, tryon
+from .. import editor, interactions, photopick, photos, svd, tryon
 from ..deps import get_current_user
 from ..media import (
     IMAGE_CACHE_CONTROL,
     UPLOADS_CACHE_CONTROL,
     UPLOAD_DIR,
+    garment_image_path,
     image_variant,
     media_type_for,
 )
@@ -94,40 +95,26 @@ async def do_tryon(
     return {"result_url": f"/api/uploads/{out_name}", "garment_id": garment_id}
 
 
-async def _pick_person_photo(user: dict, garments: list) -> int | None:
-    """Pick the best saved person photo to render an outfit onto. When the
-    outfit has a BOTTOM garment, prefer a photo where the person is wearing
-    SEPARATES (top + bottom) — a dress-wearing base makes bottoms render as a
-    SKIRT, a separates base lets them render as PANTS (verified: photo 29 =
-    jeans+shirt renders proper pants; photo 32 = dress renders a skirt).
-    Falls back to the default / newest photo."""
-    plist = photos.list(user["id"])
-    if not plist:
+def _pick_person_photo(user: dict, garments: list) -> int | None:
+    """Pick the best saved person photo as the try-on base, using the EXISTING
+    photopick logic (vision outfit-match, pure-PIL fallback) — the garment that
+    constrains the base most drives the pick: a BOTTOM needs a separates photo
+    (a dress-wearing base makes jeans render as a skirt), otherwise the first
+    garment. Returns the best photo id or None."""
+    target = None
+    for g in garments:
+        if tryon.CLOTH_TYPE.get(g.category, "upper") == "lower":
+            target = g
+            break
+    if target is None:
+        target = garments[0]
+    path = garment_image_path(user["id"], target.id)
+    if path is None:
         return None
-    needs_separates = any(
-        tryon.CLOTH_TYPE.get(g.category, "upper") == "lower" for g in garments
+    ranked = photopick.rank_photos_for_garment(
+        user["id"], path.read_bytes(), target.category
     )
-    best_id: int | None = None
-    best_score = -1.0
-    for p in plist:
-        try:
-            style = await tryon.photo_style(user["id"], p["id"])
-        except Exception:  # noqa: BLE001 — masker hiccup, treat as neutral
-            style = "unknown"
-        score = 1.0
-        if needs_separates:
-            if style == "separates":
-                score += 3.0
-            elif style == "dress":
-                score -= 1.0
-        elif style == "dress":
-            score += 0.5
-        if p.get("is_default"):
-            score += 1.0
-        score += p["id"] / 100000.0  # newest tie-break
-        if score > best_score:
-            best_id, best_score = p["id"], score
-    return best_id
+    return ranked[0]["id"] if ranked else None
 
 
 @router.post("/api/tryon/outfit")
@@ -188,7 +175,7 @@ async def do_tryon_outfit(
     if ids and (not base_result) and person is None and any(
         tryon.CLOTH_TYPE.get(g.category, "upper") == "lower" for g in garments
     ):
-        picked = await _pick_person_photo(user, garments)
+        picked = _pick_person_photo(user, garments)
         if picked is not None:
             photo_id = picked
     if base_result:
