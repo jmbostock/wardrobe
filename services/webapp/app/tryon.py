@@ -314,19 +314,19 @@ async def _run_idm_vton_outfit(
 ) -> bytes:
     """IDM-VTON complete outfit (multiple garments, e.g. top + bottom).
 
-    Strategy — HYBRID, CatVTON-first (user-approved, 2026-08-25):
+    Strategy — HYBRID-COMPOSITE (user-approved, quality-tuned 2026-08-25):
       0. CatVTON chains ALL garments onto the original person FIRST. CatVTON is
-         a true inpainter: it establishes the correct garment BOUNDARIES — it
-         paints real full-length jeans even when the base photo shows the
-         person in shorts/bare legs, which IDM-VTON fundamentally cannot do
-         (it warps fabric over existing clothing and can't GENERATE pants over
-         bare skin).
-      1. IDM then CHAINS the same garments ON TOP of that CatVTON render. The
-         base already shows the outfit, so IDM is "re-wearing" garments onto
-         existing fabric (its reliable mode, verified on photo 29) — warping
-         them with its better texture/drape. Bottoms still get the PANTS-shaped
-         mask + clear "pants" description so they stay two legs, never a dress.
-      Result: CatVTON-correct geometry with IDM-level quality.
+         a true inpainter: it establishes the correct garment BOUNDARIES — real
+         full-length jeans even on a shorts-wearing base (which IDM alone can't
+         do, verified).
+      1. IDM re-wears EACH garment as a SINGLE pass onto that CatVTON base —
+         NOT chained. Chaining re-generates the whole body at every step and
+         compounds blur (measured edge_std 29 vs 47.9 for single-pass at
+         768x1024). Single passes stay sharp and each garment warps onto the
+         already-correct fabric.
+      2. Composite the top + bottom renders at the bottom's waist (feathered,
+         `_composite_at_waist`) — no chain-blur, no waist seam.
+      Result: CatVTON-correct boundaries with sharp IDM texture.
     """
     if not garments:
         raise ComfyUnavailable("no garments to render")
@@ -340,22 +340,23 @@ async def _run_idm_vton_outfit(
     cat_base = person_bytes
     for g in garments:
         cat_base = await run_tryon(cat_base, g, user_id)
-    # step 1 — IDM re-wears each garment onto that render (better texture).
     person_bytes = _prep_person(cat_base)
 
     async with httpx.AsyncClient(timeout=30) as client:
         await _free_models(client)
         person_name = await _upload(client, "person.png", person_bytes)
-        # garment 0 — onto the original person (a top, or a one-piece)
-        current, _ = await _render_idm_garment(client, person_name, garments[0], user_id, seed)
-        await _free_models(client)
-        # garments 1..n — chain onto the previous render; bottoms automatically
-        # get the pants mask + description inside _render_idm_garment.
-        for g in garments[1:]:
-            chained_name = await _upload(client, "chained.png", current)
-            current, _ = await _render_idm_garment(client, chained_name, g, user_id, seed)
+        # step 1 — one SHARP single-pass IDM render per garment onto the SAME
+        # CatVTON base (no chaining — that's what made the output fuzzy).
+        renders: list[tuple[bytes, float | None]] = []
+        for g in garments:
+            render, waist = await _render_idm_garment(client, person_name, g, user_id, seed)
+            renders.append((render, waist))
             await _free_models(client)
-        return current
+        result = renders[0][0]
+        # step 2 — composite top + bottom at the bottom's waist (feathered seam).
+        if len(renders) == 2 and renders[1][1] is not None:
+            result = _composite_at_waist(renders[0][0], renders[1][0], renders[1][1])
+        return result
 
 
 def _waist_fraction(mask_bytes: bytes) -> float:
