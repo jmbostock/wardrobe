@@ -53,6 +53,25 @@ curl -s -X POST http://127.0.0.1:28082/api/recommend \
 Open `http://127.0.0.1:28082/` in a browser — register/login there, then the
 UI handles tokens automatically. Each account has its own wardrobe and results.
 
+## Dev accounts — `admin` + `test` (DEV ONLY)
+
+For testing and administering the dev instance. **Never enabled in production**
+(gated by `DEV_ADMIN_ENABLED` in `.env`; it's off by default). Both log in on
+the login page with their **username** + password:
+
+- **`admin`** (master) — on the **Account page** there's a **Dev console**: pick
+  a real account → **Act as user**. The admin's session becomes that user, so
+  they can see **and alter their live data** as if they were the user (switch
+  user / update any info). Dev instance only — never production.
+- **`test`** (sandbox) — its account data is a **copy** of a real user's data
+  (a snapshot taken at copy time). Test can run the app and change things
+  freely, but only the copy is affected — **no live adjustments**. The admin
+  can refresh the copy with **Refresh test copy**.
+
+Safety: the `test` copy is separate DB rows + copied image files, so nothing it
+does ever touches a real account. `admin` acts on the dev instance only (never
+production). The whole feature refuses to run unless `DEV_ADMIN_ENABLED=1`.
+
 ## Stack
 
 | Piece | Tech |

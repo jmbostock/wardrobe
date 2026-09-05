@@ -13,6 +13,24 @@ Architecture/spec: `docs/recommendation-engine-v2.md`.
 Models live on the shared NVMe at `/mnt/models/altacloset/` (vision/ + rec/hf), per the
 homelab model-storage pattern.
 
+## Dev accounts (`admin` + `test`)
+
+Run on **187** (the dev/primary box). Both log in on the login page by **username**
+(`admin` or `test`), password `Rimmer256!` (override in `.env`), gated by
+`DEV_ADMIN_ENABLED=1`.
+
+- **`admin`** (MASTER): Account page → Dev console → **Act as user**. The admin then
+  acts as that user and **alters their LIVE data** (as if they were the user). ⚠️ This
+  writes straight to 187's real DB — it's the dev box, but treat its data like
+  production. Never enable on a box that has real users.
+- **`test`** (SANDBOX): holds a **copy** of a user's data (separate rows + copied image
+  files). Changes only hit the copy — safe for experimentation. Refresh from the admin
+  console (**Refresh test copy**); auto-seeds from the first real user if empty.
+
+Note: both are normal `users` rows (role column `admin`/`test`), so their garments flow
+through the normal weekly learning loop like any user — filter them there if the
+copied/empty data shouldn't contribute to embeddings/ALS.
+
 ## The weekly learning loop (automated)
 
 `scripts/rec_weekly.sh` runs on **202** via systemd user timer **`rec-retrain.timer`**

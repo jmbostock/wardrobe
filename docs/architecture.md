@@ -36,6 +36,7 @@
 | 20 | VRAM auto-unload (`OLLAMA_KEEP_ALIVE=2m`) & graceful VLM timeout (10s) + `fast` mode | 2026-08-23 | Ollama unloads Qwen2.5-VL after 2m idle so CatVTON has full ~14-15GB VRAM headroom. `photopick` timeout reduced 60s → 10s and supports `fast=true` pure-PIL suitability ranking (<2ms) |
 | 21 | Bitwise integer Hamming distance for near-duplicate dHash (`phash.py`) | 2026-08-23 | Replaced hex char iteration with CPU-native `(val_a ^ val_b).bit_count()` for 64-bit dHash comparison |
 | 22 | DeepSeek-v4-flash API for stylist chat instead of local Ollama text model | 2026-08-23 | Zero VRAM cost — chat offloaded to cloud API keeps full ~14-15GB VRAM headroom for CatVTON/SVD. `DEEPSEEK_API_KEY` in `.env`; model configurable via `DEEPSEEK_CHAT_MODEL`. Qwen2.5-VL (vision) on Ollama unchanged for garment uploads. |
+| 23 | Dev accounts `admin` + `test` (DEV ONLY) | 2026-08-24 | Two fixed dev logins by username (default pw `Rimmer256!`), gated by `DEV_ADMIN_ENABLED` (off in prod). `admin` = MASTER — Account “Dev console” acts AS any real user and alters their LIVE data (kind=`impersonate` session → real user row). `test` = sandbox whose data is a COPY of a real user (separate rows + copied image files at copy time); changes never touch live data. Accounts auto-created at startup; `users.role` column (`user`/`admin`/`test`). |
 
 ## Frontend code layout (2026-08-21)
 
