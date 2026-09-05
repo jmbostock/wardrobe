@@ -51,15 +51,38 @@ ssh -o ConnectTimeout=20 "$PRIMARY" 'python3 - <<PY
 import sqlite3
 src = sqlite3.connect("/tmp/altacloset.db.from202")
 dst = sqlite3.connect("/home/bostock/altacloset/data/db/altacloset.db")
-cols = [r[1] for r in src.execute("PRAGMA table_info(garment_embeddings)").fetchall()]
-ph = ",".join("?" * len(cols))
-q = "INSERT OR REPLACE INTO garment_embeddings (%s) VALUES (%s)" % (",".join(cols), ph)
-n = 0
-for row in src.execute("SELECT %s FROM garment_embeddings" % ",".join(cols)).fetchall():
-    dst.execute(q, row)
-    n += 1
+
+def merge_table(table):
+    """Upsert all rows of `table` from the 202 snapshot into 187."""
+    cols = [r[1] for r in src.execute("PRAGMA table_info(%s)" % table).fetchall()]
+    if not cols:
+        return 0
+    ph = ",".join("?" * len(cols))
+    q = "INSERT OR REPLACE INTO %s (%s) VALUES (%s)" % (table, ",".join(cols), ph)
+    n = 0
+    for row in src.execute("SELECT %s FROM %s" % (",".join(cols), table)).fetchall():
+        dst.execute(q, row)
+        n += 1
+    return n
+
+for table in ("garment_embeddings", "photo_embeddings"):
+    n = merge_table(table)
+    print("merged %d %s into 187" % (n, table))
+
+# cached vision classifications (garments.vision_type/desc, photos.vision_type)
+for row in src.execute("SELECT id, vision_type, vision_desc FROM garments").fetchall():
+    dst.execute(
+        "UPDATE garments SET vision_type=COALESCE(?, vision_type), "
+        "vision_desc=COALESCE(?, vision_desc) WHERE id=?",
+        (row[1] or "", row[2] or "", row[0]),
+    )
+for row in src.execute("SELECT id, vision_type FROM photos").fetchall():
+    dst.execute(
+        "UPDATE photos SET vision_type=COALESCE(?, vision_type) WHERE id=?",
+        (row[1] or "", row[0]),
+    )
 dst.commit()
-print("merged %d embeddings into 187" % n)
+print("vision cache columns synced")
 src.close()
 dst.close()
 PY

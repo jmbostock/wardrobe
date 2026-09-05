@@ -81,6 +81,51 @@ def embed_all() -> tuple[int, int]:
     return done, skipped
 
 
+def _iter_unembedded_photos() -> list[tuple[int, int, Path]]:
+    """Person photos that lack a FashionCLIP vector (base-picker Layer)."""
+    from app import photos
+
+    conn = db.init()
+    with db.lock():
+        rows = conn.execute("SELECT id, user_id FROM photos").fetchall()
+    todo: list[tuple[int, int, Path]] = []
+    for r in rows:
+        pid, uid = r["id"], r["user_id"]
+        if embeddings.get_photo_vector(pid) is not None:
+            continue
+        try:
+            p = photos.photo_path(uid, pid)
+        except Exception:  # noqa: BLE001
+            continue
+        if p is not None and p.is_file():
+            todo.append((pid, uid, p))
+    return todo
+
+
+def embed_photos() -> tuple[int, int]:
+    """FashionCLIP-embed every person photo that lacks a vector, so base picking
+    ranks by garment↔photo embedding similarity (no live vision). (done, skipped)."""
+    from PIL import Image
+
+    from fashion_clip.fashion_clip import FashionCLIP
+
+    clip = FashionCLIP(MODEL_NAME)  # reuse the same model instance/weights
+    todo = _iter_unembedded_photos()
+    print(f"[embed-photo] {len(todo)} photos need embeddings")
+    done = skipped = 0
+    for pid, _uid, path in todo:
+        try:
+            img = Image.open(path).convert("RGB")
+            vec = clip.encode_images([img], batch_size=1)[0]
+            embeddings.save_photo_embedding(pid, np.asarray(vec), model=MODEL_NAME)
+            done += 1
+        except Exception as ex:  # noqa: BLE001 — keep going, report the miss
+            skipped += 1
+            print(f"  ! photo {pid} failed: {ex}")
+    print(f"[embed-photo] done={done} skipped={skipped} total={embeddings.count_photo_embeddings()}")
+    return done, skipped
+
+
 def _interaction_rows() -> list[tuple[int, int, float]]:
     conn = db.init()
     with db.lock():
@@ -153,6 +198,74 @@ def train_als() -> bool:
     return True
 
 
+def refresh_vision_cache() -> tuple[int, int]:
+    """Nightly catch-up for the vision classification cache (garments + photos).
+
+    The webapp computes these at upload (best-effort, background). Any item that
+    missed (model down, busy, upload raced the task) is done here so base picking
+    stays a pure DB read. (done, skipped)."""
+    import asyncio
+
+    from app import vision_cache, wardrobe
+
+    conn = db.init()
+    with db.lock():
+        gr = conn.execute(
+            "SELECT id, user_id FROM garments WHERE vision_type = ''"
+        ).fetchall()
+        pr = conn.execute(
+            "SELECT id, user_id FROM photos WHERE vision_type = ''"
+        ).fetchall()
+
+    async def _run() -> None:
+        for r in gr:
+            await vision_cache.refresh_garment(r["id"], r["user_id"])
+        for r in pr:
+            await vision_cache.refresh_photo(r["id"], r["user_id"])
+
+    asyncio.run(_run())
+
+    with db.lock():
+        gleft = conn.execute(
+            "SELECT COUNT(*) AS n FROM garments WHERE vision_type = ''"
+        ).fetchone()["n"]
+        pleft = conn.execute(
+            "SELECT COUNT(*) AS n FROM photos WHERE vision_type = ''"
+        ).fetchone()["n"]
+    done_g = len(gr) - gleft
+    done_p = len(pr) - pleft
+    print(f"[vision] garments done={done_g} remaining={gleft} | photos done={done_p} remaining={pleft}")
+    return done_g + done_p, gleft + pleft
+
+
+def clean_garment_backgrounds() -> tuple[int, int]:
+    """Write <gid>.clean.png (garment on blank white, background removed) for
+    every garment that lacks one. The webapp writes it at save time; this nightly
+    pass backfills garments added before cleaning existed. (done, skipped)."""
+    from app import media
+
+    conn = db.init()
+    with db.lock():
+        rows = conn.execute("SELECT id, user_id FROM garments").fetchall()
+    done = skipped = 0
+    for r in rows:
+        gid, uid = r["id"], r["user_id"]
+        try:
+            orig = garment_image_path(uid, gid)
+            if orig is None:
+                continue
+            clean = orig.with_name(f"{orig.stem}{media.CLEAN_SUFFIX}")
+            if clean.is_file():
+                continue  # already cleaned
+            media._write_clean_garment(orig.read_bytes(), orig)
+            done += 1
+        except Exception as ex:  # noqa: BLE001 — keep going, report the miss
+            skipped += 1
+            print(f"  ! clean {gid} failed: {ex}")
+    print(f"[clean] done={done} skipped={skipped}")
+    return done, skipped
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Build rec-engine embeddings + ALS model")
     ap.add_argument("--embed-only", action="store_true", help="only run FashionCLIP embedding")
@@ -161,7 +274,10 @@ def main() -> None:
     if not args.embed_only:
         train_als()
     if not args.als_only:
-        embed_all()
+        embed_all()      # garments (FashionCLIP)
+        embed_photos()   # person/base photos (FashionCLIP)
+        clean_garment_backgrounds()  # <gid>.clean.png for the IDM texture pass
+        refresh_vision_cache()  # garment types + photo person-wearing types
 
 
 if __name__ == "__main__":
