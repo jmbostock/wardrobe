@@ -15,7 +15,7 @@ os.environ.setdefault("DATA_DIR", tempfile.mkdtemp(prefix="altacloset-test-"))
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app import auth, wardrobe as wardrobe_mod  # noqa: E402
+from app import auth, interactions, wardrobe as wardrobe_mod  # noqa: E402
 from app.recommender import Weather, recommend  # noqa: E402
 
 _COUNTER = [0]
@@ -190,6 +190,98 @@ def test_owned_only_excludes_wishlist_items():
     for role in ("top", "bottom", "outerwear", "footwear"):
         g = out.get(role)
         assert g is None or g["owned"] == 1, f"{role} leaked a wishlist item: {g}"
+
+
+def test_profile_guardrail_filters_never_wear():
+    """'never wear' guardrails hard-exclude those garments (no dresses / pink)."""
+    _COUNTER[0] += 1
+    w = wardrobe_mod.Wardrobe()
+    uid = auth.create_user(f"reco_gr{_COUNTER[0]}@example.com", "password123")["id"]
+    w.create(uid, "Navy oxford", "top", warmth=3, formality="business", occasions="office",
+             material="cotton", color_tags="navy")
+    w.create(uid, "Pink blouse", "top", warmth=3, formality="business", occasions="office",
+             color_tags="pink")
+    w.create(uid, "Floral sundress", "dress", warmth=3, formality="smart-casual",
+             occasions="date", color_tags="floral,pink")
+    w.create(uid, "Dark chinos", "bottom", warmth=3, formality="business",
+             occasions="office", color_tags="gray")
+    profile = {"guardrails": ["avoid_color:pink", "no_dresses", "no_patterns"]}
+    out = recommend(Weather(temp_c=18, feels_like_c=17), "office",
+                    wardrobe=w, user_id=uid, profile=profile)["outfit"]
+    assert out["top"]["name"] == "Navy oxford", out
+    assert out["top"]["category"] == "top", "the dress/one-piece must not fill the top slot"
+
+
+def test_profile_warmth_bias_runs_cold():
+    """A user who runs cold gets a warmer target, so the heavier knit wins."""
+    _COUNTER[0] += 1
+    w = wardrobe_mod.Wardrobe()
+    uid = auth.create_user(f"reco_wb{_COUNTER[0]}@example.com", "password123")["id"]
+    w.create(uid, "Thin tee", "top", warmth=2, formality="casual", occasions="casual",
+             color_tags="gray")
+    w.create(uid, "Chunky knit", "top", warmth=4, formality="casual", occasions="casual",
+             color_tags="brown")
+    w.create(uid, "Jeans", "bottom", warmth=3, formality="casual", occasions="casual",
+             color_tags="blue")
+    res = recommend(Weather(temp_c=18, feels_like_c=17), "casual", wardrobe=w, user_id=uid,
+                    profile={"warmth_bias": 1})
+    assert res["outfit"]["top"]["name"] == "Chunky knit", res["outfit"]
+    assert any("run cold" in line for line in res["reasoning"])
+
+
+def test_profile_palette_fav_color():
+    """A favorite color gets a bonus, flipping a tie toward that color."""
+    _COUNTER[0] += 1
+    w = wardrobe_mod.Wardrobe()
+    uid = auth.create_user(f"reco_pal{_COUNTER[0]}@example.com", "password123")["id"]
+    # gray created first so a tie (no bonus) would pick gray; navy wins on the fav bonus
+    w.create(uid, "Gray tee", "top", warmth=3, formality="casual", occasions="casual",
+             color_tags="gray")
+    w.create(uid, "Navy tee", "top", warmth=3, formality="casual", occasions="casual",
+             color_tags="navy")
+    w.create(uid, "Jeans", "bottom", warmth=3, formality="casual", occasions="casual",
+             color_tags="blue")
+    out = recommend(Weather(temp_c=20, feels_like_c=20), "casual", wardrobe=w, user_id=uid,
+                    profile={"palette": {"fav": ["navy"], "avoid": []}})["outfit"]
+    assert out["top"]["name"] == "Navy tee", out
+
+
+def test_profile_formality_zone_note():
+    """The formality range shows up in the reasoning (and business pick survives)."""
+    _COUNTER[0] += 1
+    w = wardrobe_mod.Wardrobe()
+    uid = auth.create_user(f"reco_fz{_COUNTER[0]}@example.com", "password123")["id"]
+    w.create(uid, "Hoodie", "top", warmth=3, formality="casual", occasions="casual",
+             color_tags="gray")
+    w.create(uid, "Oxford", "top", warmth=3, formality="business", occasions="office",
+             color_tags="white")
+    w.create(uid, "Chinos", "bottom", warmth=3, formality="business", occasions="office",
+             color_tags="khaki")
+    profile = {"formality_zone": {"min": "business", "max": "business"}}
+    res = recommend(Weather(temp_c=20, feels_like_c=20), "office",
+                    wardrobe=w, user_id=uid, profile=profile)
+    assert res["outfit"]["top"]["name"] == "Oxford", res["outfit"]
+    assert any("formality range" in line for line in res["reasoning"])
+
+
+def test_profile_feedback_affinity_boosts_liked():
+    """Thumbs up/down feedback actually shifts the pick (online learning)."""
+    _COUNTER[0] += 1
+    w = wardrobe_mod.Wardrobe()
+    uid = auth.create_user(f"reco_aff{_COUNTER[0]}@example.com", "password123")["id"]
+    gray = w.create(uid, "Gray tee", "top", warmth=3, formality="casual",
+                    occasions="casual", color_tags="gray")
+    navy = w.create(uid, "Navy tee", "top", warmth=3, formality="casual",
+                    occasions="casual", color_tags="navy")
+    w.create(uid, "Jeans", "bottom", warmth=3, formality="casual", occasions="casual",
+             color_tags="blue")
+    # gray created first (ties favor it), but navy is liked +2 / gray disliked -3
+    interactions.log(uid, navy.id, "liked", {"test": True})
+    interactions.log(uid, gray.id, "disliked", {"test": True})
+    out = recommend(Weather(temp_c=20, feels_like_c=20), "casual",
+                    wardrobe=w, user_id=uid)["outfit"]
+    assert out["top"]["name"] == "Navy tee", out
+    assert out["top"]["id"] == navy.id, out
 
 
 def _run_all():

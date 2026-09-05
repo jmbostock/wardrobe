@@ -15,10 +15,11 @@ Scoring spec: docs/recommender.md
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
-from .wardrobe import Garment, Wardrobe
 from . import interactions, sharing
+from .wardrobe import Garment, Wardrobe
 
 FORMALITY_ORDER = ["casual", "smart-casual", "business", "formal"]
 
@@ -164,11 +165,12 @@ def harmony(a: Garment, b: Garment) -> float:
     return 0.3
 
 
-def rotation_bonus(g: Garment) -> float:
+def rotation_bonus(g: Garment, wear_count: int | None = None) -> float:
     # prefer items worn less / not recently
-    if g.wear_count <= 0:
+    wc = g.wear_count if wear_count is None else wear_count
+    if wc <= 0:
         return 1.0
-    return max(0.0, 1.0 - g.wear_count / 20.0)
+    return max(0.0, 1.0 - wc / 20.0)
 
 
 PROMPT_KEYWORDS = {
@@ -199,6 +201,168 @@ def prompt_bonus(g: Garment, prompt: str | None) -> float:
 
 
 # --------------------------------------------------------------------------- #
+# style-profile awareness (per-user personalization)                          #
+# --------------------------------------------------------------------------- #
+_PATTERN_WORDS = {
+    "floral", "plaid", "striped", "stripes", "polka", "check", "checks",
+    "gingham", "camouflage", "graphic", "print", "prints", "tartan",
+    "houndstooth", "dots", "dot",
+}
+
+
+def _color_tags(g: Garment) -> set[str]:
+    """Lowercased set of a garment's color tags (handles str or list)."""
+    ct = g.color_tags
+    if isinstance(ct, (list, tuple)):
+        return {str(c).strip().lower() for c in ct if c}
+    return {c.strip().lower() for c in (ct or "").split(",") if c.strip()}
+
+
+def _apply_warmth_bias(target: float, warmth_bias) -> float:
+    """A user who 'runs cold' gets a warmer target; 'runs hot' a lighter one."""
+    try:
+        b = int(warmth_bias or 0)
+    except (TypeError, ValueError):
+        return target
+    if b > 0:
+        target += 0.5
+    elif b < 0:
+        target -= 0.5
+    return max(1.0, min(5.0, target))
+
+
+def _guardrail_blocked(g: Garment, guardrails) -> bool:
+    """True if a garment violates a hard 'never wear' guardrail"""
+    name = (g.name or "").lower()
+    tags = _color_tags(g)
+    for gr in guardrails or []:
+        gr = gr.strip().lower()
+        if gr.startswith("avoid_color:"):
+            c = gr[len("avoid_color:"):].strip().lower()
+            if c and (c in tags or c in name):
+                return True
+        elif gr == "no_patterns":
+            if any(p in name for p in _PATTERN_WORDS) or (tags & _PATTERN_WORDS):
+                return True
+        elif gr == "no_shorts":
+            if "shorts" in name or (g.category == "bottom" and re.search(r"\bshort\b", name)):
+                return True
+        elif gr == "no_skirts":
+            if "skirt" in name:
+                return True
+        elif gr == "no_dresses":
+            if g.category == "dress" or ("dress" in name and "shoe" not in name):
+                return True
+        elif gr == "no_tank":
+            if "tank" in name or "sleeveless" in name:
+                return True
+        elif gr == "no_hoodies":
+            if "hoodie" in name:
+                return True
+        elif gr == "no_sandals":
+            if "sandal" in name or "flip-flop" in name or "flip flop" in name:
+                return True
+        elif gr.startswith("never:"):
+            token = gr[len("never:"):].strip().lower()
+            if token and (token in name or token in tags):
+                return True
+    return False
+
+
+def _formality_zone_penalty(g: Garment, zone: dict | None) -> float:
+    """Penalize garments outside the user's preferred formality range."""
+    if not zone:
+        return 0.0
+    lo, hi = zone.get("min"), zone.get("max")
+    if not lo or not hi:
+        return 0.0
+    if lo not in FORMALITY_ORDER or hi not in FORMALITY_ORDER:
+        return 0.0
+    if g.formality == "all" or g.formality not in FORMALITY_ORDER:
+        return 0.0
+    gi = FORMALITY_ORDER.index(g.formality)
+    lo_i = FORMALITY_ORDER.index(lo)
+    hi_i = FORMALITY_ORDER.index(hi)
+    if gi < lo_i:
+        return -8.0 * (lo_i - gi)
+    if gi > hi_i:
+        return -8.0 * (gi - hi_i)
+    return 0.0
+
+
+def _palette_bonus(g: Garment, palette: dict | None) -> float:
+    """Bonus for favorite colors, penalty for colors the user avoids."""
+    if not palette:
+        return 0.0
+    tags = _color_tags(g)
+    b = 0.0
+    for c in palette.get("fav") or []:
+        if c.strip().lower() in tags:
+            b += 4.0
+            break
+    for c in palette.get("avoid") or []:
+        if c.strip().lower() in tags:
+            b -= 10.0
+            break
+    return b
+
+
+def _occasion_weights_bonus(g: Garment, occasion_weights: dict | None) -> float:
+    """Boost garments for occasions the user does a lot in a typical week."""
+    if not occasion_weights:
+        return 0.0
+    gtags = {o.strip().lower() for o in (g.occasions or "").split(",") if o.strip()}
+    b = 0.0
+    for occ, count in occasion_weights.items():
+        try:
+            c = float(count)
+        except (TypeError, ValueError):
+            continue
+        if occ.strip().lower() in gtags:
+            b += min(max(c, 0.0), 5.0)
+    return b
+
+
+def _style_tags_bonus(g: Garment, style_tags: list | None) -> float:
+    if not style_tags:
+        return 0.0
+    name = (g.name or "").lower()
+    tags = _color_tags(g)
+    mat = (g.material or "").lower()
+    b = 0.0
+    for st in style_tags:
+        st = st.strip().lower()
+        if not st:
+            continue
+        if st in name or st in tags or st == g.formality or st in mat:
+            b += 2.0
+    return b
+
+
+def _personalized_notes(profile: dict, has_affinity: bool) -> list[str]:
+    """Human-readable reasoning lines reflecting the user's profile."""
+    lines: list[str] = []
+    try:
+        b = int(profile.get("warmth_bias") or 0)
+    except (TypeError, ValueError):
+        b = 0
+    if b > 0:
+        lines.append("you run cold — bias toward warmer layers")
+    elif b < 0:
+        lines.append("you run hot — bias toward lighter layers")
+    if profile.get("guardrails"):
+        lines.append("respecting your 'never wear' preferences")
+    zone = profile.get("formality_zone") or {}
+    if zone.get("min") and zone.get("max"):
+        lines.append(f"staying in your {zone['min']}–{zone['max']} formality range")
+    if (profile.get("palette") or {}).get("fav"):
+        lines.append("prioritizing your favorite colors")
+    if has_affinity:
+        lines.append("tuned to your likes and dislikes")
+    return lines
+
+
+# --------------------------------------------------------------------------- #
 # main entry
 # --------------------------------------------------------------------------- #
 def recommend(
@@ -208,24 +372,47 @@ def recommend(
     wardrobe: Wardrobe | None = None,
     user_id: int = 1,
     owned_only: bool = False,
+    profile: dict | None = None,
 ) -> dict:
     wardrobe = wardrobe or Wardrobe()
     items = wardrobe.all(user_id)
     if owned_only:
         items = [g for g in items if g.owned]
-    # a shared family garment the viewer has marked "doesn't fit" is never suggested
+
+    profile = profile or {}
+    guardrails = profile.get("guardrails") or []
+    warmth_bias = profile.get("warmth_bias")
+    formality_zone = profile.get("formality_zone") or {}
+    palette = profile.get("palette") or {}
+    occasion_weights = profile.get("occasion_weights") or {}
+    style_tags = profile.get("style_tags") or []
+
+    # Personalize shared clothing per viewer: a shared item this person marked
+    # "doesn't fit" is never suggested to them.
     items = [
         g for g in items
         if not (g.shared and sharing.state(user_id, g.id).get("fit_ok") == 0)
     ]
-    # rec-engine L2/3: per-user style + ALS bonuses (no-op when no data exists)
-    from . import personalize
-    pers = personalize.Personalizer(user_id, items)
+    # Shared garments rotate by the VIEWER's own wear_count, not the owner's.
+    shared_states = {g.id: sharing.state(user_id, g.id) for g in items if g.shared}
+
+    # Hard guardrails from the style profile (e.g. "never yellow", "no shorts").
+    if guardrails:
+        items = [g for g in items if not _guardrail_blocked(g, guardrails)]
+
     formality, occasion_tags = ACTIVITY_MAP.get(
         activity.lower(), ACTIVITY_MAP["casual"]
     )
-    target = target_warmth(w)
+    target = _apply_warmth_bias(target_warmth(w), warmth_bias)
     precipitating = w.precipitating
+
+    # Online learning signal: summed likes/dislikes/ratings/saves/try-ons. The
+    # feedback loop must never break a suggestion, so any DB hiccup is ignored.
+    affinity: dict[int, float] = {}
+    try:
+        affinity = interactions.affinity_map(user_id)
+    except Exception:  # noqa: BLE001
+        affinity = {}
 
     if not items:
         return {
@@ -241,18 +428,30 @@ def recommend(
     # `_top` is set after the first picks but referenced inside `best()`/`score()`
     # for color harmony — initialize it so those early calls see None.
     _top: Garment | None = None
-    # mutable warmth target: dropped ~0.7 when we'll layer (a lighter top under
-    # a jacket) and reset before the outer layers / footwear are scored
+    # Mutable warmth target: lowered when we'll layer (a lighter top under a
+    # jacket) and reset before the outer layers / footwear are scored.
     _target = target
+
+    def viewer_wear_count(g: Garment) -> int:
+        if g.shared:
+            return int((shared_states.get(g.id) or {}).get("wear_count") or 0)
+        return g.wear_count
 
     def score(g: Garment, top: Garment | None = None) -> float:
         s = (
             40.0 * warmth_match(g, _target)
             + 20.0 * formality_match(g, formality)
             + 10.0 * occasion_match(g, occasion_tags)
-            + 6.0 * rotation_bonus(g)
+            + 6.0 * rotation_bonus(g, viewer_wear_count(g))
             + 5.0 * prompt_bonus(g, prompt)
+            + _formality_zone_penalty(g, formality_zone)
+            + _palette_bonus(g, palette)
+            + _occasion_weights_bonus(g, occasion_weights)
+            + _style_tags_bonus(g, style_tags)
         )
+        aff = affinity.get(g.id, 0.0)
+        if aff:
+            s += max(-10.0, min(10.0, aff))
         if precipitating:
             if g.waterproof:
                 s += 10.0
@@ -260,7 +459,7 @@ def recommend(
                 s -= 15.0
         if top and g.category in ("bottom", "outerwear", "footwear", "accessory"):
             s += 8.0 * harmony(top, g)
-        return pers.add_to_score(g.id, s)
+        return s
 
     def best(category: str, exclude: set[int] | None = None, require: int | None = None) -> Garment | None:
         exclude = exclude or set()
@@ -315,25 +514,19 @@ def recommend(
     def ser(g: Garment | None) -> dict | None:
         return g.to_dict() if g else None
 
-    outfit = {
-        "top": ser(_top),
-        "bottom": ser(bottom),
-        "outerwear": ser(outerwear),
-        "footwear": ser(footwear),
-        "accessories": [ser(a) for a in [accessory] if a],
-    }
-    # log "shown" interactions so the engine can learn from recommendations
-    interactions.log_outfit_shown(user_id, outfit, {"activity": activity, "prompt": prompt})
-
-    reasoning = _build_reasoning(
-        w, target, formality, precipitating, _top, bottom, outerwear, prompt
-    )
-    if pers.active:
-        reasoning.append("personalized to your style + wear history")
-
+    personal = _personalized_notes(profile, bool(affinity))
     return {
-        "outfit": outfit,
-        "reasoning": reasoning,
+        "outfit": {
+            "top": ser(_top),
+            "bottom": ser(bottom),
+            "outerwear": ser(outerwear),
+            "footwear": ser(footwear),
+            "accessories": [ser(a) for a in [accessory] if a],
+        },
+        "reasoning": _build_reasoning(
+            w, target, formality, precipitating, _top, bottom, outerwear, prompt,
+            personal=personal,
+        ),
         "weather_used": {
             "temp_c": w.temp_c,
             "temp_f": round(w.temp_f, 1),
@@ -344,13 +537,14 @@ def recommend(
             "uv_index": w.uv_index,
         },
         "activity": activity,
+        "personalized": bool(personal),
     }
 
 
 def _build_reasoning(
     w: Weather, target: float, formality: str, precipitating: bool,
     top: Garment | None, bottom: Garment | None, outerwear: Garment | None,
-    prompt: str | None,
+    prompt: str | None, personal: list[str] | None = None,
 ) -> list[str]:
     lines: list[str] = []
     if precipitating:
@@ -365,4 +559,5 @@ def _build_reasoning(
         lines.append(f"layering with {outerwear.name}")
     if prompt:
         lines.append(f"style prompt '{prompt}' factored in")
+    lines.extend(personal or [])
     return lines

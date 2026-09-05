@@ -79,3 +79,17 @@ def recent(user_id: int, limit: int = 500) -> list[dict]:
             (user_id, limit),
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def affinity_map(user_id: int) -> dict[int, float]:
+    """Summed interaction weight per garment for a user — the online learning
+    signal. 'shown' impressions are excluded (they're just display noise, and
+    would otherwise dilute the real likes/dislikes/ratings/saves/try-ons)."""
+    conn = db.init()
+    with db.lock():
+        rows = conn.execute(
+            "SELECT garment_id, SUM(weight) AS s FROM interactions "
+            "WHERE user_id=? AND kind != 'shown' GROUP BY garment_id",
+            (user_id,),
+        ).fetchall()
+    return {r["garment_id"]: float(r["s"] or 0.0) for r in rows}

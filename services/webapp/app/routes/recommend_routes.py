@@ -66,7 +66,7 @@ def recommend_outfit(req: RecommendRequest, user: dict = Depends(get_current_use
         w = weather.fetch(lat, lon)
     result = recommender.recommend(
         w, req.activity, req.prompt, wardrobe=wardrobe, user_id=user["id"],
-        owned_only=req.owned_only,
+        owned_only=req.owned_only, profile=user.get("derived_profile"),
     )
     # attach has_image to each recommended garment so the Suggest page can show
     # the top/bottom/etc photo (not just a color swatch)
@@ -329,7 +329,7 @@ def suggest_outfit(req: SuggestRequest, user: dict = Depends(get_current_user)) 
         w = weather.fetch(lat, lon)
     result = recommender.recommend(
         w, req.activity, req.prompt, wardrobe=wardrobe, user_id=user_id,
-        owned_only=req.owned_only,
+        owned_only=req.owned_only, profile=user.get("derived_profile"),
     )
     result["outfit"] = _with_image_flags(user_id, result["outfit"])
 
@@ -499,7 +499,7 @@ async def stylist_chat(
         prompt_weather["location"] = target["name"]
         result = recommender.recommend(
             target["weather"], req.activity, None, wardrobe=wardrobe,
-            user_id=user_id, owned_only=True,
+            user_id=user_id, owned_only=True, profile=user.get("derived_profile"),
         )
         result["outfit"] = _with_image_flags(user_id, result["outfit"])
         intro = _recommend_intro(req.activity, result["weather_used"], result["outfit"],

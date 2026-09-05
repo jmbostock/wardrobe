@@ -131,13 +131,15 @@ def test_recommender_fusion_does_not_break():
     # with the style bonus active, the highest-scoring top should get a boost
     scored = [(p.add_to_score(g.id, 50.0), g.id) for g in items]
     assert scored[0][0] >= 50.0  # never lowers a score
-    # recommend() still returns a valid outfit with personalization noted
+    # recommend() still returns a valid outfit, and the online feedback
+    # affinity signal (the user "worn" these) personalizes the reasoning.
     res = recommender.recommend(
         recommender.Weather(temp_c=22.0, condition="clear"), "casual",
         wardrobe=wardrobe, user_id=uid,
     )
     assert res["outfit"].get("top") is not None
-    assert any("personalized" in line for line in res["reasoning"])
+    assert res.get("personalized") is True
+    assert any("likes and dislikes" in line for line in res["reasoning"])
 
 
 def test_rec_build_matrix_and_save():
