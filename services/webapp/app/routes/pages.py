@@ -41,9 +41,13 @@ def manifest() -> FileResponse:
 
 @router.get("/login", include_in_schema=False)
 def login_page(request: Request):
-    return templates.TemplateResponse(
-        request, "auth.html", _ctx("auth", "Log in — Clueless Closet")
-    )
+    from ..config import settings
+
+    ctx = _ctx("auth", "Log in — Clueless Closet")
+    ctx["dev_admin_enabled"] = settings.dev_admin_enabled
+    ctx["dev_admin_login"] = settings.dev_admin_login
+    ctx["dev_test_login"] = settings.dev_test_login
+    return templates.TemplateResponse(request, "auth.html", ctx)
 
 
 @router.get("/suggest", include_in_schema=False)

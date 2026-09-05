@@ -85,6 +85,52 @@ def count_embeddings() -> int:
 
 
 # --------------------------------------------------------------------------- #
+# photo embeddings (base-picker Layer) — same FashionCLIP vectors, photos table #
+# --------------------------------------------------------------------------- #
+
+def save_photo_embedding(photo_id: int, vector: np.ndarray, model: str = MODEL) -> None:
+    """Store the FashionCLIP vector for a person photo (base picker ranks bases
+    by garment↔photo embedding similarity — no live vision at pick time)."""
+    conn = db.init()
+    vec = np.asarray(vector, dtype=np.float32)
+    with db.lock():
+        conn.execute(
+            """INSERT INTO photo_embeddings (photo_id, model, dim, vector, updated_at)
+               VALUES (?,?,?,?,datetime('now'))
+               ON CONFLICT(photo_id) DO UPDATE SET
+                 model=excluded.model, dim=excluded.dim, vector=excluded.vector,
+                 updated_at=datetime('now')""",
+            (photo_id, model, int(vec.shape[0]), _pack(vec)),
+        )
+        conn.commit()
+
+
+def get_photo_vector(photo_id: int) -> np.ndarray | None:
+    conn = db.init()
+    with db.lock():
+        row = conn.execute(
+            "SELECT vector, dim FROM photo_embeddings WHERE photo_id=?", (photo_id,)
+        ).fetchone()
+    return _unpack(row["vector"], row["dim"]) if row else None
+
+
+def all_photo_vectors() -> dict[int, np.ndarray]:
+    conn = db.init()
+    with db.lock():
+        rows = conn.execute(
+            "SELECT photo_id, vector, dim FROM photo_embeddings"
+        ).fetchall()
+    return {r["photo_id"]: _unpack(r["vector"], r["dim"]) for r in rows}
+
+
+def count_photo_embeddings() -> int:
+    conn = db.init()
+    with db.lock():
+        row = conn.execute("SELECT COUNT(*) AS n FROM photo_embeddings").fetchone()
+    return row["n"] if row else 0
+
+
+# --------------------------------------------------------------------------- #
 # math                                                                        #
 # --------------------------------------------------------------------------- #
 

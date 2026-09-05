@@ -15,38 +15,7 @@ os.environ.setdefault("TRYON_MODELS", "catvton,idm_vton,flux_kontext")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app import tryon  # noqa: E402
-from app.routes.tryon_routes import _is_dev_session, _resolve_models  # noqa: E402
 
-
-def test_available_models_includes_catvton():
-    avail = tryon.available_models()
-    assert "catvton" in avail, avail  # the shipped default is always available
-    # idm_vton / flux_kontext are workflow-gated: not available until their
-    # workflow JSON ships (so the live default never breaks).
-    assert tryon.MODEL_LABELS["idm_vton"]
-    assert tryon.MODEL_LABELS["flux_kontext"]
-
-
-def test_is_dev_session():
-    assert _is_dev_session({"role": "admin"}) is True
-    assert _is_dev_session({"role": "test"}) is True
-    assert _is_dev_session({"role": "user", "session_kind": "impersonate"}) is True
-    assert _is_dev_session({"role": "user", "session_kind": "user"}) is False
-    assert _is_dev_session({"role": "user"}) is False
-
-
-def test_resolve_models_gating():
-    # normal user can never opt into other models — always the fast default
-    assert _resolve_models({"role": "user", "session_kind": "user"}, '["idm_vton"]') == ["catvton"]
-    # dev sessions may request a subset; unknown ids are dropped
-    dev = {"role": "test", "session_kind": "user"}
-    assert _resolve_models(dev, None) == ["catvton"]
-    chosen = _resolve_models(dev, '["catvton","flux_kontext"]')
-    assert "catvton" in chosen and set(chosen) <= set(tryon.available_models())
-    # garbage JSON falls back to catvton
-    assert _resolve_models(dev, "not-json") == ["catvton"]
-    # a dev request that names only an unavailable model still yields catvton
-    assert "catvton" in _resolve_models(dev, '["does_not_exist"]')
 
 
 def test_run_tryon_model_unknown_raises():
@@ -90,9 +59,9 @@ def test_to_pants_mask_makes_two_legs():
     pants, waist = tryon._to_pants_mask(buf.getvalue())
     assert 0 < waist < 1
     p = Image.open(BytesIO(pants)).convert("L")
-    # near the bottom the white must be TWO separated runs (two legs),
+    # near the ankle (0.85h) the white must be TWO separated runs (two legs),
     # never one wide blob (dress)
-    xs = [x for x in range(p.width) if p.getpixel((x, p.height - 10)) > 128]
+    xs = [x for x in range(p.width) if p.getpixel((x, int(p.height * 0.85))) > 128]
     runs = []
     prev = None
     for x in xs:
@@ -132,8 +101,8 @@ def test_to_pants_mask_extends_legs_beyond_short_mask():
     wy = int(waist * p.height)
     band = [x for x in range(p.width) if p.getpixel((x, wy + 2)) > 128]
     assert len(band) > 10, len(band)
-    # legs must reach the ankles (~0.95h), far below the 0.62h mask bottom
-    xs = [x for x in range(p.width) if p.getpixel((x, int(p.height * 0.95))) > 128]
+    # legs extend to the ankle (~0.85h solid), far below the 0.62h shorts mask
+    xs = [x for x in range(p.width) if p.getpixel((x, int(p.height * 0.85))) > 128]
     runs = []
     prev = None
     for x in xs:
@@ -143,28 +112,13 @@ def test_to_pants_mask_extends_legs_beyond_short_mask():
             runs[-1][1] = x
         prev = x
     assert len(runs) >= 2, runs  # two legs, not one blob / not empty
+    # ...but STOP above the shoes/feet: no mask coverage at ~0.97h (a mask
+    # that reaches the feet makes IDM repaint over the shoes)
+    xs_bottom = [x for x in range(p.width) if p.getpixel((x, int(p.height * 0.97))) > 128]
+    assert not xs_bottom, "pants mask must not cover the shoes/feet"
 
 
-def test_composite_at_waist_splits_top_and_bottom():
-    """The top render wins above the waist, the bottom render below it
-    (feathered, so dominance not exact equality)."""
-    from io import BytesIO
 
-    from PIL import Image
-
-    def _png(color):
-        im = Image.new("RGB", (64, 64), color)
-        buf = BytesIO()
-        im.save(buf, "PNG")
-        return buf.getvalue()
-
-    top = _png((255, 0, 0))     # red = the top
-    bottom = _png((0, 0, 255))  # blue = the jeans
-    out = Image.open(BytesIO(tryon._composite_at_waist(top, bottom, 0.5)))
-    r, g, b = out.getpixel((32, 16))
-    assert r > b, (r, g, b)  # above waist = top
-    r, g, b = out.getpixel((32, 48))
-    assert b > r, (r, g, b)  # below waist = jeans
 
 
 def test_to_top_mask_trims_below_waist():
@@ -249,13 +203,15 @@ def test_to_shorts_mask_caps_below_thigh():
     buf = BytesIO()
     m.save(buf, "PNG")
 
-    shorts = tryon._to_shorts_mask(buf.getvalue())
+    shorts, waist = tryon._to_shorts_mask(buf.getvalue())
     s = Image.open(BytesIO(shorts)).convert("L")
     assert s.getpixel((50, 95)) > 128     # waist still covered
     assert s.getpixel((50, 130)) == 0     # below mid-thigh: trimmed
     assert s.getpixel((50, 190)) == 0     # ankles: trimmed
     # the hem lands at mid-thigh (~0.60-0.70h) — still covered near there
     assert s.getpixel((50, int(200 * 0.62))) > 0
+    # separates-style waist: just below the top of the lower garment (~90/200)
+    assert 0.40 < waist < 0.60, waist
 
 
 def test_to_shorts_mask_empty_mask_unchanged():
@@ -266,7 +222,8 @@ def test_to_shorts_mask_empty_mask_unchanged():
     m = Image.new("L", (100, 200), 0)
     buf = BytesIO()
     m.save(buf, "PNG")
-    assert tryon._to_shorts_mask(buf.getvalue()) == buf.getvalue()
+    shorts, waist = tryon._to_shorts_mask(buf.getvalue())
+    assert shorts == buf.getvalue()
 
 
 def test_is_shorts_detects_by_name():

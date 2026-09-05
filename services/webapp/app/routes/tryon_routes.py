@@ -8,7 +8,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
-from .. import editor, interactions, photopick, photos, svd, tryon
+from .. import editor, embeddings, interactions, photopick, photos, svd, tryon
 from ..deps import get_current_user
 from ..media import (
     IMAGE_CACHE_CONTROL,
@@ -23,43 +23,7 @@ from ..store import clips, outfits, wardrobe
 router = APIRouter()
 
 
-@router.get("/api/tryon/models")
-def list_models() -> dict:
-    """Dev helper: which try-on model backends this host has (label + whether
-    it's configured). The dev console uses it to enable/disable model checkboxes."""
-    avail = set(tryon.available_models())
-    return {
-        "models": [
-            {"id": m, "label": tryon.MODEL_LABELS[m], "available": m in avail}
-            for m in tryon.MODEL_LABELS
-        ]
-    }
 
-
-def _is_dev_session(user: dict) -> bool:
-    """A dev session is the admin/test account itself, or the admin acting AS a
-    real user (impersonate). Model selection is a dev-console feature — normal
-    users always render with the fast default (CatVTON)."""
-    return (
-        user.get("role") in ("admin", "test")
-        or user.get("session_kind") == "impersonate"
-    )
-
-
-def _resolve_models(user: dict, raw: str | None) -> list[str]:
-    """Decide which models to render with. Non-dev sessions always get
-    ['catvton']; dev sessions may request any subset (multi = queued)."""
-    want = ["catvton"]
-    if _is_dev_session(user) and raw:
-        try:
-            parsed = [m.strip() for m in json.loads(raw)]
-            if parsed:
-                want = parsed
-        except Exception:  # noqa: BLE001 — bad JSON → default
-            want = ["catvton"]
-    avail = tryon.available_models()
-    chosen = [m for m in want if m in avail] or (["catvton"] if "catvton" in avail else avail)
-    return chosen
 
 
 @router.post("/api/tryon")
@@ -85,7 +49,8 @@ async def do_tryon(
     if not person_bytes:
         raise HTTPException(400, "empty person image")
     try:
-        result = await tryon.run_tryon(person_bytes, garment, user["id"])
+        # Single canonical pipeline (2026-09-02): IDM-VTON, same as outfits.
+        result = await tryon.run_tryon_model("idm_vton", person_bytes, garment, user["id"])
     except tryon.ComfyUnavailable as ex:
         raise HTTPException(503, str(ex)) from ex
     out_dir = UPLOAD_DIR / str(user["id"]) / "out"
@@ -95,12 +60,19 @@ async def do_tryon(
     return {"result_url": f"/api/uploads/{out_name}", "garment_id": garment_id}
 
 
-def _pick_person_photo(user: dict, garments: list) -> int | None:
-    """Pick the best saved person photo as the try-on base, using the EXISTING
-    photopick logic (vision outfit-match, pure-PIL fallback) — the garment that
-    constrains the base most drives the pick: a BOTTOM needs a separates photo
-    (a dress-wearing base makes jeans render as a skirt), otherwise the first
-    garment. Returns the best photo id or None."""
+async def _pick_person_photo(user: dict, garments: list) -> int | None:
+    """Pick the saved photo that best SUITS the look — look at what each base
+    photo shows vs the clothes being tried on and choose the best match. A
+    bottom look scores highest on a base already wearing the same kind of
+    bottom (shorts → a bare-leg/shorts base, pants → a separates base); a
+    dress base never suits a bottom look. Returns the best-suited photo id, or
+    None when no saved photo is a workable match (the caller must NOT render
+    then).
+
+    Garment type + base-photo type come from the STORED vision cache (computed
+    at upload / nightly batch) — no live vision, no ComfyUI mask pass at pick
+    time. Ranking uses the existing photopick quality signal; if photo
+    embeddings are present they're blended in as an extra similarity term."""
     target = None
     for g in garments:
         if tryon.CLOTH_TYPE.get(g.category, "upper") == "lower":
@@ -111,10 +83,49 @@ def _pick_person_photo(user: dict, garments: list) -> int | None:
     path = garment_image_path(user["id"], target.id)
     if path is None:
         return None
+    want = await tryon.garment_base_type(target, user["id"])
     ranked = photopick.rank_photos_for_garment(
         user["id"], path.read_bytes(), target.category
     )
-    return ranked[0]["id"] if ranked else None
+    if not ranked:
+        return None
+    if want is None:
+        return ranked[0]["id"]  # no bottom in the look → best-quality base is fine
+    # garment↔photo embedding similarity (FashionCLIP) — 0.0 when not embedded yet
+    emb = embeddings.get_vector(target.id) if _has_emb(target) else None
+    photo_embs = embeddings.all_photo_vectors()
+    best_id, best_score = None, -10**9
+    for row in ranked[:8]:
+        try:
+            data = photos.photo_bytes(user["id"], row["id"])
+        except photos.PhotoError:
+            continue
+        style = await tryon.photo_style_cached(data, row["id"])
+        base = row.get("score") or 50  # photopick quality/vision signal
+        # how well THIS base suits the garment being tried on (garment type is
+        # decided by LOOKING at the garment image, never its name)
+        if want == "shorts":
+            match = 40 if style == "shorts" else (-25 if style == "pants" else -70)
+        elif want == "dress":
+            match = 40 if style == "dress" else -70  # dress needs a dress base
+        else:  # pants/skirt look
+            match = 25 if style in ("pants", "shorts") else -70
+        sim = 0.0
+        if emb is not None and row["id"] in photo_embs:
+            sim = embeddings.cosine(emb, photo_embs[row["id"]])
+        score = base + match + 15 * sim
+        if score > best_score:
+            best_id, best_score = row["id"], score
+    return best_id
+
+
+def _has_emb(target) -> bool:
+    """True when the garment has a stored FashionCLIP vector (so we can blend
+    embedding similarity into base ranking)."""
+    try:
+        return embeddings.get_vector(target.id) is not None
+    except Exception:  # noqa: BLE001
+        return False
 
 
 @router.post("/api/tryon/outfit")
@@ -125,7 +136,6 @@ async def do_tryon_outfit(
     base_result: str | None = Form(None),
     prompt: str | None = Form(None),
     outfit_name: str | None = Form(None),
-    models: str | None = Form(None),
     user: dict = Depends(get_current_user),
 ) -> dict:
     """Try on a whole look: apply each garment in order, chaining the result
@@ -137,21 +147,16 @@ async def do_tryon_outfit(
          re-render/modify an existing image (the Try-on chat bar sends this).
       2. `photo_id` — a saved person photo.
       3. `person` — an uploaded image.
-    `prompt` is the chat instruction (e.g. "make her skinnier"). CatVTON is
-    garment-image-only so it isn't used at render time yet, but it's carried
-    through the response and ready for promptable models (IDM-VTON / FLUX-Kontext
-    upgrade path).
 
-    `models` (dev-only) is a JSON array of model backends to render with, e.g.
-    '["catvton","idm_vton"]'. When multiple are given they run in sequence (a
-    queue) and each returns its own result_url in `results` so the dev console
-    can compare outputs side by side. Non-dev sessions always render CatVTON.
+    SINGLE canonical pipeline (2026-09-02): there is exactly ONE image-
+    generation path — the current IDM-VTON workflow (CatVTON owns geometry,
+    IDM only re-textures inside CatVTON's masks; face + background are
+    preserved pixel-identical). No model selection. `prompt` is carried through
+    the response for promptable edit models (the edit endpoint handles it).
 
     Any render produced from a look (non-empty garment_ids) is auto-saved to
     the Outfits page — one new saved outfit per render (no dedupe: re-rendering
-    a look creates a fresh card so it's always obvious the render was saved).
-    For multi-model renders only the FIRST model's output is auto-saved to
-    Outfits; the rest are comparison renders (saved to uploads only)."""
+    a look creates a fresh card so it's always obvious the render was saved)."""
     try:
         ids = [int(x) for x in json.loads(garment_ids)]
     except Exception as ex:  # noqa: BLE001
@@ -168,16 +173,28 @@ async def do_tryon_outfit(
             if g is None:
                 raise HTTPException(404, f"garment {gid} not found in your wardrobe")
             garments.append(g)
-    # Best-source-photo: a top+bottom look renders correctly only on a person
-    # who is already wearing SEPARATES (a dress-wearing base turns the jeans
-    # into a skirt). Auto-pick a separates photo for looks with a bottom, unless
+    # Best-source-photo: the base must MATCH what the look needs (decided by
+    # looking at the garments — shorts→bare-leg base, pants→separates, dress→
+    # dress base, never pants-for-a-dress). Auto-pick a matching photo unless
     # the caller uploaded a raw image / re-renders an existing render.
-    if ids and (not base_result) and person is None and any(
-        tryon.CLOTH_TYPE.get(g.category, "upper") == "lower" for g in garments
-    ):
-        picked = _pick_person_photo(user, garments)
-        if picked is not None:
-            photo_id = picked
+    _auto_pick_target = None
+    if ids and (not base_result) and person is None and photo_id is None:
+        for _g in garments:
+            _t = await tryon.garment_base_type(_g, user["id"])
+            if _t is not None:
+                _auto_pick_target = _g
+                break
+    if _auto_pick_target is not None:
+        picked = await _pick_person_photo(user, garments)
+        if picked is None:
+            raise HTTPException(
+                400,
+                "No saved photo suits this look — a "
+                f"{_auto_pick_target.name} look needs a matching base "
+                "(shorts→shorts/bare-leg, pants→separates, dress→dress). Add a "
+                "suitable photo or pick the base manually.",
+            )
+        photo_id = picked
     if base_result:
         safe = Path(base_result).name  # strips any directory components
         path = UPLOAD_DIR / str(user["id"]) / "out" / safe
@@ -195,54 +212,80 @@ async def do_tryon_outfit(
         raise HTTPException(400, "provide a person photo, saved photo_id, or base_result")
     if not person_bytes:
         raise HTTPException(400, "empty person image")
+
+    # HARD GATE — the base must match the look's garment, or we do NOT run.
+    # What the garment needs ('shorts'/'pants'/'dress') is decided by LOOKING at
+    # the garment image (vision), never by its name. A shorts look needs a
+    # shorts/bare-leg base, a pants look a separates base, a DRESS look a dress
+    # base (a pants base makes a dress render as pants — the O-G2KK3X failure).
+    # Pick the right image or stop (no pointless renders on the wrong base).
+    if ids and (not base_result) and person is None and photo_id is not None:
+        _target = next(
+            (g for g in garments
+             if tryon.CLOTH_TYPE.get(g.category, "upper") == "lower"),
+            None,
+        )
+        if _target is None and len(garments) == 1:
+            _target = garments[0]  # single-garment look (e.g. a dress)
+        _want = await tryon.garment_base_type(_target, user["id"]) if _target else None
+        if _want is not None:
+            _style = await tryon.photo_style_cached(person_bytes, photo_id)
+            _ok = False
+            if _want == "shorts":
+                _ok = _style == "shorts"
+            elif _want == "pants":
+                _ok = _style in ("pants", "shorts")
+            else:  # dress
+                _ok = _style == "dress"
+            if not _ok:
+                _need = {
+                    "shorts": "a shorts/bare-leg",
+                    "pants": "a separates",
+                    "dress": "a dress",
+                }[_want]
+                raise HTTPException(
+                    400,
+                    f"The selected base doesn't match this {_want} look — {_need} "
+                    f"base is needed for {_target.name if _target else 'these clothes'}. "
+                    "Pick a matching base photo or let the app auto-pick one.",
+                )
+
     # Record WHICH source person photo produced this render (metadata only —
     # no copies of the image are stored; the base photo stays in place as
     # context for follow-ups).
     person_photo_id = int(photo_id) if photo_id is not None else 0
     person_url = f"/api/photos/{person_photo_id}/image" if person_photo_id else ""
-    # Resolve the model(s) to render with (dev sessions can pick; everyone else
-    # gets CatVTON). With an empty look (Saved-image / chat refine mode) the
-    # base image passes through untouched — no garments are re-added to an
-    # already-rendered image, so no model runs.
-    models = _resolve_models(user, models)
-    results: list[dict] = []
+    # SINGLE canonical pipeline (2026-09-02): exactly ONE image-generation
+    # path — the current IDM-VTON workflow. No model selection. With an empty
+    # look (Saved-image / chat refine mode) the base image passes through
+    # untouched — no garments are re-added to an already-rendered image.
     outfit_id: int | None = None
     result_url = ""
     if ids:
-        for mi, model in enumerate(models):
-            model_label = tryon.MODEL_LABELS.get(model, model)
-            try:
-                if mi == 0:
-                    for g in garments:
-                        interactions.log(user["id"], g.id, "tried_on", {"mode": "outfit", "model": model})
-                # Each backend decides HOW to combine the garments (catvton
-                # chains render-onto-render; idm_vton composites per-garment
-                # renders by mask so the first garment is never dropped).
-                mbytes = await tryon.run_tryon_outfit_model(model, person_bytes, garments, user["id"])
-            except tryon.ComfyUnavailable as ex:
-                results.append({"model": model, "label": model_label, "error": str(ex)})
-                continue
-            out_dir = UPLOAD_DIR / str(user["id"]) / "out"
-            out_dir.mkdir(parents=True, exist_ok=True)
-            out_name = f"tryon_{model}_outfit_{int(time.time())}.png"
-            (out_dir / out_name).write_bytes(mbytes)
-            url = f"/api/uploads/{out_name}"
-            results.append({"model": model, "label": model_label, "result_url": url})
-            # the FIRST successful model's render becomes the primary result +
-            # the auto-saved Outfit card; extra models are comparison renders.
-            if result_url == "":
-                result_url = url
-                outfit_id = _auto_save_outfit(
-                    user["id"], ids, url, outfit_name or "",
-                    person_photo_id=person_photo_id, person_url=person_url,
-                )
-        if not results:
-            raise HTTPException(503, "all selected try-on models failed")
+        for g in garments:
+            interactions.log(user["id"], g.id, "tried_on", {"mode": "outfit"})
+        # SINGLE canonical pipeline: IDM-VTON (CatVTON owns geometry, IDM only
+        # re-textures inside CatVTON's masks). No model selection.
+        try:
+            mbytes = await tryon.run_tryon_outfit_model(
+                "idm_vton", person_bytes, garments, user["id"]
+            )
+        except tryon.ComfyUnavailable as ex:
+            raise HTTPException(503, str(ex)) from ex
+        out_dir = UPLOAD_DIR / str(user["id"]) / "out"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_name = f"tryon_outfit_{int(time.time())}.png"
+        (out_dir / out_name).write_bytes(mbytes)
+        result_url = f"/api/uploads/{out_name}"
+        # every look render auto-saves to the Outfits page
+        outfit_id = _auto_save_outfit(
+            user["id"], ids, result_url, outfit_name or "",
+            person_photo_id=person_photo_id, person_url=person_url,
+        )
     elif base_result:
         # garment-free refine of an existing render — nothing new to draw, so
         # return the same image without writing a duplicate file.
         result_url = base_result
-        results = [{"model": "none", "label": "image", "result_url": base_result}]
     else:
         # first saved-image refine from a person photo: serve the photo as a
         # stable result so the UI can compare base vs result (one file only).
@@ -251,9 +294,11 @@ async def do_tryon_outfit(
         out_name = f"tryon_refine_{int(time.time())}.png"
         (out_dir / out_name).write_bytes(person_bytes)
         result_url = f"/api/uploads/{out_name}"
-        results = [{"model": "none", "label": "image", "result_url": result_url}]
     return {
-        "result_url": result_url, "results": results, "garment_ids": ids,
+        "result_url": result_url,
+        "results": [{"model": "idm_vton", "label": "IDM-VTON", "result_url": result_url}]
+        if result_url else [],
+        "garment_ids": ids,
         "prompt": prompt or "", "outfit_id": outfit_id,
         "person_photo_id": person_photo_id, "person_url": person_url,
     }

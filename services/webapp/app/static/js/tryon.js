@@ -16,38 +16,6 @@ let savedOutfits = [];      // cached /api/outfits that have a render (Saved-ima
 let selectedSaved = null;   // the chosen saved outfit render
 let manualPhotoPick = false; // user hand-picked the base photo → don't auto-override it
 let lookGarments = [];       // cached /api/wardrobe list — drives the look photo pickers
-// ---- dev-only multi-model try-on ----
-// The model selector is part of the dev difference: admin / test / acting-as
-// sessions can render a look against several models (CatVTON / IDM-VTON / FLUX
-// Kontext) and compare the outputs side by side. Normal users always get the
-// fast default (CatVTON) and never see the selector.
-let isDevSession = false;
-function selectedTryonModels() {
-  if (!isDevSession) return ['catvton'];
-  const checked = [...document.querySelectorAll('#tryon-models input:checked')].map((c) => c.value);
-  return checked.length ? checked : ['catvton'];
-}
-async function setupTryonModels() {
-  const block = $('tryon-models-block');
-  if (!block) return;
-  try {
-    const me = await apiJson('/api/auth/me');
-    isDevSession = !!(me.admin || me.dev);
-  } catch (e) { isDevSession = false; }
-  block.hidden = !isDevSession;
-  if (!isDevSession) return;
-  // grey out backends this host doesn't have configured yet (per-model error
-  // still shown if a checkbox stays on and the render fails).
-  try {
-    const { models } = await apiJson('/api/tryon/models');
-    document.querySelectorAll('#tryon-models input').forEach((cb) => {
-      const m = models.find((x) => x.id === cb.value);
-      cb.disabled = !!(m && !m.available);
-      if (cb.disabled) cb.checked = false;
-      cb.title = (m && !m.available) ? 'not configured on this host' : '';
-    });
-  } catch (e) { /* ignore — checkboxes stay enabled */ }
-}
 // Look-builder roles. 'full' = one-piece garments (dresses, swimsuits, jumpsuits)
 // that don't need a separate top + bottom.
 const LOOK_ROLES = ['top', 'bottom', 'full', 'outerwear', 'footwear'];
@@ -325,8 +293,11 @@ document.querySelectorAll('input[name=psrc]').forEach((r) => r.addEventListener(
   checkPersonImage();
   if (src === 'saved') autoPickBestPhoto();
 }));$('saved-photo').addEventListener('change', () => {
-  manualPhotoPick = true;  // user chose the base photo by hand — stop auto-overriding
+  // Auto-pick (empty value) = let the server choose the best matching base;
+  // a concrete selection is a deliberate manual base.
+  manualPhotoPick = $('saved-photo').value !== '';
   checkPersonImage();
+  autoPickBestPhoto();
 });
 $('person-file').addEventListener('change', checkPersonImage);
 $('saved-img').addEventListener('change', () => {
@@ -391,11 +362,11 @@ document.querySelectorAll('.look-select').forEach((s) => s.addEventListener('cha
 }));
 
 // ---------- auto-pick the best saved photo for the garment being tried on ----------
-// The best photo is chosen by OUTFIT MATCH with the specific garment: a swimsuit
-// garment wants a swimsuit-ish saved photo, a dress wants a dress photo, etc.
-// Server-side the vision model judges it (pure-PIL heuristic if the model is
-// down). The picked photo is what generates the try-on. A manual pick in the
-// dropdown wins and stops auto-overriding.
+// The saved-photo dropdown DEFAULTS to "Auto-pick best base" (empty value): no
+// photo_id is sent, so the server picks the best COMPATIBLE base for the look
+// (a pants/shorts look never lands on a dress base — that mismatch used to
+// hard-fail at render time). Picking a concrete photo in the dropdown is an
+// explicit manual base. The hint below shows which photo Auto-pick will use.
 function primaryGarmentId() {
   const full = document.querySelector('.look-select[data-role="full"]')?.value;
   if (full) return Number(full);                // a one-piece defines the whole outfit
@@ -410,17 +381,15 @@ async function autoPickBestPhoto() {
   if (src !== 'saved') return;                  // only relevant when the base is a saved photo
   const gid = primaryGarmentId();
   if (!gid) { hint.hidden = true; return; }     // no garment picked yet
-  if (!manualPhotoPick) {
-    hint.hidden = false;
-    hint.textContent = '✨ picking the best saved photo for this garment…';
-  }
+  hint.hidden = false;
+  hint.textContent = '✨ picking the best saved photo for this garment…';
   let res = null;
   try { res = await apiJson('/api/photos/best-for-garment/' + gid); } catch (e) { res = null; }
   const ranked = (res && res.ranked) || [];
   const best = ranked[0] || null;
-  // Re-label every option with its score; mark the best pick.
+  // Re-label every concrete option with its score; mark the best pick.
   for (const opt of sel.options) {
-    if (!opt.value) continue;                   // placeholder ("no saved photos …")
+    if (!opt.value) continue;                   // the "Auto-pick" / placeholder option
     const p = ranked.find((r) => String(r.id) === opt.value);
     if (!p) continue;
     const star = p.is_default ? '★ ' : '';
@@ -428,14 +397,17 @@ async function autoPickBestPhoto() {
     const bestTag = best && p.id === best.id ? ' ✓best' : '';
     opt.textContent = `${star}${label} (${p.score})${bestTag}`;
   }
-  if (!best || manualPhotoPick) { hint.hidden = true; return; }
-  const prev = sel.value;
-  sel.value = String(best.id);
-  if (sel.value !== prev) checkPersonImage();   // programmatic set doesn't fire change
-  hint.hidden = false;
-  hint.textContent = '✨ Using the best saved photo to try on ' +
-    (res.garment_name || 'this garment') + ' — ' + best.grade + ' (' + best.score + '/100)';
-  if (best.reason) hint.textContent += ' — ' + best.reason;
+  if (!best) { hint.hidden = true; return; }
+  if (sel.value === '') {
+    // Auto-pick selected → the server will use this (compatible) base photo.
+    hint.hidden = false;
+    hint.textContent = '✨ Auto-pick will try on "' + (best.description || ('photo ' + best.id)) + '" — '
+      + best.grade + ' (' + best.score + '/100)' + (best.reason ? ' — ' + best.reason : '');
+  } else if (manualPhotoPick) {
+    hint.hidden = false;
+    hint.textContent = '✨ Best match would be "' + (best.description || ('photo ' + best.id)) + '" ('
+      + best.score + '/100)' + (best.reason ? ' — ' + best.reason : '');
+  }
 }
 
 async function loadSavedPhotos() {
@@ -443,6 +415,10 @@ async function loadSavedPhotos() {
     savedPhotos = await apiJson('/api/photos');
     const sel = $('saved-photo'); sel.innerHTML = '';
     if (!savedPhotos.length) { sel.add(new Option('no saved photos — upload in Account', '')); return; }
+    // Auto-pick is the default (empty value): the server picks the best
+    // COMPATIBLE base, so a pants/shorts look never lands on a dress base.
+    // Choose a concrete photo only when you want a specific base.
+    sel.add(new Option('✨ Auto-pick best base', ''));
     for (const p of savedPhotos) {
       const label = p.description ? p.description : `photo ${p.id}`;
       sel.add(new Option(`${p.is_default ? '★ ' : ''}${label}`, p.id));
@@ -465,17 +441,14 @@ async function loadSavedImages() {
   } catch (e) { /* ignore */ }
 }
 loadSavedImages(); populateLook().then(() => { applySavedReco(); });
-setupTryonModels();  // dev-only multi-model selector (admin/test/acting-as)
-// Show the quality score for the pre-selected (default) saved photo right away,
-// without making the user interact with the dropdown first.
+// Show the quality score for the picked base photo (hidden while Auto-pick is
+// selected — the concrete photo is chosen server-side at render time).
 loadSavedPhotos().then(() => { checkPersonImage(); autoPickBestPhoto(); });
 
 // ---------- try on (shared by the Try on button and the chat bar) ----------
 async function runTryon(ids, baseResult, prompt) {
   const fd = new FormData();
   fd.append('garment_ids', JSON.stringify(ids));
-  const models = selectedTryonModels();
-  if (isDevSession && models.length) fd.append('models', JSON.stringify(models));
   const name = ($('outfit-name') ? $('outfit-name').value : '').trim();
   if (name) fd.append('outfit_name', name);
   let baseUrl = null; // what produced the latest render — shown as "original" in the compare
@@ -487,9 +460,14 @@ async function runTryon(ids, baseResult, prompt) {
     const src = document.querySelector('input[name=psrc]:checked')?.value || 'saved';
     if (src === 'saved') {
       const pid = $('saved-photo').value;
-      if (!pid) { alert('upload a saved photo first (Account → My photos)'); return; }
-      fd.append('photo_id', pid);
-      baseUrl = await photoBaseUrl(pid);
+      if (!pid) {
+        if (!savedPhotos.length) { alert('add a saved photo in Account first — Auto-pick needs at least one base photo'); return; }
+        // Auto-pick selected → send NO photo_id; the server picks the best
+        // COMPATIBLE base for this look (never a mismatched dress for pants).
+      } else {
+        fd.append('photo_id', pid);             // explicit manual base
+        baseUrl = await photoBaseUrl(pid);
+      }
     } else {
       const f = $('person-file').files[0];
       if (!f) { alert('pick a person photo or use a saved one'); return; }
@@ -507,11 +485,10 @@ async function runTryon(ids, baseResult, prompt) {
     ? (multi ? `Rendering garment 1 of ${ids.length}…` : 'Rendering garment…')
     : 'Refining image…';
   const hint = document.createElement('div'); hint.className = 'hint';
-  hint.textContent = (models.length > 1 ? `rendering with ${models.length} models (queue): ${models.join(' + ')} — ` : '')
-    + (ids.length
-        ? (multi ? `applying ${ids.length} garments in sequence — this can take a while`
-                 : 'first run may download ~4-6GB of model weights (can take a few minutes)')
-        : 'refining from the base image — no garments re-added');
+  hint.textContent = ids.length
+    ? (multi ? `applying ${ids.length} garments in sequence — this can take a while`
+             : 'rendering — this can take a few minutes')
+    : 'refining from the base image — no garments re-added';
   const timer = document.createElement('div'); timer.className = 'timer'; timer.textContent = '0s';
   txt.appendChild(stage); txt.appendChild(hint);
   box.appendChild(spinner); box.appendChild(txt); box.appendChild(timer);
@@ -539,9 +516,7 @@ async function runTryon(ids, baseResult, prompt) {
     lastResultLook = JSON.stringify(ids);
     lastIds = ids;
     lastOutfitId = data.outfit_id || null;
-    renderTryonResults(data.results && data.results.length
-      ? data.results
-      : [{ model: 'catvton', label: 'CatVTON (fast)', result_url: data.result_url }]);
+    showSingleResult(data.result_url);
     // before/after only makes sense when altering (chat re-render / saved-image
     // refine). A plain try-on shows just the new render — never the original.
     const primaryUrl = await authImageUrl(data.result_url + '?size=detail');
@@ -563,28 +538,14 @@ async function runTryon(ids, baseResult, prompt) {
   finally { clearInterval(tryonInt); tryonInt = null; }
 }
 
-// Render one labeled image per model result (side-by-side comparison grid).
-// A per-model error shows in place of that model's image; the primary result
-// still drives the clip / chat / saved-outfit logic below.
-function renderTryonResults(results) {
-  const grid = document.createElement('div'); grid.className = 'model-results';
-  for (const r of results) {
-    const fig = document.createElement('figure');
-    const cap = document.createElement('figcaption');
-    cap.textContent = r.label || r.model || 'result';
-    fig.appendChild(cap);
-    if (r.result_url) {
-      const img = document.createElement('img'); img.alt = cap.textContent;
-      setAuthImage(img, r.result_url + '?size=detail');
-      fig.appendChild(img);
-    } else if (r.error) {
-      const err = document.createElement('div'); err.className = 'model-err';
-      err.textContent = r.error; fig.appendChild(err);
-    }
-    grid.appendChild(fig);
-  }
+// Single canonical pipeline — show the one result image (no model grid).
+function showSingleResult(url) {
+  if (!url) { $('result').innerHTML = '<p class="muted">render returned no image</p>'; return; }
+  const img = document.createElement('img');
+  img.alt = 'try-on result';
+  setAuthImage(img, url + '?size=detail');
   $('result').innerHTML = '';
-  $('result').appendChild(grid);
+  $('result').appendChild(img);
 }
 
 $('tryon-btn').addEventListener('click', async () => {

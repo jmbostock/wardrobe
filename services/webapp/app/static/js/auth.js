@@ -1,4 +1,6 @@
-// auth page — log in / sign up. On success, store the token and go to /suggest.
+// auth page — log in / sign up. On success, store the token and go to /suggest
+// (the dev `admin` account goes to /account — that's where the switch-user
+// console lives; `admin`/`test` log in with their username, not an email).
 async function authAction(endpoint) {
   const body = { email: $('auth-email').value.trim(), password: $('auth-pass').value };
   const res = await fetch('/api/auth/' + endpoint, {
@@ -12,7 +14,7 @@ async function authAction(endpoint) {
   const data = await res.json();
   setToken(data.token);
   $('auth-status').textContent = 'signed in as ' + data.user.email;
-  location.href = '/suggest';
+  location.href = (data.user.role === 'admin') ? '/account' : '/suggest';
 }
 $('auth-login').addEventListener('click', () => authAction('login'));
 $('auth-register').addEventListener('click', () => authAction('register'));

@@ -5,6 +5,12 @@
 [hidden] { display:none !important; }
 body { margin:0; font-family: system-ui, sans-serif; background:var(--bg); color:var(--txt); }
 header { position:sticky; top:0; z-index:15; background:var(--bg); padding:14px 24px; border-bottom:1px solid var(--line); display:flex; align-items:center; }
+/* Test-sandbox (dev `test` account): tint the top bar brown so it's obvious
+   this is the test copy, not production — no full-width banner. Only the
+   `test` account gets this (the admin acting-as a user does not). */
+body.dev-mode header { background:#4a2c12; border-bottom-color:#7a4a1a; }
+body.dev-mode header nav a { border-color:#6a4a1a; color:#ffd9a0; }
+body.dev-mode header nav a.active { background:#d98a1f; border-color:#d98a1f; color:#241503; }
 nav { display:flex; gap:8px; align-items:center; }
 nav a { text-decoration:none; padding:8px 12px; border-radius:8px; background:transparent;
   border:1px solid var(--line); color:var(--txt); font-size:14px; font-weight:600; }

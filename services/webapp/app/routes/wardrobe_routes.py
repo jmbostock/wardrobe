@@ -3,11 +3,11 @@ from __future__ import annotations
 
 from urllib.parse import urljoin
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from .. import aifill, imglink, interactions, render, sharing
+from .. import aifill, imglink, interactions, render, sharing, vision_cache
 from ..deps import get_current_user
 from ..media import (
     COLOR_HEX,
@@ -108,8 +108,22 @@ def create_garment(req: WardrobeCreate, user: dict = Depends(get_current_user)) 
         data = fetch_product_image(req.image_url)
         ext = validate_image(data)
         save_garment_image(user["id"], g.id, data, ext)
+        # cache what the garment is (vision) in the background — base picking
+        # then reads the DB instead of a live vision call (best-effort).
+        _refresh_garment_bg(g.id, user["id"])
     # re-fetch so phash is set and near_dup_of reflects the saved image
     return garment_dict(user["id"], wardrobe.get(user["id"], g.id))
+
+
+def _refresh_garment_bg(garment_id: int, user_id: int) -> None:
+    """Best-effort background refresh of a garment's vision classification.
+    Runs in a daemon thread (callers are sync routes). Never raises."""
+    import threading
+
+    def _run() -> None:
+        vision_cache.refresh_garment_sync(garment_id, user_id)
+
+    threading.Thread(target=_run, daemon=True).start()
 
 
 @router.get("/api/wardrobe/meta")
@@ -191,6 +205,7 @@ async def ai_fill(
 async def upload_garment_image(
     garment_id: int,
     image: UploadFile = File(...),
+    background: BackgroundTasks = BackgroundTasks(),
     user: dict = Depends(get_current_user),
 ) -> dict:
     g = wardrobe.get(user["id"], garment_id)
@@ -201,13 +216,18 @@ async def upload_garment_image(
     # ai_orient=True: 'rotate-then-read-text' picks the right way up for the
     # photo (the model reads the tag in the correct orientation)
     save_garment_image(user["id"], garment_id, data, ext, ai_orient=True)
+    # cache what the garment is (vision) so base picking is a DB read
+    background.add_task(vision_cache.refresh_garment, garment_id, user["id"])
     # re-fetch so phash is set and near_dup_of reflects the saved image
     return garment_dict(user["id"], wardrobe.get(user["id"], garment_id))
 
 
 @router.post("/api/wardrobe/{garment_id}/image-url")
 def garment_image_from_url(
-    garment_id: int, req: ImageUrlRequest, user: dict = Depends(get_current_user)
+    garment_id: int,
+    req: ImageUrlRequest,
+    background: BackgroundTasks = BackgroundTasks(),
+    user: dict = Depends(get_current_user),
 ) -> dict:
     g = wardrobe.get(user["id"], garment_id)
     if g is None:
@@ -215,6 +235,8 @@ def garment_image_from_url(
     data = fetch_product_image(req.url)
     ext = validate_image(data)
     save_garment_image(user["id"], garment_id, data, ext)
+    # cache what the garment is (vision) so base picking is a DB read
+    background.add_task(vision_cache.refresh_garment, garment_id, user["id"])
     # re-fetch so phash is set and near_dup_of reflects the saved image
     return garment_dict(user["id"], wardrobe.get(user["id"], garment_id))
 

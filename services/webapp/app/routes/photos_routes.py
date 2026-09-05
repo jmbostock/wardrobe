@@ -3,11 +3,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from .. import photopick, photos
+from .. import photopick, photos, vision_cache
 from ..deps import get_current_user
 from ..media import IMAGE_CACHE_CONTROL, garment_image_path, media_type_for
 from ..store import wardrobe
@@ -59,16 +59,23 @@ def best_photo_for_garment(
 
 @router.post("/api/photos")
 async def upload_photo(
-    person: UploadFile = File(...), user: dict = Depends(get_current_user)
+    person: UploadFile = File(...),
+    background: BackgroundTasks = BackgroundTasks(),
+    user: dict = Depends(get_current_user),
 ) -> dict:
     data = await person.read()
     if not data:
         raise HTTPException(400, "empty image")
     ext = Path(person.filename or "").suffix
     try:
-        return photos.upload(user["id"], data, ext)
+        saved = photos.upload(user["id"], data, ext)
     except photos.PhotoError as ex:
         raise HTTPException(400, str(ex)) from ex
+    # Cache what the person is wearing in this base photo (vision classification)
+    # in the background — base picking then reads the DB, no live vision at
+    # request time. Best-effort: a failure just means the nightly batch retries.
+    background.add_task(vision_cache.refresh_photo, saved["id"], user["id"])
+    return saved
 
 
 @router.post("/api/photos/{photo_id}/default")

@@ -263,10 +263,11 @@ def refine_color(coarse: str, data: bytes) -> str:
 
 
 def _is_variant(p: Path) -> bool:
-    """True for our generated <stem>.thumb.webp / .detail.webp files — these
-    must never be mistaken for the original image (e.g. by garment_image_path)."""
+    """True for our generated <stem>.thumb.webp / .detail.webp / .clean.png
+    files — these must never be mistaken for the original image (e.g. by
+    garment_image_path)."""
     name = p.name.lower()
-    return any(name.endswith(sfx) for sfx in VARIANT_SUFFIXES)
+    return any(name.endswith(sfx) for sfx in VARIANT_SUFFIXES) or name.endswith(CLEAN_SUFFIX)
 
 
 def garment_image_path(user_id: int, garment_id: int) -> Path | None:
@@ -330,6 +331,101 @@ def _write_variants(data: bytes, orig: Path) -> None:
             _atomic_write_webp(im, _variant_path(orig, size))
     except Exception:  # noqa: BLE001 — thumbnails are best-effort
         pass
+
+
+# The IDM texture pass must see the GARMENT only — never the flat-lay backdrop.
+# Stored as <gid>.clean.png at save time (see _write_clean_garment); the same
+# function is called lazily at render time as a fallback for garments that were
+# saved before cleaning existed (and by the nightly rec_weekly backfill).
+CLEAN_SUFFIX = ".clean.png"
+
+
+def _write_clean_garment(data: bytes, orig: Path) -> Path:
+    """Best-effort: write the background-removed garment (garment on blank
+    white) next to the original as <gid>.clean.png. Never raises — on any
+    failure the render path falls back to the original."""
+    try:
+        clean = remove_garment_background(data)
+        dest = orig.with_name(f"{orig.stem}{CLEAN_SUFFIX}")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(clean)
+        return dest
+    except Exception:  # noqa: BLE001 — cleaning is best-effort
+        return orig
+
+
+def remove_garment_background(data: bytes, tolerance: int = 28) -> bytes:
+    """Remove a flat-lay garment photo's background so IDM textures the GARMENT
+    only, not the backdrop it was shot on.
+
+    A flat-lay (garment centered on a backdrop) leaks the background color into
+    the IDM texture pass — e.g. black shorts shot on a beige/wooden surface
+    render beige, and a white waist drawstring gets over-painted as a thick band
+    (the O-ZBZ4BP "white string" failure). We flood-fill from the image borders
+    (background always touches the edges on a centered flat-lay), and any pixel
+    within `tolerance` of a connected background region is dropped to white.
+    Pure PIL, deterministic, no model. On any doubt (no border region found,
+    flood fills > 95% of the frame = probably not a flat-lay) we return the
+    image unchanged rather than wreck it."""
+    try:
+        img = ImageOps.exif_transpose(Image.open(io.BytesIO(data))).convert("RGB")
+        w, h = img.size
+        small = img.resize((max(64, w // 8), max(64, h // 8)))
+        sw, sh = small.size
+        px = small.load()
+
+        # seeds = every border pixel; background is whatever is connected to them
+        from collections import deque
+
+        seen = [[False] * sw for _ in range(sh)]
+        q: deque = deque()
+        for x in range(sw):
+            for y in (0, sh - 1):
+                if not seen[y][x]:
+                    seen[y][x] = True
+                    q.append((x, y))
+        for y in range(sh):
+            for x in (0, sw - 1):
+                if not seen[y][x]:
+                    seen[y][x] = True
+                    q.append((x, y))
+        # collect the border colors as the background reference
+        border = [px[x, y] for x, y in list(q)]
+        if not border:
+            return data
+        # BFS: expand into pixels close to the average border color
+        avg = tuple(round(statistics.mean(ch)) for ch in zip(*border))
+
+        def close(c) -> bool:
+            return all(abs(c[i] - avg[i]) <= tolerance for i in range(3))
+
+        bg = 0
+        while q:
+            x, y = q.popleft()
+            if not close(px[x, y]):
+                continue
+            bg += 1
+            for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+                if 0 <= nx < sw and 0 <= ny < sh and not seen[ny][nx]:
+                    seen[ny][nx] = True
+                    q.append((nx, ny))
+        if bg / (sw * sh) > 0.95:
+            return data  # flood swallowed the whole frame — not a flat-lay
+
+        # upscale the background mask to full res and blank it to white
+        mask = Image.new("L", (sw, sh), 0)
+        mp = mask.load()
+        for y in range(sh):
+            for x in range(sw):
+                mp[x, y] = 0 if seen[y][x] else 255  # 255 = keep garment
+        mask = mask.resize((w, h), Image.NEAREST)
+        out = Image.new("RGB", (w, h), (255, 255, 255))
+        out.paste(img, (0, 0), mask)  # mask=255 -> keep original (foreground)
+        buf = io.BytesIO()
+        out.save(buf, "PNG")
+        return buf.getvalue()
+    except Exception:  # noqa: BLE001 — never break a render on a cleanup failure
+        return data
 
 
 def garment_image_file(
@@ -463,6 +559,10 @@ def save_garment_image(user_id: int, garment_id: int, data: bytes, ext: str,
     path.write_bytes(data)
     # generate responsive WebP variants (thumb/detail) so grids never serve full-res
     _write_variants(data, path)
+    # background-removed garment for the IDM texture pass (garment on blank
+    # white) — written once here so renders never re-clean; nightly backfill
+    # catches any garment saved before cleaning existed.
+    _write_clean_garment(data, path)
     # record image + perceptual hash + color fingerprint for near-dup detection
     wardrobe.update(user_id, garment_id, image_path=path.name,
                     phash=phash.image_phash(data), color_sig=phash.image_color_class(data))

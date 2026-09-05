@@ -92,35 +92,17 @@ async function requireAuth() {
   if (me && me.dev) showDevBanner(me.dev);
 }
 
-// ---------- DEV banner (dev accounts only) ----------
+// ---------- DEV indicator (dev accounts only) ----------
 //   acting_as  → the admin is acting AS a real user (dev instance; changes apply
 //                to that user's data on this dev box, never production)
 //   test_copy  → the `test` sandbox, whose data is a copy of a real user
+// Instead of a full-width banner (which blocks the view), tint the app's top
+// bar brown so it's obvious this is the test sandbox, not production. Only the
+// `test` account gets this — the admin acting-as a user does not (per user).
 function showDevBanner(dev) {
-  const b = $('dev-banner');
-  if (!b) return;
-  const msg = $('dev-banner-msg');
-  const btn = $('dev-banner-exit');
-  if (dev.acting_as) {
-    msg.textContent = 'Acting as ' + (dev.acting_as.email || 'a user') +
-      ' (MASTER admin) — changes apply LIVE to their data on this dev instance, never production.';
-    btn.hidden = false;
-  } else if (dev.test_copy) {
-    msg.textContent = 'Sandbox — data is a copy; changes never affect real accounts.';
-    btn.hidden = true;  // test can't "exit to admin"
-  } else {
-    return;
-  }
-  b.hidden = false;
+  if (!dev || !dev.test_copy) return;
+  document.body.classList.add('dev-mode');
 }
-(function wireDevBannerExit() {
-  const btn = $('dev-banner-exit');
-  if (!btn) return;
-  btn.addEventListener('click', () => {
-    setToken(getAdminToken());   // drop the acting-as token, back to the admin token
-    location.href = '/account';  // Account page, where the switch console lives
-  });
-})();
 
 // ---------- full-page sheets: scroll-lock while open + swipe-down to close ----------
 // Every overlay ("pick a top" / garment / outfit / lightbox) is a `.sheet`: it

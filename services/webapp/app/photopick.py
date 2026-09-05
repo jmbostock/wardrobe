@@ -26,7 +26,7 @@ from .config import settings
 # Same model family as ai-fill — small enough to run locally on the 5060 Ti but
 # follows multi-line prompts and can describe/compare outfits from photos.
 DEFAULT_VISION_MODEL = "qwen2.5vl:3b"
-VISION_TIMEOUT = 10  # seconds; fallback to PIL heuristic if VLM is slow/busy
+VISION_TIMEOUT = 150  # seconds; vision is wake-on-demand — first call after idle cold-starts (~60-90s)
 
 # candidate photos are capped so the request stays small/fast
 MAX_CANDIDATES = 10
@@ -98,30 +98,42 @@ def _parse_photo_lines(text: str) -> list[tuple[int, int, str]]:
 def _vision_rank(
     garment_bytes: bytes, candidates: list[tuple[int, bytes]]
 ) -> dict[int, dict[str, Any]] | None:
-    """One Ollama vision call (garment image + every saved photo) → per-photo
-    {score, reason} keyed by photo id. Returns None when the model is down or
-    the reply can't be parsed (caller falls back to the heuristic)."""
+    """One vision call (garment image + every saved photo) → per-photo
+    {score, reason} keyed by photo id. Backend is env-driven like ai-fill:
+    VISION_ENGINE=llamacpp → llama.cpp llama-server's OpenAI-compatible
+    /v1/chat/completions (multi-image); otherwise legacy Ollama /api/generate.
+    Returns None when the model is down or the reply can't be parsed (caller
+    falls back to the heuristic)."""
     if not candidates:
         return {}
-    model = os.getenv("OLLAMA_VISION_MODEL", DEFAULT_VISION_MODEL).strip()
+    b64s = [base64.b64encode(_thumb(garment_bytes)).decode("ascii")]
+    for _pid, data in candidates[:MAX_CANDIDATES]:
+        b64s.append(base64.b64encode(_thumb(data)).decode("ascii"))
     try:
-        images = [base64.b64encode(_thumb(garment_bytes)).decode("ascii")]
-        for _pid, data in candidates[:MAX_CANDIDATES]:
-            images.append(base64.b64encode(_thumb(data)).decode("ascii"))
-        payload = {
-            "model": model,
-            "prompt": PROMPT,
-            "images": images,
-            "stream": False,
-            "options": {"temperature": 0},
-        }
-        r = httpx.post(
-            f"{settings.ollama_url}/api/generate", json=payload, timeout=VISION_TIMEOUT
-        )
-        if r.status_code != 200:
-            return None
-        text = (r.json() or {}).get("response", "")
-    except Exception:  # noqa: BLE001 — ollama down / timeout / bad image bytes
+        if settings.vision_engine == "llamacpp":
+            url = f"{settings.vision_url}/v1/chat/completions"
+            content: list[dict[str, Any]] = [{"type": "text", "text": PROMPT}]
+            for b in b64s:
+                content.append(
+                    {"type": "image_url",
+                     "image_url": {"url": f"data:image/jpeg;base64,{b}"}}
+                )
+            payload = {"messages": [{"role": "user", "content": content}],
+                       "stream": False, "temperature": 0}
+            r = httpx.post(url, json=payload, timeout=VISION_TIMEOUT)
+            if r.status_code != 200:
+                return None
+            text = (r.json() or {}).get("choices", [{}])[0].get("message", {}).get("content", "")
+        else:
+            model = os.getenv("OLLAMA_VISION_MODEL", DEFAULT_VISION_MODEL).strip()
+            payload = {"model": model, "prompt": PROMPT, "images": b64s,
+                       "stream": False, "options": {"temperature": 0}}
+            r = httpx.post(f"{settings.ollama_url}/api/generate",
+                           json=payload, timeout=VISION_TIMEOUT)
+            if r.status_code != 200:
+                return None
+            text = (r.json() or {}).get("response", "")
+    except Exception:  # noqa: BLE001 — vision down / timeout / bad image bytes
         return None
     out: dict[int, dict[str, Any]] = {}
     for n, score, reason in _parse_photo_lines(text):
@@ -135,13 +147,38 @@ def _vision_rank(
     return out or None
 
 
+_DRESS_MARKERS = ("dress", "gown", "sundress", "maxi", "jumpsuit", "romper")
+_SEPARATES_MARKERS = ("pants", "jeans", "shorts", "jogger", "leggings", "trousers", "slacks")
+_MILD_SEPARATES_MARKERS = ("shirt", "top", "tee", "outfit", "casual", "base", "blouse", "tank")
+
+
+def _style_nudge(description: str, garment_category: str) -> int:
+    """Fallback-only score nudge for BOTTOM garments: a base photo of the
+    person already in a DRESS makes bottoms render as a skirt (the whole leg
+    gets covered), so penalize dress-looking bases and prefer separates-looking
+    ones. Pure signal from the photo description (0 when no signal)."""
+    if garment_category != "bottom":
+        return 0
+    d = (description or "").lower()
+    if not d:
+        return 0
+    if any(m in d for m in _DRESS_MARKERS) and not any(m in d for m in _SEPARATES_MARKERS):
+        return -35
+    if any(m in d for m in _SEPARATES_MARKERS):
+        return 12
+    if any(m in d for m in _MILD_SEPARATES_MARKERS):
+        return 8
+    return 0
+
+
 def rank_photos_for_garment(
     user_id: int, garment_bytes: bytes, garment_category: str, fast: bool = False
 ) -> list[dict[str, Any]]:
     """Rank the user's saved person photos best-first as the try-on base for a
     specific garment. Primary signal = outfit match via vision LLM; falls back
-    to the pure-PIL person-QA heuristic (category-nudged) when the model is
-    unavailable or fast=True is specified. Corrupt/undecodable photos are skipped — never offered.
+    to the pure-PIL person-QA heuristic (category-nudged + description style
+    nudge for bottoms) when the model is unavailable or fast=True is specified.
+    Corrupt/undecodable photos are skipped — never offered.
 
     Returns photo dicts (photos._row_to_dict fields) plus score/grade/reason/
     method ("ai" | "heuristic"). Corrupt/undecodable photos are skipped, and any
@@ -161,9 +198,10 @@ def rank_photos_for_garment(
     entries: dict[int, dict[str, Any]] = {}
     ai_scores = None if fast else _vision_rank(garment_bytes, [(p["id"], d) for p, d in candidates])
     for p, d in candidates:
+        nudge = _style_nudge(p.get("description", ""), garment_category)
         if ai_scores is None:
             s = imageqa.suitability(d, garment_category)
-            entries[p["id"]] = {"score": s["score"], "reason": s["reason"], "method": "heuristic"}
+            entries[p["id"]] = {"score": s["score"] + nudge, "reason": s["reason"], "method": "heuristic"}
         else:
             sc = ai_scores.get(p["id"])
             if sc is not None:
@@ -171,7 +209,7 @@ def rank_photos_for_garment(
             else:
                 # vision skipped this one — keep it ranked by quality alone
                 s = imageqa.suitability(d, garment_category)
-                entries[p["id"]] = {"score": s["score"], "reason": s["reason"], "method": "heuristic"}
+                entries[p["id"]] = {"score": s["score"] + nudge, "reason": s["reason"], "method": "heuristic"}
 
     ranked: list[dict[str, Any]] = []
     for p, _d in candidates:

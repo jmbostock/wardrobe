@@ -309,6 +309,33 @@ def _migrate(conn: sqlite3.Connection) -> None:
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         )"""
     )
+    # person-photo embeddings (base-picker Layer) — FashionCLIP vectors written
+    # by the same scripts/rec_build.py pass, so picking a base photo ranks by
+    # embedding similarity (garment ↔ photo) with NO live vision call.
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS photo_embeddings (
+            photo_id   INTEGER PRIMARY KEY REFERENCES photos(id) ON DELETE CASCADE,
+            model      TEXT NOT NULL DEFAULT 'fashion-clip-v2',
+            dim        INTEGER NOT NULL DEFAULT 512,
+            vector     BLOB NOT NULL,
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )"""
+    )
+    # cached vision classification for garments (added 2026-08-31): what the
+    # garment actually IS ('shorts'|'pants'|'dress'|'skirt'|'top'|'outerwear'|
+    # 'other') + a stylist one-liner, computed ONCE at upload / nightly batch so
+    # base-picking and the IDM prompt never need a live vision call.
+    gcols = {r[1] for r in conn.execute("PRAGMA table_info(garments)").fetchall()}
+    if "vision_type" not in gcols:
+        conn.execute("ALTER TABLE garments ADD COLUMN vision_type TEXT NOT NULL DEFAULT ''")
+    if "vision_desc" not in gcols:
+        conn.execute("ALTER TABLE garments ADD COLUMN vision_desc TEXT NOT NULL DEFAULT ''")
+    # cached vision classification for person photos (added 2026-08-31): what
+    # the person is wearing in the base photo ('dress'|'shorts'|'pants'|'unknown'),
+    # computed once at upload / nightly so the picker's hard gate is a DB read.
+    pcols = {r[1] for r in conn.execute("PRAGMA table_info(photos)").fetchall()}
+    if "vision_type" not in pcols:
+        conn.execute("ALTER TABLE photos ADD COLUMN vision_type TEXT NOT NULL DEFAULT ''")
     # dev test-sandbox snapshots (added 2026-08-24): frozen copies of real users
     # that the `test` sandbox can switch between (always non-live). users.test_source
     # = the real user id the test sandbox currently mirrors (NULL = none).

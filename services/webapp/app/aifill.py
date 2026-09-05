@@ -26,7 +26,7 @@ from .config import settings
 # the labeled-line prompt AND reads tag text. moondream is ~0.3GB smaller but
 # ignores multi-line instructions (hallucinates size lists), so it's not usable.
 DEFAULT_VISION_MODEL = "qwen2.5vl:3b"
-AI_FILL_TIMEOUT = 40  # seconds; tag reads should be fast, don't hang the form
+AI_FILL_TIMEOUT = 150  # seconds; vision is wake-on-demand — first call after idle cold-starts (~60-90s)
 
 # normalize model output to our fixed category set
 CATEGORY_SYNONYMS: dict[str, str] = {

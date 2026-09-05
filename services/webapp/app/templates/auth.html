@@ -19,6 +19,13 @@
     <button id="auth-register" class="ghost">Sign up</button>
     <span class="muted" id="auth-status"></span>
   </div>
+  {% if dev_admin_enabled %}
+  <p class="muted" style="text-align:center; margin-top:14px; font-size:12px;">
+    Dev instance — sign in as <b>{{ dev_admin_login }}</b> (master admin) or
+    <b>{{ dev_test_login }}</b> (sandbox with a copy of the data). Real accounts
+    log in with their email.
+  </p>
+  {% endif %}
 </section>
 {% endblock %}
 {% block scripts %}<script src="/static/js/auth.js"></script>{% endblock %}

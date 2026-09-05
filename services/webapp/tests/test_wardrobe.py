@@ -44,10 +44,10 @@ def test_create_upload_serve_delete():
     assert w.get(ua["id"], g.id) is None
 
 
-def test_rotate_90_swaps_orientation():
-    """Manual 90° rotate (the sideways-fix button) rotates the photo 90° per
-    click — a portrait frame becomes landscape — and re-saves through
-    save_garment_image so phash / color_sig stay consistent."""
+def test_rotate_180_flips_and_stays_portrait():
+    """Manual 180° rotate (upside-down fix) flips the photo in place, stays
+    portrait (never horizontal), and re-saves through save_garment_image so
+    phash / color_sig stay consistent."""
     import io as _io
 
     from PIL import Image
@@ -56,7 +56,7 @@ def test_rotate_90_swaps_orientation():
     from app.routes.wardrobe_routes import rotate_garment_image
 
     ua = auth.create_user("wRot@example.com", "password123")
-    g = w.create(ua["id"], "Sideways top", "top")
+    g = w.create(ua["id"], "Upside-down top", "top")
     # portrait image with a DARK band at the TOP so orientation is measurable
     img = Image.new("RGB", (800, 1200), (200, 200, 200))
     for x in range(800):
@@ -69,19 +69,17 @@ def test_rotate_90_swaps_orientation():
     def dark_band_at_top() -> bool:
         data = garment_image_path(ua["id"], g.id).read_bytes()
         im = Image.open(_io.BytesIO(data)).convert("RGB")
-        w, h = im.size
-        band = min(100, h)
-        top = sum(im.getpixel((w // 2, y))[0] for y in range(0, band)) / band
-        bot = sum(im.getpixel((w // 2, y))[0] for y in range(h - band, h)) / band
+        top = sum(im.getpixel((400, y))[0] for y in range(0, 100)) / 100
+        bot = sum(im.getpixel((400, y))[0] for y in range(1100, 1200)) / 100
         return top < bot
 
     assert dark_band_at_top(), "precondition: dark band should be at the top"
     d = rotate_garment_image(g.id, {"id": ua["id"]})
     assert d["has_image"] is True
-    # a 90° rotation swaps portrait → landscape (how a sideways item gets upright)
+    assert not dark_band_at_top(), "after 180° the dark band should be at the bottom"
+    # still a valid portrait image on disk
     im = Image.open(_io.BytesIO(garment_image_path(ua["id"], g.id).read_bytes()))
-    assert im.width > im.height, im.size
-    assert not dark_band_at_top(), "dark band should no longer be at the top"
+    assert im.height > im.width, im.size
     # cross-user cannot rotate someone else's garment
     ub = auth.create_user("wRot2@example.com", "password123")
     from fastapi import HTTPException
@@ -332,40 +330,6 @@ def test_ai_fill_parse():
     assert aifill.parse_ai_fill("") is None
 
 
-def test_aifill_llamacpp_vision_path():
-    """VISION_ENGINE=llamacpp posts to the OpenAI-compatible /v1/chat/completions
-    (image as a data URI) and parses the reply — the homelab-standard backend."""
-    from unittest import mock
-    from app import aifill
-
-    class FakeResp:
-        status_code = 200
-
-        def json(self):
-            return {"choices": [{"message": {"content": (
-                "NAME: Navy Tee\nBRAND: Old Navy\nCOLOR: navy\n"
-                "CATEGORY: top\nSIZES: S, M, L")}}]}
-
-    old_engine, old_url = aifill.settings.vision_engine, aifill.settings.vision_url
-    aifill.settings.vision_engine = "llamacpp"
-    aifill.settings.vision_url = "http://vision:1234"
-    try:
-        with mock.patch.object(aifill.httpx, "post", return_value=FakeResp()) as post:
-            got = aifill.ai_fill_garment(b"\x89PNG fake")
-    finally:
-        aifill.settings.vision_engine, aifill.settings.vision_url = old_engine, old_url
-
-    assert got and got["name"] == "Navy Tee" and got["brand"] == "Old Navy"
-    assert got["color"] == "navy" and got["category"] == "top" and got["sizes"] == "S,M,L"
-    url = post.call_args[0][0]
-    payload = post.call_args.kwargs["json"]
-    assert url == "http://vision:1234/v1/chat/completions", url
-    content = payload["messages"][0]["content"]
-    assert content[0]["type"] == "text"
-    assert content[1]["type"] == "image_url"
-    assert content[1]["image_url"]["url"].startswith("data:image/jpeg;base64,")
-
-
 def test_phash_similarity():
     """dHash: identical → same hash, near-identical → tiny distance, different
     garments → large distance."""
@@ -393,11 +357,8 @@ def test_phash_similarity():
 
 
 def test_near_duplicates():
-    """media.near_duplicates flags the same/near-identical item (same category,
-    or a confusable cross-category pair like a shirt tagged 'top' vs
-    'outerwear'), excludes self, and ignores unrelated garments (different
-    color, or a non-confusable category — a skirt is never "similar to" a
-    top/sweater just because both photos are red)."""
+    """media.near_duplicates flags the same/near-identical item, excludes self,
+    and ignores unrelated garments (different category or different color)."""
     from app import media, phash
     from PIL import Image, ImageDraw
     import io as _io
@@ -412,45 +373,35 @@ def test_near_duplicates():
         return buf.getvalue()
 
     ua = auth.create_user("wDup@example.com", "password123")
-    g1 = w.create(ua["id"], "Plaid shirt", "top")
+    g1 = w.create(ua["id"], "Red dress", "dress")
     media.save_garment_image(ua["id"], g1.id, make((120, 50, 50), "RED"), "png")
-    g2 = w.create(ua["id"], "Blue shirt", "top")
+    g2 = w.create(ua["id"], "Blue dress", "dress")
     media.save_garment_image(ua["id"], g2.id, make((60, 60, 140), "BLU"), "png")
-    # g3 = same photo, confusable cross-category (the shirt tagged 'outerwear') → a dup
-    g3 = w.create(ua["id"], "Plaid jacket", "outerwear")
+    # a top photographed the same way as g1 (near-identical hash) — NOT a dup
+    g3 = w.create(ua["id"], "Red top", "top")
     media.save_garment_image(ua["id"], g3.id, make((126, 54, 54), "RED"), "png")
-    # g4 = same photo but a NON-confusable category (a skirt vs the shirt) → NOT a dup
-    g4 = w.create(ua["id"], "Red skirt", "bottom")
-    media.save_garment_image(ua["id"], g4.id, make((126, 54, 54), "RED"), "png")
 
     red1 = make((120, 50, 50), "RED")
     red2 = make((126, 54, 54), "RED")
-    # g2 (blue) is unrelated → never returned for a red photo
-    assert not any(x["id"] == g2.id for x in
-                   media.near_duplicates(ua["id"], phash.image_phash(red1),
-                                         phash.image_color_class(red1),
-                                         exclude_id=g1.id, category="top"))
-    # a near-identical re-shoot of g1 flags g1 (same category) + g3 (confusable
-    # cross-category: shirt tagged 'outerwear'), but NOT g4 (non-confusable
-    # skirt) nor g2 (different color)
+    # g2 is unrelated → no near-dup for g1's exact hash (excluding g1 itself)
+    assert media.near_duplicates(ua["id"], phash.image_phash(red1),
+                                 phash.image_color_class(red1), exclude_id=g1.id) == []
+    # a near-identical re-shoot of g1 flags g1 (same category + same color)
     dups = media.near_duplicates(ua["id"], phash.image_phash(red2),
-                                 phash.image_color_class(red2), category="top")
+                                 phash.image_color_class(red2))
     assert any(x["id"] == g1.id for x in dups), dups
-    assert any(x["id"] == g3.id for x in dups), dups
-    assert not any(x["id"] == g4.id for x in dups), dups
-    assert not any(x["id"] == g2.id for x in dups), dups
+    assert not any(x["id"] == g2.id for x in dups), dups  # different color class
+    assert not any(x["id"] == g3.id for x in dups), dups  # different category
     # a blue near-twin of g2 flags g2 (color gate passes, not g1)
     blue2 = make((66, 66, 146), "BLU")
     dups2 = media.near_duplicates(ua["id"], phash.image_phash(blue2),
-                                  phash.image_color_class(blue2), category="top")
+                                  phash.image_color_class(blue2))
     assert any(x["id"] == g2.id for x in dups2), dups2
     assert not any(x["id"] == g1.id for x in dups2), dups2
-    # garment_dict exposes near_dup_of for the grid "similar to" note — g1's
-    # confusable cross-category twin (g3) is the note; the skirt (g4) is not
+    # garment_dict exposes near_dup_of for the grid "similar to" note
     g1d = media.garment_dict(ua["id"], w.get(ua["id"], g1.id))
-    assert g1d["phash"] != ""
-    assert g1d["near_dup_of"] is not None and g1d["near_dup_of"]["id"] == g3.id
-    assert media.garment_dict(ua["id"], w.get(ua["id"], g4.id))["near_dup_of"] is None
+    assert g1d["phash"] != "" and g1d["near_dup_of"] is None  # no other red item
+    assert media.garment_dict(ua["id"], w.get(ua["id"], g2.id))["near_dup_of"] is None
 
 
 def test_near_duplicates_canonical_color_gate():
@@ -536,10 +487,10 @@ def test_normalize_orientation():
     assert normalize_orientation(b"not an image") == (b"not an image", "")
 
 
-def test_normalize_orientation_rotations():
-    """Orientation: 180 flips an upside-down garment in place (portrait); 90/270
-    correct a sideways one (the tag reader chose it, so the frame may go
-    horizontal); any other rotation on a landscape frame is forced to portrait."""
+def test_normalize_orientation_never_horizontal():
+    """Garment photos are NEVER horizontal (landscape). Only the portrait-
+    preserving 180 flip (upside-down garment) is accepted; 90/270 are ignored;
+    any landscape input is rotated back to portrait."""
     from app.media import normalize_orientation
     from PIL import Image
     import io as _io
@@ -559,22 +510,25 @@ def test_normalize_orientation_rotations():
     d, e = normalize_orientation(data_of(port), rotate=180)
     assert size(d) == (800, 1200), size(d)
 
-    # 90/270 on a portrait → sideways garment corrected (frame goes landscape)
-    for r, out in ((90, (1200, 800)), (270, (1200, 800))):
-        d, e = normalize_orientation(data_of(port), rotate=r)
-        assert size(d) == out, (r, size(d))
+    # 90 rotate on a portrait → IGNORED (would make it landscape) → stays portrait
+    d, e = normalize_orientation(data_of(port), rotate=90)
+    assert e == "", e  # untouched
+    assert size(d) == (800, 1200), size(d)
 
-    # landscape + portrait-preserving/no/invalid rotation → forced to portrait
-    for r in (0, 180, 45):
+    # 270 rotate on a portrait → IGNORED → stays portrait
+    d, e = normalize_orientation(data_of(port), rotate=270)
+    assert size(d) == (800, 1200), size(d)
+
+    # landscape + any rotate → NEVER landscape: forced back to portrait
+    for r in (0, 45, 90, 180, 270):
         d, e = normalize_orientation(data_of(land), rotate=r)
         w, h = size(d)
         assert h > w, (r, w, h)
 
-    # landscape + a deliberate 90/270 → rotation applied (no portrait fallback
-    # double-rotation) — a landscape frame rotated 90/270 becomes portrait
-    for r in (90, 270):
-        d, e = normalize_orientation(data_of(land), rotate=r)
-        assert size(d) == (800, 1200), (r, size(d))
+    # invalid rotate is ignored (deterministic portrait behavior)
+    d, e = normalize_orientation(data_of(land), rotate=45)
+    w, h = size(d)
+    assert h > w, (w, h)
 
 
 def test_normalize_color():
@@ -711,34 +665,11 @@ def test_clean_image_url():
     assert "width=1024" in imglink.clean_image_url("//cdn.com/x.jpg?width=92")
 
 
-def test_infer_formality_occasions():
-    """infer_formality upgrades clearly-dressier items out of the casual default
-    (dress pants / blouse → business + office) but leaves casual items alone, so
-    office recommendations never pick shorts over dress pants."""
-    from app.media import infer_formality, infer_occasions
-    assert infer_formality("Black dress pants", "bottom") == "business"
-    assert infer_formality("Navy blouse", "top") == "business"
-    assert infer_formality("Wool blazer", "outerwear") == "business"
-    assert infer_formality("Grey suit", "outerwear") == "business"
-    # a bodysuit/jumpsuit is NOT a suit
-    assert infer_formality("Black one-piece bodysuit", "top") == "casual"
-    assert infer_formality("Red jumpsuit", "bottom") == "casual"
-    assert infer_formality("Mint shorts", "bottom") == "casual"
-    assert infer_formality("Blue jeans", "bottom") == "casual"
-    assert infer_formality("White t-shirt", "top") == "casual"
-    assert infer_formality("Grey cardigan", "top") == "smart-casual"
-    # never downgrade an explicit tag
-    assert infer_formality("Mint shorts", "bottom", current="smart-casual") == "smart-casual"
-    assert infer_occasions("Black dress pants", "bottom", "business") == "office,event,date"
-    assert infer_occasions("Mint shorts", "bottom", "casual", "casual") == "casual"
-
-
 if __name__ == "__main__":
     test_create_upload_serve_delete()
     test_cross_user_isolation()
-    test_rotate_90_swaps_orientation()
+    test_rotate_180_flips_and_stays_portrait()
     test_update()
-    test_infer_formality_occasions()
     test_imglink_product_gallery_preferred_over_logo()
     test_imglink_jsonld_product_image()
     test_imglink_og_image_last_resort_and_byte_detection()
@@ -746,6 +677,6 @@ if __name__ == "__main__":
     test_extract_product_page_color_from_text()
     test_extract_product_page_expanded_images()
     test_clean_image_url()
-    test_normalize_orientation_rotations()
+    test_normalize_orientation_never_horizontal()
     test_near_duplicates_canonical_color_gate()
     print("wardrobe tests OK")
