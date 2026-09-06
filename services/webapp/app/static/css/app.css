@@ -294,12 +294,12 @@ body:has(#view-suggest) .app-version { display:none; }
 .recommend-feedback .fb-thumb:active { transform:scale(.92); }
 .recommend-feedback .fb-thumb:disabled { opacity:.45; cursor:default; }
 .recommend-feedback .fb-thumb.picked { color:#0f1216; border-color:var(--acc); background:var(--acc); }
-/* thumbs-down reason picker (style-only) */
-.fb-reasons { position:absolute; left:0; top:calc(100% + 6px); z-index:20; display:flex; flex-direction:column; min-width:160px;
-  padding:4px; border:1px solid var(--line); border-radius:10px; background:var(--panel, #fff);
-  box-shadow:0 8px 24px rgba(0,0,0,.14); }
-.fb-reasons .fb-reason { display:block; width:100%; text-align:left; padding:8px 10px; border:0; background:transparent;
-  color:var(--txt, inherit); border-radius:6px; font:inherit; cursor:pointer; white-space:nowrap; }
+/* thumbs-down reason picker (style-only) — matches the app's dark theme */
+.fb-reasons { position:absolute; left:0; top:calc(100% + 6px); z-index:20; display:flex; flex-direction:column; min-width:170px;
+  padding:4px; border:1px solid var(--line); border-radius:10px; background:var(--card);
+  box-shadow:0 8px 24px rgba(0,0,0,.5); }
+.fb-reasons .fb-reason { display:block; width:100%; text-align:left; padding:9px 12px; border:0; background:transparent;
+  color:var(--txt); font-size:14px; font-weight:500; border-radius:6px; cursor:pointer; white-space:nowrap; }
 .fb-reasons .fb-reason:hover { background:rgba(79,156,249,.12); color:var(--acc); }
 
 /* ---- iPhone-first responsive ---- */
