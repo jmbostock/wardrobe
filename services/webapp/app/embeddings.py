@@ -176,7 +176,7 @@ def user_style_vector(
         if vec is None:
             continue
         w = float(r["weight"] or 0.5)
-        if w <= 0:
+        if w == 0:
             continue
         if total is None:
             total = np.zeros_like(np.asarray(vec, dtype=float))
@@ -186,8 +186,12 @@ def user_style_vector(
             w *= 0.5 ** (days / half_life_days)
         except (TypeError, ValueError):
             pass
+        # Positive feedback pulls the centroid TOWARD an item's style; negative
+        # feedback (disliked, rated_down) pushes it AWAY, so the centroid learns
+        # both what you like and what to avoid. Denominator uses magnitude so a
+        # couple of dislikes can't destabilize the average.
         total += w * np.asarray(vec, dtype=float)
-        denom += w
+        denom += abs(w)
     if total is None or denom <= 0.0:
         return None
     v = total / denom

@@ -115,12 +115,66 @@ function _renderChatGarments(bubble, items) {
 // Feedback logs the whole outfit + activity so the engine learns.
 const _THUMB_UP = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/></svg>';
 const _THUMB_DOWN = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/></svg>';
+// Style-only reasons for a thumbs-down — NO temperature options. Each maps to a
+// STYLE preference (color/pattern/formality/fit) or is a transient 'just today'.
+const _DOWN_REASONS = [
+  ['not_my_style', 'Not my style'],
+  ['wrong_color', 'Wrong color'],
+  ['wrong_pattern', 'Bad pattern/print'],
+  ['too_formal', 'Too formal'],
+  ['too_casual', 'Too casual'],
+  ['doesnt_fit', "Doesn't fit me"],
+  ['dislike_item', "Don't like this item"],
+  ['just_not_today', 'Just not today'],
+];
+
+function _toggleDownMenu(btn, send) {
+  const fb = btn.closest('.recommend-feedback');
+  let menu = fb.querySelector('.fb-reasons');
+  if (menu) { menu.remove(); return; }
+  fb.querySelectorAll('.fb-reasons').forEach((x) => x.remove());
+  menu = document.createElement('div');
+  menu.className = 'fb-reasons';
+  _DOWN_REASONS.forEach(([val, label]) => {
+    const r = document.createElement('button');
+    r.type = 'button';
+    r.className = 'fb-reason';
+    r.textContent = label;
+    r.addEventListener('click', (e) => {
+      e.stopPropagation();
+      menu.remove();
+      btn.classList.add('picked');
+      send('disliked', val);
+    });
+    menu.appendChild(r);
+  });
+  fb.appendChild(menu);
+}
+
 function _addFeedbackActions(container, outfit) {
   const actions = document.createElement('div');
   actions.className = 'recommend-actions';
 
   const fb = document.createElement('div');
   fb.className = 'recommend-feedback';
+
+  const send = async (kind, reason) => {
+    fb.querySelectorAll('button').forEach((x) => (x.disabled = true));
+    try {
+      await apiJson('/api/recommend/feedback', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          outfit, kind, reason: reason || null,
+          activity: _lastActivity || 'casual',
+          prompt: ($('prompt') && $('prompt').value) || null,
+        }),
+      });
+      fb.querySelectorAll('button').forEach((x) => (x.disabled = false));
+      fb.querySelectorAll('.fb-reasons').forEach((x) => x.remove());
+    } catch (e) {
+      fb.querySelectorAll('button').forEach((x) => (x.disabled = false));
+    }
+  };
 
   const thumb = (icon, kind, title) => {
     const b = document.createElement('button');
@@ -130,22 +184,9 @@ function _addFeedbackActions(container, outfit) {
     b.title = title;
     b.setAttribute('aria-label', title);
     b.innerHTML = icon;
-    b.addEventListener('click', async () => {
-      fb.querySelectorAll('button').forEach((x) => (x.disabled = true));
-      try {
-        await apiJson('/api/recommend/feedback', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            outfit, kind, activity: _lastActivity || 'casual',
-            prompt: ($('prompt') && $('prompt').value) || null,
-          }),
-        });
-        b.disabled = false;
-        b.classList.add('picked');
-      } catch (e) {
-        b.disabled = false;
-        b.title = 'feedback failed';
-      }
+    b.addEventListener('click', () => {
+      if (kind === 'liked') { b.classList.add('picked'); send('liked'); }
+      else { _toggleDownMenu(b, send); }
     });
     return b;
   };

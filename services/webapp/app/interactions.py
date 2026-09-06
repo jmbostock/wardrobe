@@ -31,8 +31,27 @@ WEIGHTS: dict[str, float] = {
     "rated_up": 4.0,
     "rated_down": -2.0,
     "liked": 2.0,
-    "disliked": -3.0,
+    "disliked": -2.0,
     "worn": 4.0,
+}
+
+# Style-focused reasons for a thumbs-down. These are the ONLY reasons — there is
+# no temperature/warmth reason, because how warm/cold an item is is a rule-based
+# fact, not a matter of taste. Each reason steers the taste learner to the right
+# STYLE dimension. 'just_not_today' is a transient mood (no durable learning).
+STYLE_DOWN_REASONS = (
+    "not_my_style", "wrong_color", "wrong_pattern", "too_formal",
+    "too_casual", "doesnt_fit", "dislike_item", "just_not_today",
+)
+STYLE_DOWN_LABELS = {
+    "not_my_style": "Not my style",
+    "wrong_color": "Wrong color",
+    "wrong_pattern": "Bad pattern/print",
+    "too_formal": "Too formal",
+    "too_casual": "Too casual",
+    "doesnt_fit": "Doesn't fit me",
+    "dislike_item": "Don't like this item",
+    "just_not_today": "Just not today",
 }
 
 # --- feedback half-lives (days) ----------------------------------------------

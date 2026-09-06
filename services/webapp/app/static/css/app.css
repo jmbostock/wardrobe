@@ -284,7 +284,7 @@ body:has(#view-suggest) .app-version { display:none; }
    Thumbs are small circular ghost buttons with thin-stroke SVG icons (matching
    the app's send-button style) that light up only when tapped. */
 .recommend-actions { display:flex; align-items:center; gap:8px; margin-top:10px; }
-.recommend-feedback { display:flex; gap:6px; flex:none; }
+.recommend-feedback { display:flex; gap:6px; flex:none; position:relative; }
 .recommend-feedback .fb-thumb { width:38px; height:38px; padding:0; border-radius:50%;
   display:flex; align-items:center; justify-content:center;
   background:transparent; border:1px solid var(--line); color:var(--mut); cursor:pointer;
@@ -294,6 +294,13 @@ body:has(#view-suggest) .app-version { display:none; }
 .recommend-feedback .fb-thumb:active { transform:scale(.92); }
 .recommend-feedback .fb-thumb:disabled { opacity:.45; cursor:default; }
 .recommend-feedback .fb-thumb.picked { color:#0f1216; border-color:var(--acc); background:var(--acc); }
+/* thumbs-down reason picker (style-only) */
+.fb-reasons { position:absolute; left:0; top:calc(100% + 6px); z-index:20; display:flex; flex-direction:column; min-width:160px;
+  padding:4px; border:1px solid var(--line); border-radius:10px; background:var(--panel, #fff);
+  box-shadow:0 8px 24px rgba(0,0,0,.14); }
+.fb-reasons .fb-reason { display:block; width:100%; text-align:left; padding:8px 10px; border:0; background:transparent;
+  color:var(--txt, inherit); border-radius:6px; font:inherit; cursor:pointer; white-space:nowrap; }
+.fb-reasons .fb-reason:hover { background:rgba(79,156,249,.12); color:var(--acc); }
 
 /* ---- iPhone-first responsive ---- */
 @media (max-width: 640px) {

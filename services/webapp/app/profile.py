@@ -314,3 +314,53 @@ def load_derived(user_id: int) -> dict:
         return json.loads(row["derived_profile"])
     except (json.JSONDecodeError, TypeError):
         return {}
+
+
+# --- gentle taste learning from labeled feedback (STYLE only) ----------------
+_STYLE_LEARN_MAX = 12  # cap list sizes so repeated feedback can't grow unbounded
+_PATTERN_LEARN_WORDS = (
+    "floral", "plaid", "strip", "polka", "check", "gingham",
+    "camouflag", "print", "graphic", "tartan", "dot",
+)
+
+
+def learn_feedback_style(user_id: int, garment: dict | None, kind: str, reason: str | None) -> None:
+    """Turn a labeled thumbs-down into a durable STYLE preference (never a
+    temperature one). Updates the user's profile bio (colors_avoid / never_wear)
+    and recomputes the derived profile so future recommendations respect it.
+
+    No-op for: `just_not_today` (transient mood), temperature reasons (none exist
+    by design), or non-dislike feedback. Single instances are gentle & capped.
+    """
+    if kind != "disliked" or not reason or not garment:
+        return
+    reason = reason.strip().lower()
+    if reason in ("just_not_today", "too_warm", "too_cold"):
+        return  # transient / not a style signal
+    profile = load_profile(user_id) or {}
+    p = normalize_profile(profile)
+    changed = False
+
+    # wrong_color -> add the garment's color(s) to colors_avoid
+    if reason == "wrong_color":
+        tags = [c.strip().lower() for c in (garment.get("color_tags") or "").split(",") if c.strip()]
+        avoid = [c.strip().lower() for c in (p.get("colors_avoid") or "").split(",") if c.strip()]
+        for c in tags:
+            if c and c not in avoid:
+                avoid.append(c)
+        if avoid:
+            p["colors_avoid"] = ", ".join(avoid[:_STYLE_LEARN_MAX])
+            changed = True
+
+    # bad pattern / not_my_style on a patterned piece -> add a no-patterns guardrail
+    elif reason in ("wrong_pattern", "not_my_style"):
+        name = (garment.get("name") or "").lower()
+        if any(pat in name for pat in _PATTERN_LEARN_WORDS):
+            nw = [x.strip().lower() for x in (p.get("never_wear") or "").split(",") if x.strip()]
+            if "patterns" not in nw:
+                nw.append("patterns")
+                p["never_wear"] = ", ".join(nw[:_STYLE_LEARN_MAX])
+                changed = True
+
+    if changed:
+        save_profile(user_id, p)

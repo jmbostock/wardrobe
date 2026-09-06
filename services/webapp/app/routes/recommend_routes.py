@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from .. import db, interactions, recommender, stylist, weather
+from .. import db, interactions, profile, recommender, stylist, weather
 from ..deps import get_current_user
 from ..media import garment_image_path, garment_image_version
 from ..recommender import Weather
@@ -79,6 +79,7 @@ class RecommendFeedbackIn(BaseModel):
     kind: str = "liked"           # liked | disliked
     activity: str = "casual"
     prompt: str | None = None
+    reason: str | None = Field(None, description="style reason for a thumbs-down")
 
 
 @router.post("/api/recommend/feedback")
@@ -99,7 +100,17 @@ def recommend_feedback(req: RecommendFeedbackIn, user: dict = Depends(get_curren
     if ids:
         interactions.log_many(user["id"], ids, req.kind,
                               {"source": "chat", "activity": req.activity,
-                               "prompt": req.prompt or ""})
+                               "prompt": req.prompt or "", "reason": req.reason})
+        # A labeled thumbs-down is a STYLE signal: learn it into the taste profile
+        # (color-to-avoid / pattern guardrail) — never a temperature one.
+        if req.reason:
+            for slot in ("top", "bottom", "outerwear", "footwear"):
+                g = req.outfit.get(slot)
+                if g and g.get("id"):
+                    profile.learn_feedback_style(user["id"], g, req.kind, req.reason)
+            for g in req.outfit.get("accessories") or []:
+                if g and g.get("id"):
+                    profile.learn_feedback_style(user["id"], g, req.kind, req.reason)
     return {"ok": True, "logged": len(ids), "kind": req.kind}
 
 
