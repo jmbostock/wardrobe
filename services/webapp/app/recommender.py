@@ -406,11 +406,12 @@ def recommend(
     target = _apply_warmth_bias(target_warmth(w), warmth_bias)
     precipitating = w.precipitating
 
-    # Online learning signal: summed likes/dislikes/ratings/saves/try-ons. The
-    # feedback loop must never break a suggestion, so any DB hiccup is ignored.
+    # Online learning signal: summed, time-decayed, context-weighted
+    # likes/dislikes/ratings/saves/try-ons. The feedback loop must never break a
+    # suggestion, so any DB hiccup is ignored.
     affinity: dict[int, float] = {}
     try:
-        affinity = interactions.affinity_map(user_id)
+        affinity = interactions.affinity_map(user_id, activity)
     except Exception:  # noqa: BLE001
         affinity = {}
 

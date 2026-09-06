@@ -18,6 +18,7 @@ Weights map each event to a confidence value for the ALS matrix later.
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 
 from . import db
 
@@ -33,6 +34,15 @@ WEIGHTS: dict[str, float] = {
     "disliked": -3.0,
     "worn": 4.0,
 }
+
+# --- feedback half-lives (days) ----------------------------------------------
+# A "not feeling it right now" thumbs-down should DECAY quickly so a good item
+# recovers; durable signals (likes/saves/wears/ratings) stick around far longer.
+NEGATIVE_HALF_LIFE_DAYS = 14.0
+POSITIVE_HALF_LIFE_DAYS = 365.0
+# Feedback given for a different activity (e.g. a dislike for "office") counts
+# less when scoring a different occasion, so it never buries the item there.
+CROSS_ACTIVITY_DAMPEN = 0.4
 
 
 def log(user_id: int, garment_id: int, kind: str, context: dict | None = None) -> None:
@@ -81,15 +91,45 @@ def recent(user_id: int, limit: int = 500) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def affinity_map(user_id: int) -> dict[int, float]:
-    """Summed interaction weight per garment for a user — the online learning
-    signal. 'shown' impressions are excluded (they're just display noise, and
-    would otherwise dilute the real likes/dislikes/ratings/saves/try-ons)."""
+def affinity_map(user_id: int, activity: str | None = None) -> dict[int, float]:
+    """Per-garment feedback affinity for a user — the online learning signal.
+
+    'shown' impressions are excluded (display noise). Each event is:
+      - time-decayed (negative feedback recovers fast; positive feedback sticks)
+      - context-weighted (feedback given for a DIFFERENT activity is dampened)
+    so a single "not feeling it right now" thumbs-down fades and never permanently
+    buries a good item, and a dislike for one occasion doesn't kill it for others.
+    """
     conn = db.init()
+    now = datetime.now(timezone.utc)
     with db.lock():
         rows = conn.execute(
-            "SELECT garment_id, SUM(weight) AS s FROM interactions "
-            "WHERE user_id=? AND kind != 'shown' GROUP BY garment_id",
+            "SELECT garment_id, weight, context, created_at FROM interactions "
+            "WHERE user_id=? AND kind != 'shown' ORDER BY id DESC",
             (user_id,),
         ).fetchall()
-    return {r["garment_id"]: float(r["s"] or 0.0) for r in rows}
+
+    ret: dict[int, float] = {}
+    for r in rows:
+        w = float(r["weight"] or 0.0)
+        if not w:
+            continue
+        # time decay — a "just not feeling it today" fades; durable likes stay
+        try:
+            ts = datetime.fromisoformat(r["created_at"])
+            days = max(0.0, (now - ts).total_seconds() / 86400.0)
+        except (TypeError, ValueError):
+            days = 0.0
+        half_life = NEGATIVE_HALF_LIFE_DAYS if w < 0 else POSITIVE_HALF_LIFE_DAYS
+        w *= 0.5 ** (days / half_life)
+        # context weighting — feedback for a different activity counts less
+        if activity:
+            try:
+                ctx = json.loads(r["context"] or "{}")
+            except (json.JSONDecodeError, TypeError):
+                ctx = {}
+            a = (ctx.get("activity") or "").strip().lower()
+            if a and a != activity.strip().lower():
+                w *= CROSS_ACTIVITY_DAMPEN
+        ret[r["garment_id"]] = ret.get(r["garment_id"], 0.0) + w
+    return ret

@@ -284,6 +284,42 @@ def test_profile_feedback_affinity_boosts_liked():
     assert out["top"]["id"] == navy.id, out
 
 
+def test_dislike_is_not_a_permanent_ban():
+    """A single thumbs-down scores the item lower but does NOT hard-ban it —
+    it can still be recommended when it's the best fit."""
+    _COUNTER[0] += 1
+    w = wardrobe_mod.Wardrobe()
+    uid = auth.create_user(f"reco_ban{_COUNTER[0]}@example.com", "password123")["id"]
+    navy = w.create(uid, "Navy tee", "top", warmth=3, formality="casual",
+                    occasions="casual", color_tags="navy")
+    w.create(uid, "Jeans", "bottom", warmth=3, formality="casual",
+             occasions="casual", color_tags="blue")
+    interactions.log(uid, navy.id, "disliked", {"activity": "casual"})
+    out = recommend(Weather(temp_c=20, feels_like_c=20), "casual",
+                    wardrobe=w, user_id=uid)["outfit"]
+    assert out["top"]["id"] == navy.id, "a single dislike must not hard-ban the item"
+
+
+def test_feedback_is_context_aware():
+    """A dislike given for 'office' should not bury the item for 'date'."""
+    _COUNTER[0] += 1
+    w = wardrobe_mod.Wardrobe()
+    uid = auth.create_user(f"reco_ctx{_COUNTER[0]}@example.com", "password123")["id"]
+    navy = w.create(uid, "Navy tee", "top", warmth=3, formality="smart-casual",
+                    occasions="office,date", color_tags="navy")
+    gray = w.create(uid, "Gray tee", "top", warmth=3, formality="smart-casual",
+                    occasions="office", color_tags="gray")
+    w.create(uid, "Jeans", "bottom", warmth=3, formality="casual",
+             occasions="office,date", color_tags="blue")
+    interactions.log(uid, navy.id, "disliked", {"activity": "office"})
+    office = recommend(Weather(temp_c=20, feels_like_c=20), "office",
+                       wardrobe=w, user_id=uid)["outfit"]
+    date = recommend(Weather(temp_c=20, feels_like_c=20), "date",
+                     wardrobe=w, user_id=uid)["outfit"]
+    assert office["top"]["id"] == gray.id, f"office dislike should demote navy, got {office}"
+    assert date["top"]["id"] == navy.id, f"office dislike should not bury navy on date, got {date}"
+
+
 def _run_all():
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failures = 0
