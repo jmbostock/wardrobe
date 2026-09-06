@@ -426,6 +426,21 @@ def recommend(
             "note": "empty_wardrobe",
         }
 
+    # Taste signal (L2): a per-user style centroid built from the FashionCLIP
+    # embeddings of the garments they've engaged with (tried on / rated / liked /
+    # saved / worn). This is the "gets to know your taste" signal — active once the
+    # user has enough engaged garments with embeddings. It degrades to None if the
+    # ML modules / numpy aren't available so a suggestion never breaks.
+    pers = None
+    style_active = False
+    try:
+        from .personalize import Personalizer
+        pers = Personalizer(user_id, items)
+        style_active = bool(pers.active)
+    except Exception:  # noqa: BLE001
+        pers = None
+        style_active = False
+
     # `_top` is set after the first picks but referenced inside `best()`/`score()`
     # for color harmony — initialize it so those early calls see None.
     _top: Garment | None = None
@@ -460,6 +475,8 @@ def recommend(
                 s -= 15.0
         if top and g.category in ("bottom", "outerwear", "footwear", "accessory"):
             s += 8.0 * harmony(top, g)
+        if pers is not None:
+            s = pers.add_to_score(g.id, s)
         return s
 
     def best(category: str, exclude: set[int] | None = None, require: int | None = None) -> Garment | None:
@@ -516,6 +533,8 @@ def recommend(
         return g.to_dict() if g else None
 
     personal = _personalized_notes(profile, bool(affinity))
+    if style_active:
+        personal.append("personalized to your style")
     return {
         "outfit": {
             "top": ser(_top),
@@ -538,7 +557,7 @@ def recommend(
             "uv_index": w.uv_index,
         },
         "activity": activity,
-        "personalized": bool(personal),
+        "personalized": bool(personal or style_active),
     }
 
 
