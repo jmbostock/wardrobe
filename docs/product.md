@@ -323,8 +323,9 @@ Full write-up: **`docs/wardrobe-v0.12.md`** (metadata / dedup / dropdowns / size
 13. **PWA / Add to Home Screen** for iPhone (standalone, icon, webcam permissions) —
     most usage is on a phone.
 14. **Decide on the vestigial engines** — SVD motion clips (~9 GB of weights on
-    202) and InstructPix2Pix (~7 GB) are both still installed and code-referenced
-    but no longer reachable from the UI. Delete, or re-expose.
+    202) and InstructPix2Pix (~7 GB) are both still installed but deliberately
+    **unwired from every UI** (motion clips are on hold, not deleted — the
+    backend and any rendered clips are untouched). Delete, or re-expose.
 
 ### Layout
 14. Tablet breakpoint (~641–1024px) for the photo grid; verify landscape iPhone.

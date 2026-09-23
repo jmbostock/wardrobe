@@ -160,10 +160,14 @@ Preserved for reference in `<repo>/.removed-2026-09-23/`. The dated handoffs in
 `docs/` (`idm-tryon-handoff-2026-08-25.md`, `PIPELINE-HANDOFF-2026-09-02.md`) are
 kept as historical records of that era, not as current documentation.
 
-**Still present but no longer wired into any UI:** Stable Video Diffusion motion
-clips (`svd.py` + `workflows/svd.json`, ~9 GB of weights on 202) and
-InstructPix2Pix (`editor.py` + `workflows/ip2p.json`, ~7 GB). Neither is
-referenced by the app any more.
+**Still installed, deliberately NOT wired to any UI (2026-09-23):** Stable Video
+Diffusion motion clips (`svd.py` + `workflows/svd.json`, ~9 GB of weights on 202)
+and InstructPix2Pix (`editor.py` + `workflows/ip2p.json`, ~7 GB). Motion clips are
+**on hold, not removed** — the user is still deciding what to do with them, so the
+try-on "Make a 3s clip" control and the clip display on the outfit cards were
+removed, while `POST /api/tryon/clip`, the `clips` table and every clip already
+rendered stay exactly as they are (nothing is ever deleted). Re-exposing it is a
+button plus a `submitClip()`; do not treat the resulting dead code as a bug.
 
 ## 8. Operational notes
 

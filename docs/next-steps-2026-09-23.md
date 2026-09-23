@@ -152,9 +152,11 @@ Use the **`test`** dev account — it's a sandbox copy, so mistakes cost nothing
 
 ## 10. Loose ends you may want to decide on
 
-- **Motion clips (SVD, ~9 GB)** and **InstructPix2Pix (~7 GB)** are still
-  installed on 202 but no longer reachable from the wardrobe/outfits UI. ~16 GB
-  reclaimable if you're happy to drop them — the try-on tab still has a clip path.
+- **Motion clips (SVD, ~9 GB)** and **InstructPix2Pix (~7 GB)** are installed on
+  202 but deliberately **unwired from every UI** — the try-on "Make a 3s clip"
+  control and the clip display on outfit cards are both gone, and the backend plus
+  any clips already rendered are untouched. ~16 GB reclaimable if you decide the
+  motion experiment is dead; re-exposing it is a button and a helper function.
 - **Test suite**: two tests are stale from the Qwen migration and currently fail.
   Neither is user-facing, but a red suite hides the next real regression:
   - `test_wardrobe.py::test_rotate_180_flips_and_stays_portrait` still assumes the
