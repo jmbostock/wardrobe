@@ -1,44 +1,35 @@
-# ComfyUI workflows (CatVTON)
+# ComfyUI workflows (webapp-side)
 
-`catvton.json` is the **API-format** CatVTON workflow built from the official
-UI workflow (release tag `ComfyUI`). `app/tryon.py` wires it per-request:
+**API-format** workflows the webapp submits to ComfyUI.
 
-- uploads person + garment via ComfyUI `/upload/image`
-- sets `cloth_type` from the garment category (top/outerwear → `upper`,
-  bottom → `lower`, dress → `overall`)
-- submits to `/prompt`, polls `/history/{id}`, returns the rendered image
-
-Node ids used by `tryon.NODE_IDS`:
-
-| role | node | class |
+| file | used by | purpose |
 |---|---|---|
-| person_image | 10 | LoadImage |
-| garment_image | 11 | LoadImage |
-| masker_pipe | 12 | LoadAutoMasker |
-| automasker | 13 | AutoMasker |
-| tryon_pipe | 17 | LoadCatVTONPipeline |
-| catvton | 16 | CatVTON |
-| output | 18 | SaveImage |
+| `ip2p.json` | `app/editor.py` | InstructPix2Pix — legacy `/api/tryon/edit`. Not wired into any UI. |
+| `svd.json` | `app/svd.py` | SVD image → ~3s motion clip. No longer offered on the outfit card. |
 
-First run downloads the weights automatically from HuggingFace
-(SD1.5-inpainting + `zhengchong/CatVTON` DensePose/SCHP/attention checkpoints) —
-takes a while on first try-on.
+## Try-on / refine: built in code, not from a JSON file
 
-## SVD (motion clip)
+`app/tryon.py` builds the Qwen-Image-2.1 graph programmatically (`_qwen_run`)
+rather than loading a JSON template. That is deliberate. The graph is small and
+fully parameterised (prompt, reference count, `resolution`, seed), and the
+historic JSON templates needed the encoder/VAE names patched into BOTH the
+subgraph *instance* and the inner node — a step that silently produced a no-op
+render when it went wrong.
 
-`svd.json` is the **API-format** SVD image-to-video workflow that animates a
-try-on still into a ~3s clip. `app/svd.py` drives it:
+Two details in that graph are load-bearing, and both carry a comment in the code:
 
-- letterboxes the still onto the 576x1024 SVD canvas (aspect-preserving)
-- submits to `/prompt` and returns immediately — ComfyUI queues the job, so
-  several clips / a clip + a try-on can run back-to-back without blocking
-- `check_svd()` polls `/history/{id}`; the webapp saves the animated WEBP to
-  uploads and attaches it to the outfit (`motion_url`)
+- **`TextEncodeQwenImage21.vae` must be wired** (`["3", 0]`). Without it the
+  model silently IGNORES the reference images and hands back the base photo
+  unchanged — a no-op that looks like a successful render.
+- **`KSampler.latent_image` must be the ENCODER's latent** (`["50", 2]`), not a
+  blank `EmptyLatentImage`. A blank canvas makes the model GENERATE a fresh
+  person instead of EDITING the real one, which loses identity, pose and framing.
 
-Model: `svd_xt.safetensors` (Stable Video Diffusion XT, 25 frames). Download it
-into `/root/.cache/huggingface/svd/` and symlink it to
-`/opt/ComfyUI/models/checkpoints/svd_xt.safetensors` (same pattern as IP2P).
+This graph is submitted to **`QWEN_COMFYUI_URL`** (202:8188), a different host
+from the legacy `COMFYUI_URL`.
 
-Node ids used by `svd.NODE_IDS`: image=2, sampler=5.
+## Removed 2026-09-23
 
-ComfyUI must be reachable at `COMFYUI_URL` (default `http://comfyui:8188`).
+`catvton.json`, `idm_vton.json` and `idm_vton_mask.json` went with the
+CatVTON / IDM-VTON stack. Copies are preserved in
+`<repo>/.removed-2026-09-23/workflows/` for reference or revert.

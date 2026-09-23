@@ -48,11 +48,6 @@ async function loadSavedOutfits() {
       r.textContent = '★ ' + o.rating + '/10';
       meta.appendChild(r);
     }
-    if (o.motion_url) {
-      const m = document.createElement('div'); m.className = 'muted'; m.style.fontSize = '12px';
-      m.textContent = '🎬 clip';
-      meta.appendChild(m);
-    }
     card.appendChild(img); card.appendChild(meta);
     box.appendChild(card);
   }
@@ -104,76 +99,82 @@ async function openDetail(o) {
                         : ('/api/wardrobe/' + im.dataset.gid + '/image?size=thumb&v=0'));
     });
   }
-  // motion clip: show the webp if it exists, plus a make-a-clip action.
-  // If a clip is already running for this outfit (e.g. started on the Try-on
-  // tab), resume tracking it instead of starting a duplicate.
-  const clipBox = $('od-clip');
-  clipBox.innerHTML = '';
-  if (o.motion_url) {
-    const c = document.createElement('img'); c.alt = 'motion clip';
-    c.style.width = '100%'; c.style.borderRadius = '10px';
-    setAuthImage(c, o.motion_url + '?size=detail');
-    clipBox.appendChild(c);
-  }
-  if (o.result_url) {
-    const st = document.createElement('div'); st.className = 'muted'; st.id = 'od-clip-status'; st.style.marginTop = '6px';
-    clipBox.appendChild(st);
-    let active = null;
-    try { active = await apiJson('/api/clips/by-outfit/' + o.id); } catch (e) { /* ignore */ }
-    if (active && active.clip_id && (active.status === 'queued' || active.status === 'running')) {
-      st.textContent = 'clip already rendering — tracking it…';
-      trackClip(o.id, active.clip_id, st);
-    } else {
-      const btn = document.createElement('button'); btn.className = 'ghost';
-      btn.textContent = o.motion_url ? 'Regenerate clip' : '✨ Make a 3s clip';
-      btn.style.marginTop = '8px';
-      btn.addEventListener('click', () => makeClip(o, btn));
-      clipBox.appendChild(btn);
-    }
-  }
+  // Motion clips (SVD) are deliberately NOT surfaced here — the feature is on
+  // hold. Any clip this look already has is still on disk and in the DB (nothing
+  // is ever deleted); it's just not shown. See tryon.js for the same note.
+  buildRefine(o);
   bindRating('od-rating', o.rating || 0);
   openSheet($('outfit-detail'));
 }
-// Poll an existing clip until it's done — used both when starting a new clip
-// and when resuming one that was already running when we opened the card.
-function trackClip(outfitId, clipId, st) {
-  const started = Date.now();
-  const timer = setInterval(async () => {
-    try {
-      const r = await apiJson('/api/clips/' + clipId);
-      const secs = Math.round((Date.now() - started) / 1000);
-      if (r.status === 'done') {
-        clearInterval(timer);
-        st.textContent = 'clip ready — ' + secs + 's';
-        loadSavedOutfits();
-        // refresh this card's motion
-        const fresh = (await apiJson('/api/outfits')).find((x) => x.id === outfitId);
-        if (fresh) openDetail(fresh);
-      } else if (r.status === 'error') {
-        clearInterval(timer);
-        st.textContent = 'clip failed: ' + (r.error || 'unknown');
-        loadSavedOutfits();
-      } else {
-        st.textContent = 'rendering clip… ' + secs + 's (runs in the background)';
-      }
-    } catch (e) {
-      clearInterval(timer);
-      st.textContent = 'error: ' + e.message;
-    }
-  }, 3000);
+
+// ---------- refine this outfit ----------
+// One instruction in, one new render out. The ORIGINAL is never touched: the
+// API saves the result as a NEW outfit carrying the same garments, so the two
+// versions sit side by side on this page and either can be refined again.
+function buildRefine(o) {
+  const box = $('od-refine-box');
+  box.innerHTML = '';
+  if (!o.result_url) return;  // nothing rendered yet, so nothing to refine
+
+  const lab = document.createElement('label');
+  lab.textContent = 'Refine this outfit';
+  const hint = document.createElement('p');
+  hint.className = 'muted';
+  hint.style.margin = '2px 0 6px';
+  hint.textContent = 'Describe a change — restyle the clothes, alter the pose, ' +
+    'adjust the light. Saves as a new outfit; this one stays as it is.';
+  const inp = document.createElement('input');
+  inp.type = 'text'; inp.className = 'field'; inp.id = 'od-refine-prompt';
+  inp.maxLength = 300;
+  inp.placeholder = 'e.g. make the top long-sleeved, or turn her to the side';
+  const row = document.createElement('div');
+  row.className = 'row'; row.style.marginTop = '8px'; row.style.alignItems = 'center';
+  const btn = document.createElement('button');
+  btn.id = 'od-refine-btn'; btn.textContent = '✨ Refine this outfit';
+  const st = document.createElement('span');
+  st.className = 'muted'; st.id = 'od-refine-status';
+  row.appendChild(btn); row.appendChild(st);
+
+  box.appendChild(lab); box.appendChild(hint); box.appendChild(inp); box.appendChild(row);
+  btn.addEventListener('click', () => refineOutfit(o, inp, btn, st));
+  inp.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') refineOutfit(o, inp, btn, st);
+  });
 }
-async function makeClip(o, btn) {
-  const st = $('od-clip-status'); st.textContent = 'queuing…'; btn.disabled = true;
-  let clipId = null;
+
+async function refineOutfit(o, inp, btn, st) {
+  const prompt = (inp.value || '').trim();
+  if (!prompt) { st.textContent = 'describe the change you want'; inp.focus(); return; }
+  btn.disabled = true;
+  // the render is synchronous (~60-120s for one pass), so show a live timer
+  const started = Date.now();
+  const tick = setInterval(() => {
+    st.textContent = 'rendering… ' + Math.round((Date.now() - started) / 1000) + 's';
+  }, 1000);
+  st.textContent = 'rendering… 0s';
+  let created = null;
   try {
-    const fd = new FormData();
-    fd.append('base_result', o.result_url);
-    fd.append('outfit_id', String(o.id));
-    clipId = (await apiJson('/api/tryon/clip', { method: 'POST', body: fd })).clip_id;
-    st.textContent = 'queued — runs in the background';
-  } catch (e) { st.textContent = 'failed: ' + e.message; btn.disabled = false; return; }
-  btn.remove();  // the status line takes over from here
-  trackClip(o.id, clipId, st);
+    const r = await apiJson('/api/outfits/' + o.id + '/refine', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: prompt }),
+    });
+    created = r.outfit && r.outfit.id;
+  } catch (e) {
+    clearInterval(tick);
+    st.textContent = 'failed: ' + e.message;
+    btn.disabled = false;
+    return;
+  }
+  clearInterval(tick);
+  const secs = Math.round((Date.now() - started) / 1000);
+  st.textContent = 'done — ' + secs + 's, saved as a new outfit';
+  toast('refined — saved as a new outfit');
+  await loadSavedOutfits();
+  // jump straight to the NEW outfit so the result is what you're looking at
+  if (created) {
+    const fresh = (await apiJson('/api/outfits')).find((x) => x.id === created);
+    if (fresh) openDetail(fresh);
+  }
 }
 function closeDetail() { closeSheet($('outfit-detail')); editingItem = null; }
 $('od-close').addEventListener('click', closeDetail);

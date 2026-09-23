@@ -26,11 +26,24 @@ router = APIRouter()
 
 
 
+# Default try-on backend. `qwen_edit` = Qwen-Image-2.1 image-edit, which takes
+# the person plus every garment as references and holds garment detail
+# noticeably better than the inpainting backends it replaced (CatVTON /
+# IDM-VTON, removed 2026-09-23). It is the only renderer wired in tryon.py.
+DEFAULT_TRYON_MODEL = "qwen_edit"
+
+# display names for the per-render model chip in the UI
+_MODEL_LABELS = {
+    "qwen_edit": "Qwen-Image-2.1",
+}
+
+
 @router.post("/api/tryon")
 async def do_tryon(
     garment_id: int = Form(...),
     person: UploadFile | None = File(None),
     photo_id: int | None = Form(None),
+    model: str = Form(DEFAULT_TRYON_MODEL),
     user: dict = Depends(get_current_user),
 ) -> dict:
     garment = wardrobe.get_visible(user["id"], garment_id)
@@ -49,15 +62,16 @@ async def do_tryon(
     if not person_bytes:
         raise HTTPException(400, "empty person image")
     try:
-        # Single canonical pipeline (2026-09-02): IDM-VTON, same as outfits.
-        result = await tryon.run_tryon_model("idm_vton", person_bytes, garment, user["id"])
+        # Canonical pipeline default; per-request override via `model`.
+        result = await tryon.run_tryon_model(model, person_bytes, garment, user["id"])
     except tryon.ComfyUnavailable as ex:
         raise HTTPException(503, str(ex)) from ex
     out_dir = UPLOAD_DIR / str(user["id"]) / "out"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_name = f"tryon_{garment_id}_{int(time.time())}.png"
     (out_dir / out_name).write_bytes(result)
-    return {"result_url": f"/api/uploads/{out_name}", "garment_id": garment_id}
+    return {"result_url": f"/api/uploads/{out_name}", "garment_id": garment_id,
+            "model": model}
 
 
 async def _pick_person_photo(user: dict, garments: list) -> int | None:
@@ -84,8 +98,11 @@ async def _pick_person_photo(user: dict, garments: list) -> int | None:
     if path is None:
         return None
     want = await tryon.garment_base_type(target, user["id"])
+    _fit = (target.fit or "").strip().lower()
+    gdesc = _fit if _fit in ("tight", "baggy") else (
+        f"{target.name or ''} {tryon.get_garment_vision(target.id)[1] or ''}").strip()
     ranked = photopick.rank_photos_for_garment(
-        user["id"], path.read_bytes(), target.category
+        user["id"], path.read_bytes(), target.category, garment_name=target.name or "", garment_desc=gdesc,
     )
     if not ranked:
         return None
@@ -113,7 +130,11 @@ async def _pick_person_photo(user: dict, garments: list) -> int | None:
         sim = 0.0
         if emb is not None and row["id"] in photo_embs:
             sim = embeddings.cosine(emb, photo_embs[row["id"]])
-        score = base + match + 15 * sim
+        # FIT awareness: a loose/casual base (relaxed tee + baggy joggers) is a
+        # bad base for a tight/fitted garment — the model warps the tight
+        # clothes onto the baggy shape. Prefer a base whose fit matches.
+        fit = photopick.fit_nudge(row.get("description", ""), gdesc)
+        score = base + match + 15 * sim + fit
         if score > best_score:
             best_id, best_score = row["id"], score
     return best_id
@@ -136,6 +157,7 @@ async def do_tryon_outfit(
     base_result: str | None = Form(None),
     prompt: str | None = Form(None),
     outfit_name: str | None = Form(None),
+    model: str = Form(DEFAULT_TRYON_MODEL),
     user: dict = Depends(get_current_user),
 ) -> dict:
     """Try on a whole look: apply each garment in order, chaining the result
@@ -148,11 +170,11 @@ async def do_tryon_outfit(
       2. `photo_id` — a saved person photo.
       3. `person` — an uploaded image.
 
-    SINGLE canonical pipeline (2026-09-02): there is exactly ONE image-
-    generation path — the current IDM-VTON workflow (CatVTON owns geometry,
-    IDM only re-textures inside CatVTON's masks; face + background are
-    preserved pixel-identical). No model selection. `prompt` is carried through
-    the response for promptable edit models (the edit endpoint handles it).
+    ONE image-generation path: the Qwen-Image-2.1 image-edit renderer. Every
+    garment goes in as its own reference image, so there is no geometry pass /
+    texture pass split and nothing to select per request. `prompt` is carried
+    through the response for promptable edit models (the edit endpoint handles
+    it).
 
     Any render produced from a look (non-empty garment_ids) is auto-saved to
     the Outfits page — one new saved outfit per render (no dedupe: re-rendering
@@ -184,9 +206,20 @@ async def do_tryon_outfit(
             if _t is not None:
                 _auto_pick_target = _g
                 break
-    if _auto_pick_target is not None:
+        # Auto-pick whenever the caller supplied NOTHING — not only when a
+        # garment demands a particular base TYPE. A top/outerwear-only look has
+        # no requirement, but it still needs a base; previously this branch was
+        # skipped entirely and the request died further down with the
+        # misleading "provide a person photo, saved photo_id, or base_result".
+        # A single top look therefore could not be rendered at all through the
+        # UI's Auto-pick mode, and neither could a dress whose stored
+        # vision_type is 'top'.
         picked = await _pick_person_photo(user, garments)
-        if picked is None:
+        if picked is not None:
+            photo_id = picked
+        elif _auto_pick_target is not None:
+            # a specific base TYPE was required and nothing suitable exists —
+            # say so precisely rather than pretending no photo was offered
             raise HTTPException(
                 400,
                 "No saved photo suits this look — a "
@@ -194,7 +227,6 @@ async def do_tryon_outfit(
                 "(shorts→shorts/bare-leg, pants→separates, dress→dress). Add a "
                 "suitable photo or pick the base manually.",
             )
-        photo_id = picked
     if base_result:
         safe = Path(base_result).name  # strips any directory components
         path = UPLOAD_DIR / str(user["id"]) / "out" / safe
@@ -237,6 +269,13 @@ async def do_tryon_outfit(
                 _ok = _style in ("pants", "shorts")
             else:  # dress
                 _ok = _style == "dress"
+            # 'unknown' means we could not JUDGE the base (vision down, or the
+            # lower body is cropped out of the photo). That must never block a
+            # render — only a POSITIVE mismatch does, i.e. we looked and the
+            # base is genuinely the wrong kind. Blocking on 'unknown' would
+            # refuse perfectly good photos whenever the classifier was unsure.
+            if _style in ("", "unknown"):
+                _ok = True
             if not _ok:
                 _need = {
                     "shorts": "a shorts/bare-leg",
@@ -255,20 +294,18 @@ async def do_tryon_outfit(
     # context for follow-ups).
     person_photo_id = int(photo_id) if photo_id is not None else 0
     person_url = f"/api/photos/{person_photo_id}/image" if person_photo_id else ""
-    # SINGLE canonical pipeline (2026-09-02): exactly ONE image-generation
-    # path — the current IDM-VTON workflow. No model selection. With an empty
-    # look (Saved-image / chat refine mode) the base image passes through
-    # untouched — no garments are re-added to an already-rendered image.
+    # ONE image-generation path (Qwen-Image-2.1). With an empty look
+    # (Saved-image / chat refine mode) the base image passes through untouched —
+    # no garments are re-added to an already-rendered image.
     outfit_id: int | None = None
     result_url = ""
     if ids:
         for g in garments:
             interactions.log(user["id"], g.id, "tried_on", {"mode": "outfit"})
-        # SINGLE canonical pipeline: IDM-VTON (CatVTON owns geometry, IDM only
-        # re-textures inside CatVTON's masks). No model selection.
+        # Qwen-Image-2.1 image-edit: person + every garment as references.
         try:
             mbytes = await tryon.run_tryon_outfit_model(
-                "idm_vton", person_bytes, garments, user["id"]
+                model, person_bytes, garments, user["id"]
             )
         except tryon.ComfyUnavailable as ex:
             raise HTTPException(503, str(ex)) from ex
@@ -296,7 +333,8 @@ async def do_tryon_outfit(
         result_url = f"/api/uploads/{out_name}"
     return {
         "result_url": result_url,
-        "results": [{"model": "idm_vton", "label": "IDM-VTON", "result_url": result_url}]
+        "results": [{"model": model, "label": _MODEL_LABELS.get(model, model),
+                     "result_url": result_url}]
         if result_url else [],
         "garment_ids": ids,
         "prompt": prompt or "", "outfit_id": outfit_id,

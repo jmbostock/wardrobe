@@ -1,5 +1,10 @@
 /* Clueless Closet — shared stylesheet (used by every page via base.html) */
-:root { --bg:#0f1216; --card:#181d24; --line:#262d36; --txt:#e8ecf1; --mut:#9aa7b4; --acc:#4f9cf9; }
+:root { --bg:#0f1216; --card:#181d24; --line:#262d36; --txt:#e8ecf1; --mut:#9aa7b4; --acc:#4f9cf9;
+  /* Surface behind garment images. Wardrobe items are de-backgrounded cutouts
+     (transparent PNG), so this is what shows through around the garment. A
+     soft slate panel from the app's own palette — never a flat black hole and
+     never a coloured backdrop. */
+  --imgpanel:linear-gradient(180deg,#222831,#141921); }
 * { box-sizing: border-box; }
 /* the hidden attribute must always win over display rules (.block/.compare etc) */
 [hidden] { display:none !important; }
@@ -60,7 +65,7 @@ body.auth-page .app-version { display:none; }  /* login screen is a centered car
 @media (max-width:640px){ .pf-grid { grid-template-columns:1fr; } }
 .photos { display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:14px; }
 .photo { border:1px solid var(--line); border-radius:12px; overflow:hidden; background:#0f1216; }
-.photo img { width:100%; aspect-ratio:3/4; object-fit:contain; display:block; background:#000; cursor:zoom-in; }
+.photo img { width:100%; aspect-ratio:3/4; object-fit:contain; display:block; background:var(--imgpanel); cursor:zoom-in; }
 .photo .meta { padding:10px; display:grid; gap:8px; }
 .photo .pdesc { font-size:13px; padding:6px 8px; width:100%; }
 .photo .qachip { font-size:11px; font-weight:700; border-radius:5px; padding:2px 7px; justify-self:start; }
@@ -94,7 +99,7 @@ body.auth-page .app-version { display:none; }  /* login screen is a centered car
 .sheet .head h2 { margin:6px 0 0; font-size:17px; line-height:1.2; overflow-wrap:anywhere; }
 .sheet .close { flex:none; width:48px; height:48px; padding:0; font-size:22px; line-height:1;
   border-radius:12px; }
-.sheet img.full { width:100%; max-height:56vh; object-fit:contain; background:#000;
+.sheet img.full { width:100%; max-height:56vh; object-fit:contain; background:var(--imgpanel);
   border-radius:10px; border:1px solid var(--line); }
 /* side-by-side field rows (Brand/Sizes, Category/Color): keep them separated */
 #garment-detail .row { gap:12px; align-items:flex-start; }
@@ -106,7 +111,7 @@ body.auth-page .app-version { display:none; }  /* login screen is a centered car
    garment photos below the render (source person photo stays in the DB only) */
 #od-garment-grid { display:grid; grid-template-columns:repeat(2, 1fr); gap:10px; }
 .od-g-item { border:1px solid var(--line); border-radius:10px; overflow:hidden; background:#0f1216; }
-.od-g-img { aspect-ratio:3/4; background:#000; }
+.od-g-img { aspect-ratio:3/4; background:var(--imgpanel); }
 .od-g-img img { width:100%; height:100%; object-fit:contain; display:block; }
 .od-g-swatch { width:100%; height:100%; }
 .od-g-name { padding:6px 8px; font-size:12px; line-height:1.3; color:var(--txt); }
@@ -114,7 +119,7 @@ body.auth-page .app-version { display:none; }  /* login screen is a centered car
 #lightbox .panel { display:flex; flex-direction:column; }
 #lightbox .body { flex:1; display:flex; flex-direction:column; min-height:0; padding:0 18px 34px; }
 #lightbox .img-wrap { flex:1; display:flex; align-items:center; justify-content:center; min-height:0; }
-#lightbox #lightbox-img { max-width:100%; max-height:100%; object-fit:contain; border-radius:8px; }
+#lightbox #lightbox-img { max-width:100%; max-height:100%; object-fit:contain; border-radius:8px; background:var(--imgpanel); }
 .badge { font-size:11px; color:#0f1216; background:var(--acc); border-radius:5px; padding:1px 6px; justify-self:start; }
 .toast { position:fixed; bottom:18px; left:50%; transform:translateX(-50%); background:var(--acc);
   color:#0f1216; padding:10px 16px; border-radius:8px; font-weight:600; display:none; z-index:10; }
@@ -135,7 +140,7 @@ body.auth-page .app-version { display:none; }  /* login screen is a centered car
 .look-pick { display:flex; align-items:center; gap:10px; flex:1; min-width:0; max-width:100%;
   padding:6px 8px; background:#0f1216; border:1px solid var(--line); border-radius:10px; text-align:left; }
 .look-pick:focus { outline:2px solid var(--acc); outline-offset:2px; }
-.look-thumb { width:42px; height:56px; flex:none; aspect-ratio:3/4; border-radius:6px; background:#000;
+.look-thumb { width:42px; height:56px; flex:none; aspect-ratio:3/4; border-radius:6px; background:var(--imgpanel);
   border:1px solid var(--line); display:flex; align-items:center; justify-content:center;
   font-size:16px; color:var(--mut); overflow:hidden; }
 .look-thumb img { width:100%; height:100%; object-fit:contain; display:block; }
@@ -185,7 +190,7 @@ body.auth-page .app-version { display:none; }  /* login screen is a centered car
 #savedimg-row { display:flex; flex-direction:column; align-items:center; gap:10px; }
 #savedimg-row select { width:100%; max-width:340px; }
 #savedimg-preview { max-width:260px; width:100%; aspect-ratio:3/4; object-fit:contain;
-  background:#000; border:1px solid var(--line); border-radius:10px; }
+  background:var(--imgpanel); border:1px solid var(--line); border-radius:10px; }
 #savedimg-row .muted { text-align:center; max-width:380px; }
 
 /* ---- suggest page: consolidated — the chat IS the surface ---- */
@@ -227,7 +232,7 @@ body:has(#view-suggest) .app-version { display:none; }
 .slot-info { flex:1; min-width:0; display:flex; align-items:center; gap:10px; }
 .slot-name { font-size:14px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 /* recommended-garment thumbnail (replaces the color swatch when a photo exists) */
-.slot-img { width:88px; height:112px; object-fit:contain; background:#000;
+.slot-img { width:88px; height:112px; object-fit:contain; background:var(--imgpanel);
   border-radius:8px; border:1px solid var(--line); flex:none; }
 .garment-rating { font-size:12px; color:var(--acc); flex:none; }
 

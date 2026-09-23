@@ -9,7 +9,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-os.environ.setdefault("DATA_DIR", tempfile.mkdtemp(prefix="altacloset-imageqa-test-"))
+os.environ.setdefault("DATA_DIR", tempfile.mkdtemp(prefix="cluelesscloset-imageqa-test-"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app import imageqa  # noqa: E402

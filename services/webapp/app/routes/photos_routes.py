@@ -7,7 +7,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Up
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from .. import photopick, photos, vision_cache
+from .. import photopick, photos, tryon, vision_cache
 from ..deps import get_current_user
 from ..media import IMAGE_CACHE_CONTROL, garment_image_path, media_type_for
 from ..store import wardrobe
@@ -45,7 +45,13 @@ def best_photo_for_garment(
     path = garment_image_path(user["id"], garment_id)
     if path is None:
         raise HTTPException(404, "no image for this garment")
-    ranked = photopick.rank_photos_for_garment(user["id"], path.read_bytes(), g.category, fast=fast)
+    _fit = (g.fit or "").strip().lower()
+    _gdesc = _fit if _fit in ("tight", "baggy") else (
+        f"{g.name} {tryon.get_garment_vision(g.id)[1] or ''}").strip()
+    ranked = photopick.rank_photos_for_garment(
+        user["id"], path.read_bytes(), g.category, fast=fast,
+        garment_name=g.name, garment_desc=_gdesc,
+    )
     best = ranked[0] if ranked else None
     return {
         "garment_id": garment_id,

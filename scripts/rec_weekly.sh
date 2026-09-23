@@ -18,9 +18,9 @@
 set -euo pipefail
 
 PRIMARY="bostock@10.0.1.187"
-DATA="$HOME/altacloset/data"
+DATA="$HOME/cluelesscloset/data"
 REC="$DATA/rec"
-LOG="$HOME/altacloset/logs/rec_weekly.log"
+LOG="$HOME/cluelesscloset/logs/rec_weekly.log"
 
 mkdir -p "$(dirname "$LOG")" "$REC"
 exec >>"$LOG" 2>&1
@@ -28,29 +28,29 @@ echo "== $(date -Is) rec_weekly start =="
 
 # --- 1) pull: snapshot 187's live DB + copy any new garment images -----------
 ssh -o ConnectTimeout=20 "$PRIMARY" \
-  'python3 -c "import sqlite3; s=sqlite3.connect(\"/home/bostock/altacloset/data/db/altacloset.db\"); d=sqlite3.connect(\"/tmp/altacloset.db.snap\"); s.backup(d); d.close(); s.close()"' \
-  && scp -o ConnectTimeout=20 "$PRIMARY:/tmp/altacloset.db.snap" "$DATA/db/altacloset.db" \
-  && ssh -o ConnectTimeout=20 "$PRIMARY" 'rm -f /tmp/altacloset.db.snap'
-ssh -o ConnectTimeout=20 "$PRIMARY" 'cd ~/altacloset/data && tar czf - wardrobe uploads' \
+  'python3 -c "import sqlite3; s=sqlite3.connect(\"/home/bostock/cluelesscloset/data/db/cluelesscloset.db\"); d=sqlite3.connect(\"/tmp/cluelesscloset.db.snap\"); s.backup(d); d.close(); s.close()"' \
+  && scp -o ConnectTimeout=20 "$PRIMARY:/tmp/cluelesscloset.db.snap" "$DATA/db/cluelesscloset.db" \
+  && ssh -o ConnectTimeout=20 "$PRIMARY" 'rm -f /tmp/cluelesscloset.db.snap'
+ssh -o ConnectTimeout=20 "$PRIMARY" 'cd ~/cluelesscloset/data && tar czf - wardrobe uploads' \
   | tar xzf - -C "$DATA"
 
 # --- 2) embed + retrain on the GPU (train auto-skips below 20 interactions) ---
-cd "$HOME/altacloset"
-export HF_HOME=/mnt/models/altacloset/rec/hf
+cd "$HOME/cluelesscloset"
+export HF_HOME=/mnt/models/cluelesscloset/rec/hf
 export DATA_DIR="$DATA"
 export OPENBLAS_NUM_THREADS=1
 /usr/bin/python3 scripts/rec_build.py
 
 # --- 3) push back: fresh embeddings (upsert) + als.npz -> 187 -----------------
 if [ -f "$REC/als.npz" ]; then
-  ssh -o ConnectTimeout=20 "$PRIMARY" 'mkdir -p ~/altacloset/data/rec'
-  scp -o ConnectTimeout=20 "$REC/als.npz" "$PRIMARY:~/altacloset/data/rec/als.npz"
+  ssh -o ConnectTimeout=20 "$PRIMARY" 'mkdir -p ~/cluelesscloset/data/rec'
+  scp -o ConnectTimeout=20 "$REC/als.npz" "$PRIMARY:~/cluelesscloset/data/rec/als.npz"
 fi
-scp -o ConnectTimeout=20 "$DATA/db/altacloset.db" "$PRIMARY:/tmp/altacloset.db.from202"
+scp -o ConnectTimeout=20 "$DATA/db/cluelesscloset.db" "$PRIMARY:/tmp/cluelesscloset.db.from202"
 ssh -o ConnectTimeout=20 "$PRIMARY" 'python3 - <<PY
 import sqlite3
-src = sqlite3.connect("/tmp/altacloset.db.from202")
-dst = sqlite3.connect("/home/bostock/altacloset/data/db/altacloset.db")
+src = sqlite3.connect("/tmp/cluelesscloset.db.from202")
+dst = sqlite3.connect("/home/bostock/cluelesscloset/data/db/cluelesscloset.db")
 
 def merge_table(table):
     """Upsert all rows of `table` from the 202 snapshot into 187."""
@@ -86,6 +86,6 @@ print("vision cache columns synced")
 src.close()
 dst.close()
 PY
-rm -f /tmp/altacloset.db.from202'
+rm -f /tmp/cluelesscloset.db.from202'
 
 echo "== $(date -Is) rec_weekly done =="

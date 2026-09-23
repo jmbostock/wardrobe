@@ -5,10 +5,13 @@ Two things are cached (each computed ONCE, at upload / nightly batch, then read
 from the DB at request time):
 
   garments.vision_type / vision_desc — what the garment is (shorts|pants|dress|
-        skirt|top|outerwear|other) + a stylist one-liner (also used to seed the
-        IDM garment_description so the try-on composite is tied to the garment).
+        skirt|top|outerwear|other) + a stylist one-liner (also surfaced as
+        wardrobe metadata).
   photos.vision_type — what the person is wearing in the base photo
-        (dress|shorts|pants|unknown), from the deterministic mask+skin check.
+        (dress|shorts|pants|unknown), from the vision model. This used to come
+        from a deterministic mask+skin check on CatVTON's AutoMasker, which
+        forced the GPU renderer to be online just to classify a photo; the
+        vision model answers the same question directly.
 
 FashionCLIP embeddings for both garments AND photos are written by
 scripts/rec_build.py on the GPU host (202) in the same nightly rec_weekly.sh
@@ -41,8 +44,9 @@ async def refresh_garment(garment_id: int, user_id: int) -> dict:
 
 
 async def refresh_photo(photo_id: int, user_id: int) -> dict:
-    """Classify a base photo once (deterministic mask+skin check) and store the
-    person-wearing type. Returns {'type': ...} or {} on failure."""
+    """Classify a base photo once (vision: what are they wearing on their lower
+    body) and store the person-wearing type. Returns {'type': ...} or {} on
+    failure."""
     try:
         data = photos.photo_bytes(user_id, photo_id)
         style = await tryon.classify_person_style(data)

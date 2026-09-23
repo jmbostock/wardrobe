@@ -1,121 +1,185 @@
-# altacloset — Try-On Pipeline (CatVTON via ComfyUI)
+# cluelesscloset — Try-On Pipeline (Qwen-Image-2.1)
 
-Goal: take a **person photo** + a **garment image**, return a photo of the person
-"wearing" the garment. MVP renders the recommended **top**; full outfit is Phase 4.
+Goal: take a **person photo** + one or more **garment images**, and return a photo
+of that person wearing those clothes — without changing their face, their body,
+or the room they are standing in.
 
-## 1. Why CatVTON
+**Current renderer: Qwen-Image-2.1 image-edit.** The CatVTON + IDM-VTON
+inpainting stack was removed on 2026-09-23 (see §7).
 
-- **VRAM: <8GB @ 1024×768 (bf16)** — official figure; comfortable on a 5060 Ti 16GB.
-- SD1.5-based → fast on consumer GPUs (~10–20s/image on the 5060 Ti).
-- Input is **garment image + person photo only**; person mask + garment mask are
-  auto-generated (DensePose + SCHP). No reference-model photo needed.
-- Ships an **official ComfyUI workflow** (in repo Releases) + Gradio app.
-- License: CC BY-NC-SA 4.0 — fine for personal/homelab, non-commercial only.
+---
 
-Links:
-- Repo: https://github.com/Zheng-Chong/CatVTON
-- ComfyUI workflow: repo Releases → `workflow/`
-- Mask-free variant: `zhengchong/CatVTON-MaskFree`
+## 1. Why Qwen-Image-2.1
+
+- **It is a general image editor, not a try-on network.** The person is passed as
+  `<image1>` and each garment as its own reference image, so one edit pass covers
+  a whole outfit. There is no mask stage, no DensePose, no per-piece geometry
+  pass, and therefore none of the failure modes those stages introduced.
+- **It holds the garment reference better.** CatVTON/IDM needed a mask to know
+  *where* a garment goes, then a texture pass to make it look right, then
+  face-restore and colour-correction repairs on top to undo the damage. Qwen
+  gets colour, sleeve length and printed graphics right from the reference alone.
+- **It is promptable.** The same renderer takes a free-text instruction, which is
+  what powers **Refine this outfit** (§6). CatVTON could not do this at all — it
+  had no text conditioning for the garment, and its own description field had to
+  be deliberately left empty (it was actively harmful; see §4).
+- **Native 2048², up to 10 reference images.**
+- License: **Qwen Research** — check it suits your use before shipping anything.
+
+It replaced, in order of how well each worked: CatVTON (geometry right, texture
+poor) → CatVTON-geometry + IDM-texture (better texture, but IDM re-generated the
+whole frame, so it drifted backgrounds, recoloured garments and needed a face
+restore to stay honest).
 
 ## 2. Pipeline
 
 ```
-person photo (from upload OR webcam)
-   │  downscale to ≤1024px  (docs: don't upscale; 768–1024 typical)
+person photo (saved photo / upload / saved-outfit render)
+   │  uploaded to ComfyUI as qwen_person.png
    ▼
-garment image (data/wardrobe/<id>.png)
-   │  background removal → rembg (CPU) or ComfyUI segment-anything node
+garment images (data/wardrobe/<owner>/<id>.clean.png — garment on plain white)
+   │  uploaded as qwen_ref_2.png, qwen_ref_3.png, …
    ▼
-ComfyUI — CatVTON workflow (catvton.json)
-   │  POST /prompt  → workflow_id
-   │  poll GET /history/{id}  → outputs
+Qwen-Image-2.1 edit pass  (app/tryon.py::_qwen_run)
+   │  TextEncodeQwenImage21 → KSampler → VAEDecode → SaveImage
+   │  POST /prompt → prompt_id;  poll GET /history/{id}
    ▼
-rendered photo  → saved to data/uploads/out/  → URL to webapp
+rendered PNG → data/uploads/<user>/out/ → served to the webapp
 ```
 
-## 3. ComfyUI integration (client sketch)
+Outfits of **3+ garments are split into several passes** (see §5).
 
-```python
-# services/webapp/app/tryon.py
-async def run_tryon(person_bytes, garment_bytes) -> bytes:
-    # 1. upload person + garment via ComfyUI /upload/image
-    # 2. load workflows/catvton.json, substitute image nodes + ckpt path
-    # 3. POST /prompt -> {prompt_id}
-    # 4. poll GET /history/{prompt_id} until "status.completed" (timeout ~120s)
-    # 5. fetch the output image from /view
-```
+## 3. Hosts and configuration
 
-Key notes:
-- ComfyUI is **internal only** (`comfyui:8188`, not published to LAN in compose).
-- Workflow JSON is versioned in `services/webapp/app/workflows/` so it's portable.
-- If ComfyUI is unavailable (e.g. CPU-only dev), `/api/tryon` returns `503` with a
-  clear message rather than hanging.
+| what | where | setting |
+|---|---|---|
+| Webapp | 187 (container `cluelesscloset-webapp`) | `http://10.0.1.187:28085` |
+| Qwen renderer | 202:8188 (container `qwen-comfy`) | `QWEN_COMFYUI_URL` |
+| Legacy ComfyUI URL | — | `COMFYUI_URL` — still read by `svd.py` / `editor.py` only |
 
-## 4. Webcam path (browser, no server-side camera)
+The Qwen instance needs **ComfyUI ≥ 0.37 + ComfyUI-GGUF** (`qwen-image-2.1-Q4_K_M.gguf`).
+It is deliberately *not* managed by `docker-compose.yml`: it is a separate,
+independently-versioned install on the GPU host (`~/qwen-image/` on 202).
 
-```js
-const stream = await navigator.mediaDevices.getUserMedia({video: {facingMode: "user"}});
-// capture a frame to <canvas>, downscale to max 1024px, toBlob('image/jpeg')
-// POST multipart {person: blob, garment_id} -> /api/tryon
-```
+## 4. The one rule that matters: never describe a garment in the prompt
 
-## 5. Background removal (garment images)
+`app/tryon.py::_qwen_edit_prompt` names each reference by **role only** —
+*"the item shown in `<image3>` as the outer layer"*. It never says what the
+garment looks like, because **an appearance claim in the prompt overrides the
+reference image**.
 
-- `rembg` (u2net, CPU) is simplest and portable.
-- Or ComfyUI `segment_anything`/`briaai` nodes if we want to keep it in the GPU app.
-- Store the **clean cutout** next to the garment so try-on input is always mask-friendly.
+Both available metadata fields are unreliable, and both were caught in
+production:
 
-## 6. Expected perf on 5060 Ti 16GB (30 steps, ~1024×768)
-
-| Step | Time |
+| injected | what happened |
 |---|---|
-| CatVTON inference | ~10–20s |
-| rembg background removal | ~1–3s |
-| Total per garment | ~15–25s |
+| `vision_desc` | The near-*black* blazer #539 described as *"navy blue with silver trim"* → the model drew silver trim along the lapels and hem that the blazer does not have (outfits 114/115). |
+| `g.name` | *"Navy crewneck"* on a **dark grey** sweater, *"Navy blazer"* on that black blazer → **both** garments turned navy; the sweater lost its correct colour (outfit 118). |
+| nothing (roles only) | Sweater dark grey ✓, blazer near-black ✓, no invented trim ✓. |
 
-## 8. Deployment reality + current status (2026-08-21)
+Two related traps, both verified the hard way:
 
-- ComfyUI is **built from source** (`services/comfyui/Dockerfile`): base
-  `nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04` + torch cu128 (Blackwell sm_120
-  needs cu128+), ComfyUI from `Comfy-Org/ComfyUI`, CatVTON node from the official
-  release zip. detectron2/DensePose is now **GPU-compiled** (`FORCE_CUDA=1`,
-  sm_120): the original layer built it CPU-only (`FORCE_CUDA=0`, no nvcc back
-  then) and a later layer reinstalls it with CUDA once nvcc is present, so
-  DensePose's ROIAlign/NMS/deform kernels run on the GPU.
-  The `comfyanonymous/comfyui` Docker Hub image does NOT exist — build from source.
-- **WORKING end-to-end, GPU-bound.** `altacloset-comfyui` healthy on host port
-  **28190** (internal `comfyui:8188`). All 4 CatVTON nodes load
-  (`LoadCatVTONPipeline/LoadAutoMasker/CatVTON/AutoMasker` in `/object_info`).
-  First `/api/tryon` returned a rendered photo (~1m26s incl. weight download,
-  ~39s warm). **GPU utilization hits 100% during inference** (DensePose + SCHP +
-  CatVTON), peak VRAM ~6.3GB / 16GB. Weights auto-download on first try-on into
-  `./data/comfyui/models`.
-- **SCHP inplace_abn fix (the blocker):** the release node's SCHP network
-  (`networks/AugmentCE2P.py`) uses `InPlaceABNSync`, so the extension's **CUDA**
-  kernels are required at runtime — a CPU-only build is NOT enough. Two issues:
-  1. Base image is the CUDA **runtime** variant → **no nvcc** → `.cu` targets
-     died with `/bin/sh: 1: /usr/local/cuda/bin/nvcc: not found`.
-  2. Extension is torch 1.x code: `AT_DISPATCH_FLOATING_TYPES(z.type(), ...)`
-     in `inplace_abn_cpu.cpp` (2×) **and** `inplace_abn_cuda.cu` (6×) fails in
-     torch 2.x (`cannot convert DeprecatedTypeProperties to ScalarType`).
-  The Dockerfile now (a) installs `cuda-nvcc-12-8` + dev headers (cublas/
-  cusparse/cusolver/cudss — pulled in by torch's `ATen/cuda/CUDAContextLight.h`),
-  (b) patches `z.type()`→`z.scalar_type()` (also `.type().scalarType()` in the
-  wrapper and `.type().is_cuda()` in `checks.h`), (c) sets
-  `ENV TORCH_CUDA_ARCH_LIST=12.0` (Blackwell sm_120, keeps the prebuilt extension
-  cache key stable), (d) prebuilds the extension so the `.so` is baked into the
-  image (node imports in <1s on first boot).
-- Build gotchas already fixed in the Dockerfile: re-pin torch/torchvision/torchaudio
-  to cu128 (ComfyUI reqs upgrade to cu13 → `libcudart.so.13` missing); upgrade
-  transformers to `>=4.44,<5` (node's 4.27.3 pin breaks ComfyUI Qwen2 nodes);
-  `python3-dev` for detectron2; `--no-build-isolation` for `pip install -e detectron2`.
-- Version pins: `libcublas-12-8` is a **held package** in the base image
-  (`--allow-change-held-packages` needed); `cudss.h` ships under
-  `/usr/include/libcudss/12/` → symlinked into `/usr/local/cuda/include`.
+- **Never feed an RGBA cutout.** The model reads the **alpha channel as fabric**
+  and renders semi-transparent clothing (outfit 115, `O-WFJ4MR`). Use
+  `<gid>.clean.png` — the garment on plain white.
+- **`cfg` is 1.0, so negative prompts are inert.** Proven: same seed and refs,
+  the only change being a negative prompt, gave **zero differing pixels**. Keep
+  everything positive, and do not add "no collage / no side-by-side" — that
+  measurably backfired.
 
-## 7. Phase 4 — full outfit
+### The three files a garment has, and who is allowed to see which
 
-Option A: chain (top on person → result → bottom on result). Simple, works, degrades slightly.
-Option B: multi-garment CatVTON variants / ComfyUI multi-garment workflows.
-Upgrade path for quality: IDM-VTON (SDXL, uses whole 16GB — run solo) →
-CatVTON-FLUX / FLUX.1-Kontext (GGUF ~12–16GB, ~30–90s/img).
+A garment photo has two derived companions, and picking the wrong one is how
+both the purple wardrobe and the semi-transparent jacket happened:
+
+| file | what it is | who uses it |
+|---|---|---|
+| `<gid>.jpg/png` | the original photo, flat-lay backdrop and all | **the truth** — rotate, re-upload, phash/colour, vision, embeddings |
+| `<gid>.clean.png` | garment on plain white | **the renderer's reference** (`_garment_reference_bytes`) |
+| `<gid>.cutout.png` | true RGBA cutout, background removed | **the UI only** (`media.garment_display_path`) — never the renderer |
+
+So a request to "use the de-backgrounded image" means **the UI**, not the
+try-on reference: the cutout stays display-only until an RGBA reference is
+proven safe. See `docs/architecture.md` #26 for the serving rules.
+
+## 5. Pass scheduling (why 3 items is not one pass)
+
+A single pass with 3 references **collapses**: the model blends or silently drops
+one. Two references is the reliable ceiling. But re-chaining alone is not enough
+— the *order* decides whether the last pass survives. Verified 3-way at a fixed
+seed (base 53, crewneck + jeans + navy blazer):
+
+| schedule | result |
+|---|---|
+| single pass, 3 refs | 2/3 — blazer bled into the sleeves |
+| `[jeans]` → `[crewneck, blazer]` | **3/3 ✓** |
+| `[crewneck, jeans]` → `[blazer]` | **blazer dropped** |
+
+Rule (`_qwen_passes`): group into passes of ≤2, **lowers first, then uppers, and
+never mix the two within a pass**. Each category group is chunked separately.
+
+## 6. Refine this outfit
+
+The Outfits page card offers **Refine this outfit**: a text box plus a button,
+which calls `POST /api/outfits/{id}/refine` → `tryon.refine_render()`.
+
+- The render goes in as `<image1>` with **no garment references** — the clothes
+  are already on the person, so the model only has to follow the instruction.
+- **Nothing is overwritten.** The result is saved as a *new* outfit carrying the
+  same garments, so the original and the refinement sit side by side and either
+  can be refined again. Renders are permanent artifacts.
+- One pass takes ~60–120s; the button shows a live timer.
+
+The prompt holds **identity and scene** ("identical face, hair, skin tone and
+body", "same background, lighting and framing") but deliberately does **not** pin
+the pose — saying "identical pose" would actively fight a request like *"turn her
+to the side"*.
+
+Refine replaced the old **Make a 3s clip** button on that card.
+
+## 7. Removed 2026-09-23 — CatVTON / IDM-VTON
+
+Removed: `workflows/catvton.json`, `workflows/idm_vton.json`,
+`workflows/idm_vton_mask.json`, `services/comfyui/`, `scripts/bootstrap-comfyui.sh`,
+the `comfyui` compose service, and every mask/face-restore/colour-match helper in
+`tryon.py` (`tryon.py` went from 1861 → 707 lines). **~33 GB** of CatVTON and
+IDM-VTON weights were deleted from 202.
+
+Two things changed as a *consequence*, and both are improvements:
+
+- **Base-photo style classification is now vision-based.** It used to run
+  CatVTON's AutoMasker and read the `lower` mask's start height plus a bare-leg
+  skin test — meaning the GPU renderer had to be online just to answer "is this
+  person wearing a dress?", and it returned `unknown` whenever ComfyUI was busy.
+  `classify_person_style` now asks the vision model directly.
+- **An `unknown` base no longer blocks a render.** The base-matching gate used to
+  treat `unknown` as a mismatch and refuse; it now only refuses on a *positive*
+  mismatch. Refusing good photos because the classifier was unsure was wrong.
+
+Preserved for reference in `<repo>/.removed-2026-09-23/`. The dated handoffs in
+`docs/` (`idm-tryon-handoff-2026-08-25.md`, `PIPELINE-HANDOFF-2026-09-02.md`) are
+kept as historical records of that era, not as current documentation.
+
+**Still present but no longer wired into any UI:** Stable Video Diffusion motion
+clips (`svd.py` + `workflows/svd.json`, ~9 GB of weights on 202) and
+InstructPix2Pix (`editor.py` + `workflows/ip2p.json`, ~7 GB). Neither is
+referenced by the app any more.
+
+## 8. Operational notes
+
+- **Treat `QWEN_MODELS["clip"]` as the encoder switch.** It currently points at
+  `qwen3vl_8b_w4a8_heretic.safetensors`, an abliterated build of the Qwen3-VL-8B
+  text encoder. Dropping in the stock `qwen3vl_8b_w4a8.safetensors` is a
+  one-string change; nothing else moves.
+- **The text encoder is the only place "refusal" lives.** It is a language model
+  and the largest single component (~6.3 GB); the DiT has no refusal mechanism
+  (it just hits a capability ceiling) and the VAE is a pure codec. No external
+  safety filter sits in this pipeline.
+- **Two graph details are load-bearing** and are commented in `_qwen_run`:
+  `TextEncodeQwenImage21.vae` must be wired (without it the model silently
+  returns the base photo unchanged), and `KSampler.latent_image` must be the
+  encoder's latent (a blank canvas makes it *generate* a new person).
+- `resolution` is a **total pixel budget**, not a width. It is set to `1024`.
+- 202's GPU is shared — check `/queue` before queueing a test run.
+- If the renderer is unreachable, `/api/tryon*` returns **503** with a clear
+  message rather than hanging.

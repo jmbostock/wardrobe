@@ -1,1 +1,1 @@
-"""altacloset webapp package."""
+"""cluelesscloset webapp package."""

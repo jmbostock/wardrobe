@@ -15,7 +15,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-os.environ.setdefault("DATA_DIR", tempfile.mkdtemp(prefix="altacloset-recengine-test-"))
+os.environ.setdefault("DATA_DIR", tempfile.mkdtemp(prefix="cluelesscloset-recengine-test-"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import numpy as np  # noqa: E402

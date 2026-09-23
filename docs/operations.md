@@ -7,10 +7,10 @@ Architecture/spec: `docs/recommendation-engine-v2.md`.
 
 | Host | Role | What runs |
 |------|------|-----------|
-| **187** (10.0.1.187) | **PRIMARY** — webapp + data | webapp (docker compose), data at `~/altacloset/data` (db + wardrobe + uploads) |
-| **202** (10.0.1.202) | **GPU-only compute** | llama.cpp vision `qwen2.5vl` :28117 (user unit `llamacpp-vision.service`), ComfyUI :28190, FashionCLIP embedding, ALS training |
+| **187** (10.0.1.187) | **PRIMARY** — webapp + data | webapp (docker compose), data at `~/cluelesscloset/data` (db + wardrobe + uploads) |
+| **202** (10.0.1.202) | **GPU-only compute** | llama.cpp vision `qwen2.5vl` :28117 (user unit `llamacpp-vision.service`), **Qwen-Image-2.1 renderer** `qwen-comfy` :8188, FashionCLIP embedding, ALS training |
 
-Models live on the shared NVMe at `/mnt/models/altacloset/` (vision/ + rec/hf), per the
+Models live on the shared NVMe at `/mnt/models/cluelesscloset/` (vision/ + rec/hf), per the
 homelab model-storage pattern.
 
 ## Dev accounts (`admin` + `test`)
@@ -44,14 +44,14 @@ copied/empty data shouldn't contribute to embeddings/ALS.
    interactions that landed mid-run) and copies `data/rec/als.npz` to 187.
 
 Needs **202→187 passwordless SSH** (202's ed25519 key is in 187's
-`~/.ssh/authorized_keys`). Log: `202:~/altacloset/logs/rec_weekly.log`.
+`~/.ssh/authorized_keys`). Log: `202:~/cluelesscloset/logs/rec_weekly.log`.
 
 Manual run / status:
 
 ```bash
-ssh bostock@10.0.1.202 'bash ~/altacloset/scripts/rec_weekly.sh'          # run now
+ssh bostock@10.0.1.202 'bash ~/cluelesscloset/scripts/rec_weekly.sh'          # run now
 ssh bostock@10.0.1.202 'systemctl --user list-timers rec-retrain'          # next fire
-ssh bostock@10.0.1.202 'tail -20 ~/altacloset/logs/rec_weekly.log'         # last run
+ssh bostock@10.0.1.202 'tail -20 ~/cluelesscloset/logs/rec_weekly.log'         # last run
 ```
 
 ## Vision (AI tag-reading on upload)
@@ -61,8 +61,12 @@ ssh bostock@10.0.1.202 'tail -20 ~/altacloset/logs/rec_weekly.log'         # las
 - The tunnel is a **manual autossh** process, NOT a systemd unit:
 
   ```bash
-  autossh -M 0 -N -L 0.0.0.0:28117:127.0.0.1:28117 -L 0.0.0.0:28190:127.0.0.1:28190 bostock@10.0.1.202
+  autossh -M 0 -N -L 0.0.0.0:28117:127.0.0.1:28117 bostock@10.0.1.202
   ```
+
+  The old `-L 0.0.0.0:28190:...` mapping for the CatVTON ComfyUI was dropped
+  with that stack (2026-09-23). The app reaches the Qwen renderer directly at
+  `http://10.0.1.202:8188` (`QWEN_COMFYUI_URL`) — no tunnel needed.
 
   **Caveat:** it won't come back after a 187 reboot — restart it manually (or
   convert to a systemd unit). `gpu-tunnel.service` is not active.
@@ -70,9 +74,9 @@ ssh bostock@10.0.1.202 'tail -20 ~/altacloset/logs/rec_weekly.log'         # las
 ## Batch ingest
 
 ```bash
-ssh bostock@10.0.1.202 'cd ~/altacloset && \
+ssh bostock@10.0.1.202 'cd ~/cluelesscloset && \
   VISION_ENGINE=llamacpp VISION_URL=http://127.0.0.1:28117 \
-  DATA_DIR=$HOME/altacloset/data \
+  DATA_DIR=$HOME/cluelesscloset/data \
   /usr/bin/python3 scripts/ingest_batch.py "<photos dir>" --email <user>'
 ```
 
@@ -80,13 +84,13 @@ Photos are HEIC→JPEG + downscaled to ≤1024px before the vision model reads t
 
 ## Data & current state
 
-- Source of truth: **187** `~/altacloset/data`. 202's copy is a compute mirror
+- Source of truth: **187** `~/cluelesscloset/data`. 202's copy is a compute mirror
   refreshed by the weekly loop.
 - State (2026-08-23): v0.36.0 · 196 garments (170 = mazarrag/user 7) · 193 FashionCLIP
   embeddings · 0 interactions → L2 (style vector, ≥3 engaged) and L3 (ALS, ≥10 + model)
   are latent until the family engages with items.
 - HEIC originals from the 2026-08-23 ingest are archived at
-  `202:~/altacloset/archive/2026-08-23-wife-photos-158/`.
+  `202:~/cluelesscloset/archive/2026-08-23-wife-photos-158/`.
 
 ## Data hygiene — dedup + orientation
 
@@ -107,13 +111,13 @@ Photos are HEIC→JPEG + downscaled to ≤1024px before the vision model reads t
 - **Re-process existing photos:** `scripts/fix_orientation.py` re-checks a user's
   existing garments (optional `--category`) and re-saves + re-tags any that are
   rotated. Run inside the webapp container on 187:
-  `docker exec -i altacloset-webapp python - < scripts/fix_orientation.py --email <user> [--category bottom] [--dry-run]`
+  `docker exec -i cluelesscloset-webapp python - < scripts/fix_orientation.py --email <user> [--category bottom] [--dry-run]`
 - **Cleanup 2026-08-23:** removed 3 clear duplicates from user 7 (Maroon blazer,
   Navy blazer, Plaid skirt — keeping the first-created), cleaned 3 orphaned
-  embeddings. DB backed up at `data/db/altacloset.db.pre-fix-20260823-214847`.
+  embeddings. DB backed up at `data/db/cluelesscloset.db.pre-fix-20260823-214847`.
 
 ## Model paths
 
-- Vision: `/mnt/models/altacloset/vision/Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf` + `mmproj-F16.gguf`
-- FashionCLIP HF cache: `/mnt/models/altacloset/rec/hf`
+- Vision: `/mnt/models/cluelesscloset/vision/Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf` + `mmproj-F16.gguf`
+- FashionCLIP HF cache: `/mnt/models/cluelesscloset/rec/hf`
 - ALS factors (webapp reads): `data/rec/als.npz` on 187

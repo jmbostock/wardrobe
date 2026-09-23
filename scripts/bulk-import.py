@@ -13,10 +13,10 @@ Two ways to run:
 
 2) For HEIC (iPhone) photos, run INSIDE the webapp container (has pillow-heif,
    which this host's python lacks), pointing at the container's own API:
-   docker cp DIR altacloset-webapp:/tmp/photos
+   docker cp DIR cluelesscloset-webapp:/tmp/photos
    cat scripts/bulk-import.py | ssh host 'cat > /tmp/bulk-import.py && \
-       docker cp /tmp/bulk-import.py altacloset-webapp:/tmp/bulk-import.py'
-   docker exec -w /app -e PYTHONPATH=/app altacloset-webapp python /tmp/bulk-import.py \
+       docker cp /tmp/bulk-import.py cluelesscloset-webapp:/tmp/bulk-import.py'
+   docker exec -w /app -e PYTHONPATH=/app cluelesscloset-webapp python /tmp/bulk-import.py \
        --dir /tmp/photos/<DIR> --email you@x.com --password ... --base http://localhost:8000
 
 Flags:

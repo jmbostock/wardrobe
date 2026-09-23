@@ -11,31 +11,35 @@ class Settings:
         self.ha_token = os.getenv("HA_TOKEN", "")
         self.ha_weather_entity = os.getenv("HA_WEATHER_ENTITY", "weather.home")
         self.comfyui_url = os.getenv("COMFYUI_URL", "http://comfyui:8188").rstrip("/")
+        # Qwen-Image-2.1 image-edit backend — the ONLY renderer. It needs
+        # ComfyUI >= 0.37 + ComfyUI-GGUF, so it lives on its own instance
+        # (202:8188). Blank = rendering is unavailable.
+        self.qwen_comfyui_url = os.getenv("QWEN_COMFYUI_URL", "").rstrip("/")
         self.ollama_url = os.getenv("OLLAMA_URL", "http://ollama:11434").rstrip("/")
         # vision backend for AI tag-reading: "llamacpp" (homelab standard —
         # llama.cpp llama-server OpenAI-compatible endpoint) or "ollama" (legacy).
         # VISION_URL defaults to the ollama URL so either engine works out of the box.
         self.vision_engine = os.getenv("VISION_ENGINE", "ollama").lower()
         self.vision_url = os.getenv("VISION_URL", self.ollama_url).rstrip("/")
-        # image-editor engine for the try-on chat: "ip2p" (resident, fast) or a
-        # future "swap" engine (e.g. fluxkontext) that can't sit alongside CatVTON
+        # image-editor engine for the legacy /api/tryon/edit endpoint: "ip2p".
+        # The Outfits page "Refine this outfit" action does NOT use this — it
+        # runs on the Qwen renderer above (tryon.refine_render).
         self.editor_engine = os.getenv("EDITOR_ENGINE", "ip2p").lower()
         self.max_upload_px = int(os.getenv("MAX_UPLOAD_PX", "1024"))
         self.data_dir = os.getenv("DATA_DIR", "/data")
         # optional fixed seed for reproducible try-on (None = random per request)
         seed = os.getenv("TRYON_SEED", "")
         self.tryon_seed: int | None = int(seed) if seed.isdigit() else None
-        # --- try-on model backends (dev-selectable) ---
-        # "catvton" (SD1.5, fast/live) is always available. Higher-quality
-        # backends ("idm_vton" SDXL, "flux_kontext") are opt-in per host because
-        # they need their weights + workflow installed on the GPU box. The dev
-        # console / test account can pick which to render with (multi = queue).
+        # --- try-on model backends ---
+        # "qwen_edit" (Qwen-Image-2.1 image-edit) is the only renderer: the
+        # CatVTON / IDM-VTON stack was removed on 2026-09-23. Still a list
+        # because the dev console can queue several renders for one look.
         self.tryon_models = [
             m.strip()
-            for m in os.getenv("TRYON_MODELS", "catvton").split(",")
+            for m in os.getenv("TRYON_MODELS", "qwen_edit").split(",")
             if m.strip()
         ]
-        # --- DeepSeek API (stylist chat — zero VRAM, keeps GPU free for CatVTON) ---
+        # --- DeepSeek API (stylist chat — zero VRAM, keeps the GPU free) ---
         self.deepseek_api_key: str = os.getenv("DEEPSEEK_API_KEY", "")
         self.deepseek_base_url: str = os.getenv(
             "DEEPSEEK_BASE_URL", "https://api.deepseek.com"

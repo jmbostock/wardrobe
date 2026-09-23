@@ -32,6 +32,14 @@ from ..store import outfits, wardrobe
 
 router = APIRouter()
 
+# canonical fit synonyms -> stored fit value ('regular' | 'tight' | 'baggy')
+_FIT_MAP = {
+    "loose": "baggy", "oversized": "baggy", "relaxed": "baggy",
+    "wide": "baggy", "boxy": "baggy", "slouchy": "baggy",
+    "fitted": "tight", "slim": "tight", "skinny": "tight",
+    "form-fitting": "tight", "bodycon": "tight",
+}
+
 
 class WardrobeCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
@@ -49,6 +57,7 @@ class WardrobeUpdate(BaseModel):
     color: str | None = Field(None, max_length=40)
     brand: str | None = Field(None, max_length=120)
     sizes: str | None = Field(None, max_length=200)
+    fit: str | None = Field(None, max_length=20)
     rating: int | None = Field(None, ge=0, le=10)
     owned: bool | None = Field(None)
 
@@ -356,6 +365,11 @@ def update_garment(
         fields["brand"] = req.brand.strip()[:120]
     if req.sizes is not None:
         fields["sizes"] = req.sizes.strip()[:200]
+    if req.fit is not None:
+        f = _FIT_MAP.get((req.fit or "").strip().lower(), (req.fit or "").strip().lower())
+        if f not in ("", "regular", "tight", "baggy"):
+            raise HTTPException(400, "fit must be one of: regular, tight, baggy")
+        fields["fit"] = f
     if req.rating is not None:
         fields["rating"] = req.rating
         if req.rating >= 7:

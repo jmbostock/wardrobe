@@ -1,4 +1,4 @@
-"""Shared sqlite connection + schema for altacloset.
+"""Shared sqlite connection + schema for cluelesscloset.
 
 Single connection (check_same_thread=False) + one lock, shared by `wardrobe`,
 `auth`, and anything else that touches the DB. Safe for FastAPI's threadpool.
@@ -11,7 +11,7 @@ from pathlib import Path
 
 from .config import settings
 
-DB_PATH = Path(settings.data_dir) / "db" / "altacloset.db"
+DB_PATH = Path(settings.data_dir) / "db" / "cluelesscloset.db"
 
 _conn: sqlite3.Connection | None = None
 _lock = threading.Lock()
@@ -324,7 +324,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
     # cached vision classification for garments (added 2026-08-31): what the
     # garment actually IS ('shorts'|'pants'|'dress'|'skirt'|'top'|'outerwear'|
     # 'other') + a stylist one-liner, computed ONCE at upload / nightly batch so
-    # base-picking and the IDM prompt never need a live vision call.
+    # base-picking never needs a live vision call.
     gcols = {r[1] for r in conn.execute("PRAGMA table_info(garments)").fetchall()}
     if "vision_type" not in gcols:
         conn.execute("ALTER TABLE garments ADD COLUMN vision_type TEXT NOT NULL DEFAULT ''")

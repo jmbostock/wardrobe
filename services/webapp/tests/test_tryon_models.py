@@ -1,7 +1,12 @@
-"""Multi-model try-on tests (dev model selection + queue gating).
+"""Try-on renderer tests — prompt construction, pass scheduling, model dispatch.
 
 Runnable without pytest:
     python services/webapp/tests/test_tryon_models.py
+
+These are the tests that guard behaviours which were expensive to discover.
+The CatVTON/IDM mask tests that used to live here were removed with that stack
+(2026-09-23); everything below covers the Qwen-Image-2.1 renderer that replaced
+it.
 """
 from __future__ import annotations
 
@@ -10,239 +15,242 @@ import sys
 import tempfile
 from pathlib import Path
 
-os.environ.setdefault("DATA_DIR", tempfile.mkdtemp(prefix="altacloset-tryon-models-test-"))
-os.environ.setdefault("TRYON_MODELS", "catvton,idm_vton,flux_kontext")
+os.environ.setdefault("DATA_DIR", tempfile.mkdtemp(prefix="cluelesscloset-tryon-models-test-"))
+os.environ.setdefault("TRYON_MODELS", "qwen_edit")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app import tryon  # noqa: E402
 
 
+class G:
+    """Minimal stand-in for a wardrobe Garment (only .category/.name are read
+    by the prompt + pass-scheduling code under test)."""
+
+    def __init__(self, category: str, name: str = "item"):
+        self.category = category
+        self.name = name
+
+
+# --------------------------------------------------------------------------- #
+# model dispatch                                                              #
+# --------------------------------------------------------------------------- #
 
 def test_run_tryon_model_unknown_raises():
+    """A backend with no renderer must fail gracefully (per-model error), never
+    500 the whole request."""
     import asyncio
 
-    from app.tryon import ComfyUnavailable
-
-    # A backend with no workflow/renderer must fail gracefully (per-model error),
-    # never 500 the whole request. catvton + idm_vton have real renderers
-    # (need GPU + weights), so we assert the graceful failure of an unwired one.
     async def _call():
-        class G:  # noqa: D106
-            user_id = 1
-            image_path = None
-        await tryon.run_tryon_model("flux_kontext", b"person", G(), 1)
+        await tryon.run_tryon_model("flux_kontext", b"person", G("top"), 1)
 
     try:
         asyncio.run(_call())
-    except ComfyUnavailable as ex:
+    except tryon.ComfyUnavailable as ex:
         assert "flux_kontext" in str(ex)
         return
     raise AssertionError("expected ComfyUnavailable for unconfigured model")
 
 
-def test_to_pants_mask_makes_two_legs():
-    """A dress-shaped 'lower' AutoMasker mask (wide A-line blob) must become a
-    PANTS shape: a waistband + two separate leg columns, and a waist fraction.
-    This is what stops IDM painting a pair of jeans as a denim dress."""
-    from io import BytesIO
+def test_qwen_edit_is_the_only_wired_backend():
+    """catvton / idm_vton were removed — asking for them must raise, not fall
+    back to some other renderer and silently produce a different image."""
+    import asyncio
 
-    from PIL import Image
+    for dead in ("catvton", "idm_vton"):
+        async def _call(_m=dead):
+            await tryon.run_tryon_outfit_model(_m, b"person", [G("top")], 1)
 
-    m = Image.new("L", (100, 200), 0)
-    for y in range(40, 200):  # A-line: narrow at top, wide at bottom
-        half = 10 + int((y - 40) / 160 * 35)
-        for x in range(50 - half, 50 + half + 1):
-            m.putpixel((x, y), 255)
-    buf = BytesIO()
-    m.save(buf, "PNG")
-
-    pants, waist = tryon._to_pants_mask(buf.getvalue())
-    assert 0 < waist < 1
-    p = Image.open(BytesIO(pants)).convert("L")
-    # near the ankle (0.85h) the white must be TWO separated runs (two legs),
-    # never one wide blob (dress)
-    xs = [x for x in range(p.width) if p.getpixel((x, int(p.height * 0.85))) > 128]
-    runs = []
-    prev = None
-    for x in xs:
-        if prev is None or x - prev > 1:
-            runs.append([x, x])
+        try:
+            asyncio.run(_call())
+        except tryon.ComfyUnavailable as ex:
+            assert dead in str(ex), str(ex)
         else:
-            runs[-1][1] = x
-        prev = x
-    assert len(runs) >= 2, runs
-    # the waistband row (just above the legs) is one solid band
-    wy = int(waist * p.height)
-    band = [x for x in range(p.width) if p.getpixel((x, wy + 2)) > 128]
-    assert len(band) > 10, len(band)
+            raise AssertionError(f"{dead} should no longer be renderable")
 
 
-def test_to_pants_mask_extends_legs_beyond_short_mask():
-    """A person wearing SHORTS gives a short 'lower' mask that stops at
-    mid-thigh. The pants mask must still extend the legs to the ankles (near
-    the bottom of the frame) and pin the waistband to the TOP of the shorts —
-    otherwise IDM paints the jeans as shorts (the "IDM can't find legs" bug)."""
-    from io import BytesIO
+# --------------------------------------------------------------------------- #
+# the prompt golden rule                                                      #
+# --------------------------------------------------------------------------- #
 
-    from PIL import Image
+def test_edit_prompt_never_mentions_garment_names():
+    """THE GOLDEN RULE: a prompt that names what a garment LOOKS like overrides
+    its reference image.
 
-    m = Image.new("L", (100, 200), 0)
-    for y in range(80, 125):  # shorts: waist (y=80) down to mid-thigh (y=125)
-        half = 15 if y < 115 else 10
-        for x in range(50 - half, 50 + half + 1):
-            m.putpixel((x, y), 255)
-    buf = BytesIO()
-    m.save(buf, "PNG")
-
-    pants, waist = tryon._to_pants_mask(buf.getvalue())
-    p = Image.open(BytesIO(pants)).convert("L")
-    # waistband pinned near the TOP of the shorts (~0.40h), not mid-shorts
-    assert 0.35 < waist < 0.50, waist
-    wy = int(waist * p.height)
-    band = [x for x in range(p.width) if p.getpixel((x, wy + 2)) > 128]
-    assert len(band) > 10, len(band)
-    # legs extend to the ankle (~0.85h solid), far below the 0.62h shorts mask
-    xs = [x for x in range(p.width) if p.getpixel((x, int(p.height * 0.85))) > 128]
-    runs = []
-    prev = None
-    for x in xs:
-        if prev is None or x - prev > 1:
-            runs.append([x, x])
-        else:
-            runs[-1][1] = x
-        prev = x
-    assert len(runs) >= 2, runs  # two legs, not one blob / not empty
-    # ...but STOP above the shoes/feet: no mask coverage at ~0.97h (a mask
-    # that reaches the feet makes IDM repaint over the shoes)
-    xs_bottom = [x for x in range(p.width) if p.getpixel((x, int(p.height * 0.97))) > 128]
-    assert not xs_bottom, "pants mask must not cover the shoes/feet"
+    Regression guard for the "invented silver trim" blazer (539) and the
+    "Navy crewneck" sweater that rendered navy when it was dark grey. Both were
+    caused by injecting garment metadata (vision_desc / name) into the prompt.
+    If someone reintroduces that, this test fails."""
+    g = G("outerwear", "Navy blazer with silver trim")
+    prompt = tryon._qwen_edit_prompt([g])
+    low = prompt.lower()
+    assert "navy" not in low, prompt
+    assert "silver" not in low, prompt
+    assert "blazer" not in low, prompt
+    assert "trim" not in low, prompt
+    # ...but the SLOT must still be stated, or the model doesn't know where the
+    # reference belongs
+    assert "outer layer" in low, prompt
 
 
+def test_edit_prompt_assigns_reference_roles_in_order():
+    prompt = tryon._qwen_edit_prompt([G("bottom"), G("top"), G("outerwear")])
+    assert "<image2>" in prompt and "<image3>" in prompt and "<image4>" in prompt
+    assert "bottom half" in prompt
+    assert " as the top" in prompt
+    assert "outer layer" in prompt
 
 
-
-def test_to_top_mask_trims_below_waist():
-    """A whole-dress 'upper' mask must be trimmed at the waist so a top
-    renders as a top (hem at the waist), not a dress-length garment."""
-    from io import BytesIO
-
-    from PIL import Image
-
-    m = Image.new("L", (100, 200), 0)
-    for y in range(20, 190):  # whole-dress blob (upper mask on a one-piece)
-        for x in range(25, 75):
-            m.putpixel((x, y), 255)
-    buf = BytesIO()
-    m.save(buf, "PNG")
-
-    trimmed = tryon._to_top_mask(buf.getvalue(), 0.5)
-    t = Image.open(BytesIO(trimmed)).convert("L")
-    assert t.getpixel((50, 60)) > 128   # above the waist: still covered
-    assert t.getpixel((50, 150)) == 0   # below the waist: trimmed
-    assert t.getpixel((50, 199)) == 0
+def test_edit_prompt_is_positive_only():
+    """cfg is 1.0, so a negative prompt is inert — and 'no collage' style
+    phrasing in the POSITIVE prompt measurably backfired. Keep it positive."""
+    prompt = tryon._qwen_edit_prompt([G("top")]).lower()
+    for bad in ("no collage", "do not include", "without any", "avoid "):
+        assert bad not in prompt, prompt
 
 
-def test_waist_fraction_mid_band():
-    """The waist is the narrowest row in the mid-band of the body blob (not the
-    top edge of the silhouette)."""
-    from io import BytesIO
-
-    from PIL import Image
-
-    m = Image.new("L", (100, 200), 0)
-    # A-line blob: wide at top (chest) + bottom (skirt), narrow at waist (row 90)
-    for y in range(20, 200):
-        half = 20 + int((y - 20) / 180 * 20)
-        if 80 <= y <= 100:
-            half = 8  # the waist pinch
-        for x in range(50 - half, 50 + half + 1):
-            m.putpixel((x, y), 255)
-    buf = BytesIO()
-    m.save(buf, "PNG")
-    wf = tryon._waist_fraction(buf.getvalue())
-    assert 0.3 < wf < 0.7, wf
+def test_refine_prompt_leaves_pose_open():
+    """Refine must be able to change a pose. Pinning 'identical pose' would
+    actively fight a request like 'turn her to the side'; identity and scene
+    still have to be held."""
+    prompt = tryon._qwen_refine_prompt("turn her to the side")
+    low = prompt.lower()
+    assert "turn her to the side" in low
+    assert "identical face" in low          # identity held
+    assert "background" in low              # scene held
+    assert "identical pose" not in low      # pose NOT held
+    assert "same pose" not in low
 
 
-def test_photo_style_from_mask():
-    """A dress source gives a high-starting 'lower' mask (dress); a separates
-    source gives a low-starting mask (separates) — the logic that auto-picks
-    the best person photo for a top+bottom look."""
-    from io import BytesIO
-
-    from PIL import Image
-
-    def mask_start(start_y):
-        m = Image.new("L", (100, 200), 0)
-        for y in range(start_y, 200):
-            for x in range(30, 70):
-                m.putpixel((x, y), 255)
-        buf = BytesIO()
-        m.save(buf, "PNG")
-        return buf.getvalue()
-
-    # dress: the 'lower' mask covers the torso too (starts high, ~20%)
-    assert tryon.photo_style_from_mask(mask_start(40)) == "dress"
-    # a maxi dress / long skirt also starts ~40% -> still a dress
-    assert tryon.photo_style_from_mask(mask_start(80)) == "dress"   # 80/200=0.40
-    # separates: the mask is confined to the lower body (starts ~50-60%)
-    assert tryon.photo_style_from_mask(mask_start(100)) == "separates"  # 100/200=0.50
-    assert tryon.photo_style_from_mask(mask_start(120)) == "separates"  # 120/200=0.60
+def test_refine_prompt_strips_trailing_period():
+    """A trailing '.' from the user would otherwise produce '..' mid-sentence."""
+    prompt = tryon._qwen_refine_prompt("make the top long-sleeved.")
+    assert "long-sleeved.." not in prompt
+    assert "long-sleeved." in prompt
 
 
-def test_to_shorts_mask_caps_below_thigh():
-    """A bare-leg base gives a 'lower' mask running waist -> ankles; the shorts
-    mask must cut it at mid-thigh so IDM renders shorts, not long pants."""
-    from io import BytesIO
+# --------------------------------------------------------------------------- #
+# pass scheduling (the 3-garment collapse)                                    #
+# --------------------------------------------------------------------------- #
 
-    from PIL import Image
-
-    m = Image.new("L", (100, 200), 0)
-    for y in range(90, 195):  # waist (90) down to ankles (195) — bare-leg base
-        for x in range(35, 65):
-            m.putpixel((x, y), 255)
-    buf = BytesIO()
-    m.save(buf, "PNG")
-
-    shorts, waist = tryon._to_shorts_mask(buf.getvalue())
-    s = Image.open(BytesIO(shorts)).convert("L")
-    assert s.getpixel((50, 95)) > 128     # waist still covered
-    assert s.getpixel((50, 130)) == 0     # below mid-thigh: trimmed
-    assert s.getpixel((50, 190)) == 0     # ankles: trimmed
-    # the hem lands at mid-thigh (~0.60-0.70h) — still covered near there
-    assert s.getpixel((50, int(200 * 0.62))) > 0
-    # separates-style waist: just below the top of the lower garment (~90/200)
-    assert 0.40 < waist < 0.60, waist
+def test_passes_single_pass_for_two_or_fewer():
+    assert len(tryon._qwen_passes([G("top")])) == 1
+    assert len(tryon._qwen_passes([G("top"), G("bottom")])) == 1
 
 
-def test_to_shorts_mask_empty_mask_unchanged():
-    from io import BytesIO
+def test_passes_never_mix_lowers_and_uppers():
+    """A naive chunk-by-two of [jeans, top, blazer] gives [[jeans, top],
+    [blazer]] — leaving the outerwear ALONE in the final pass, where it gets
+    dropped (verified: the blazer vanished). Each category group must be chunked
+    on its own."""
+    jeans, top, blazer = G("bottom"), G("top"), G("outerwear")
+    passes = tryon._qwen_passes([jeans, top, blazer])
+    assert len(passes) == 2, passes
+    for batch in passes:
+        kinds = {tryon.CLOTH_TYPE.get(g.category, "upper") for g in batch}
+        assert len(kinds) == 1, f"mixed lowers+uppers in one pass: {batch}"
+    # the bottom gets its own pass and the two uppers stay together
+    assert [g.category for g in passes[0]] == ["bottom"], passes
+    assert {g.category for g in passes[1]} == {"top", "outerwear"}, passes
 
-    from PIL import Image
 
-    m = Image.new("L", (100, 200), 0)
-    buf = BytesIO()
-    m.save(buf, "PNG")
-    shorts, waist = tryon._to_shorts_mask(buf.getvalue())
-    assert shorts == buf.getvalue()
+def test_passes_put_lowers_first():
+    """Order matters as much as grouping: pass1 [jeans] -> pass2 [top, blazer]
+    scored 3/3, while [top, jeans] -> [blazer] dropped the blazer."""
+    passes = tryon._qwen_passes([G("top"), G("bottom"), G("outerwear")])
+    assert tryon.CLOTH_TYPE.get(passes[0][0].category) == "lower", passes
 
+
+def test_passes_cap_at_two_references():
+    """2 references is the reliable ceiling — 3 in one pass collapsed to 2/3."""
+    many = [G("top"), G("top"), G("top"), G("outerwear")]
+    for batch in tryon._qwen_passes(many):
+        assert len(batch) <= 2, batch
+    # every garment still gets rendered exactly once
+    flat = [g for batch in tryon._qwen_passes(many) for g in batch]
+    assert len(flat) == len(many)
+
+
+# --------------------------------------------------------------------------- #
+# base-photo style classification                                             #
+# --------------------------------------------------------------------------- #
+
+def test_person_style_parsing():
+    """The vision reply is parsed into the four values the base gate uses. A
+    reply we cannot read MUST become 'unknown' — the gate treats 'unknown' as
+    'cannot prove a mismatch' and lets the render through, so misreading it as a
+    real style would block valid renders."""
+    import asyncio
+
+    real = tryon._vision_ask
+    try:
+        for reply, want in [("DRESS", "dress"), ("shorts\n", "shorts"),
+                            ("**PANTS**", "pants"), ("OTHER", "unknown"),
+                            ("", "unknown"), ("no idea at all", "unknown")]:
+            async def _fake(prompt, data, _r=reply):  # noqa: ANN001
+                return _r
+
+            tryon._vision_ask = _fake
+            got = asyncio.run(tryon.classify_person_style(b"fake-image-bytes"))
+            assert got == want, (reply, got, want)
+    finally:
+        tryon._vision_ask = real
+
+
+def test_person_style_survives_vision_failure():
+    """Vision down must degrade to 'unknown', never raise — refresh_photo and
+    the base gate both call this on a request path."""
+    import asyncio
+
+    real = tryon._vision_ask
+
+    async def _boom(prompt, data):  # noqa: ANN001
+        raise RuntimeError("vision exploded")
+
+    try:
+        tryon._vision_ask = _boom
+        assert asyncio.run(tryon.classify_person_style(b"x")) == "unknown"
+    finally:
+        tryon._vision_ask = real
+
+
+# --------------------------------------------------------------------------- #
+# garment name fallback                                                       #
+# --------------------------------------------------------------------------- #
 
 def test_is_shorts_detects_by_name():
-    class G:  # noqa: D106
-        category = "bottom"
-        name = "Black shorts"
+    """Only a last-resort fallback for when vision is unavailable — but it must
+    still not fire on a 'shortsleeve top'."""
+    g = G("bottom", "Black shorts")
+    assert tryon._is_shorts(g) is True
+    g.name = "Cargo shorts"
+    assert tryon._is_shorts(g) is True
+    g.name = "Shorts"  # bare name
+    assert tryon._is_shorts(g) is True
+    g.name = "Blue jeans"
+    assert tryon._is_shorts(g) is False
+    g.name = "Athletic pants"
+    assert tryon._is_shorts(g) is False
+    g.category = "top"
+    g.name = "shortsleeve top"  # 'short' substring, but not a bottom
+    assert tryon._is_shorts(g) is False
 
-    assert tryon._is_shorts(G()) is True
-    G.name = "Cargo shorts"
-    assert tryon._is_shorts(G()) is True
-    G.name = "Shorts"  # bare name
-    assert tryon._is_shorts(G()) is True
-    G.name = "Blue jeans"
-    assert tryon._is_shorts(G()) is False
-    G.name = "Athletic pants"
-    assert tryon._is_shorts(G()) is False
-    G.category = "top"
-    G.name = "shortsleeve top"  # 'short' substring, but not a bottom
-    assert tryon._is_shorts(G()) is False
+
+# --------------------------------------------------------------------------- #
+# refine entry point                                                          #
+# --------------------------------------------------------------------------- #
+
+def test_refine_rejects_empty_instruction():
+    """An empty instruction would send a no-op edit to the GPU — reject it here
+    rather than burning ~100s of render time."""
+    import asyncio
+
+    for blank in ("", "   ", "\n"):
+        try:
+            asyncio.run(tryon.refine_render(b"base", blank))
+        except tryon.ComfyUnavailable as ex:
+            assert "instruction" in str(ex), str(ex)
+        else:
+            raise AssertionError(f"blank instruction {blank!r} was accepted")
 
 
 if __name__ == "__main__":
@@ -258,4 +266,5 @@ if __name__ == "__main__":
             failed += 1
             print(f"FAIL {fn.__name__}")
             traceback.print_exc()
+    print(f"\n{len(fns) - failed}/{len(fns)} passed")
     sys.exit(1 if failed else 0)

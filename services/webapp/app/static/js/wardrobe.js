@@ -293,6 +293,7 @@ function openGarmentDetail(g) {
   Array.from($('g-category').options).forEach((o) => cat.add(new Option(o.text, o.value)));
   cat.value = g.category;
   $('gd-owned').checked = g.owned !== false && g.owned !== 0;
+  $('gd-fit').value = g.fit || 'regular';
   // owner gets the editor + family-share toggle; a family viewer gets the fit toggle
   const isOwner = g.is_owner !== false;
   $('gd-editor').hidden = !isOwner;
@@ -304,7 +305,13 @@ function openGarmentDetail(g) {
   $('gd-url').value = '';
   $('gd-status').textContent = '';
   const img = $('gd-img');
-  img.style.background = g.color_hex || '#333'; img.src = '';
+  img.src = '';
+  // The image shown here is usually the de-backgrounded cutout, which is
+  // TRANSPARENT around the garment — anything painted behind it shows through.
+  // So the old "paint the garment's own colour behind the photo" fallback must
+  // only apply when there is no photo at all; otherwise a purple item would sit
+  // on a purple block. With a photo, the panel comes from CSS (--imgpanel).
+  img.style.background = g.has_image ? '' : (g.color_hex || '#333');
   if (g.has_image) {
     // detail-size WebP — same cached file as the grid at a higher resolution,
     // so it appears immediately (browser cache) and never blocks the sheet
@@ -412,6 +419,7 @@ $('gd-save').addEventListener('click', async () => {
     sizes: collectSizes('gd-sizes-wrap', $('gd-category').value),
     category: $('gd-category').value,
     color: $('gd-color').value.trim(),
+    fit: $('gd-fit').value,
     rating: currentRating(),
     owned: $('gd-owned').checked,
   };

@@ -1,8 +1,8 @@
 // common.js — shared helpers for every page (loaded before page scripts).
 const $ = (id) => document.getElementById(id);
-const TOKEN_KEY = 'altacloset_token';
-const ADMIN_TOKEN_KEY = 'altacloset_admin_token';
-const RECO_KEY = 'altacloset_last_reco';
+const TOKEN_KEY = 'cluelesscloset_token';
+const ADMIN_TOKEN_KEY = 'cluelesscloset_admin_token';
+const RECO_KEY = 'cluelesscloset_last_reco';
 
 // ---------- token helpers ----------
 function getToken() { return localStorage.getItem(TOKEN_KEY); }

@@ -1,5 +1,11 @@
 # IDM/CatVTON Try-on — Honest Handoff for a Fresh LLM (2026-08-25)
 
+> ⚠️ **HISTORICAL — SUPERSEDED 2026-09-23.** The CatVTON + IDM-VTON stack this
+> document describes was **removed**. Try-on now runs on **Qwen-Image-2.1
+> image-edit**; see `docs/tryon-pipeline.md`. Kept as a record of what was tried
+> and what failed — several of these failure modes are exactly why the stack was
+> replaced.
+
 > This doc is written so a NEW LLM can pick up this problem **without repeating
 > the failures below**. Read it fully before touching anything. The previous
 > agent (me) was wrong repeatedly and the user (the ground truth) rejected every
@@ -81,7 +87,7 @@ Quotes from the user (verbatim):
 
 ## 3. Current code state
 
-Repo: `/home/bostock/altacloset`, branch `main`, remote `jmbostock/wardrobe`.
+Repo: `/home/bostock/cluelesscloset`, branch `main`, remote `jmbostock/wardrobe`.
 HEAD = `2e39abe` (pushed). Live webapp on 187 is running the **`07408f1`** version
 of `tryon.py` (the per-piece pipeline).
 
@@ -131,7 +137,7 @@ of `tryon.py` (the per-piece pipeline).
 | Host | IP | Role |
 |---|---|---|
 | docker-core (workspace) | 10.0.1.176 | git origin, this repo |
-| dev box | 10.0.1.187 | **webapp ONLY** (`altacloset-webapp` container), Cloudflare front door, :28085 |
+| dev box | 10.0.1.187 | **webapp ONLY** (`cluelesscloset-webapp` container), Cloudflare front door, :28085 |
 | GPU box | 10.0.1.202 | ComfyUI :28190, ollama :28114, llamacpp-vision :28117. RTX 5060 Ti 16GB |
 
 - **187 is the ONLY webapp host; 202 is GPU-only. NEVER deploy the webapp to 202;
@@ -142,14 +148,14 @@ of `tryon.py` (the per-piece pipeline).
 
 ### Freeing VRAM on 202 (IDM needs ~14GB free)
 ```bash
-ssh bostock@10.0.1.202 'pkill -9 -f "[l]lama-server"; docker stop altacloset-ollama nsfw-ai-server'
+ssh bostock@10.0.1.202 'pkill -9 -f "[l]lama-server"; docker stop cluelesscloset-ollama nsfw-ai-server'
 # then POST /free (use a FILE to avoid quoting issues):
 ssh bostock@10.0.1.202 'echo "{\"unload_models\":true,\"free_memory\":true}" > /tmp/free.json; curl -s -w "HTTP %{http_code}\n" -X POST http://127.0.0.1:28190/free -H "Content-Type: application/json" -d @/tmp/free.json'
 nvidia-smi --query-gpu=memory.free --format=csv   # want ~14500 MiB
 ```
 **TRAP:** `pkill -f llama-server` matches its OWN shell (the command line contains
 "llama-server") → silently kills the ssh session (empty output). Use `[l]lama-server`.
-Restore after: `docker start altacloset-ollama nsfw-ai-server` and
+Restore after: `docker start cluelesscloset-ollama nsfw-ai-server` and
 `systemctl --user enable --now llamacpp-vision.service`.
 
 ### Vision service
@@ -183,12 +189,12 @@ Qwen2.5-VL-3B @ 127.0.0.1:28117. It respawns llama-server — stop via
   can be stale. It wipes `docker cp`'d fixes AND can drop 187's `.env` overrides.
   After any container recreate, re-apply:
   - `TRYON_MODELS=catvton,idm_vton` and `COMFYUI_URL=http://10.0.1.187:28190` in
-    `~/altacloset/.env` on 187 (check with `docker exec altacloset-webapp printenv ...`).
+    `~/cluelesscloset/.env` on 187 (check with `docker exec cluelesscloset-webapp printenv ...`).
   - Any docker-cp'd code files (tryon.py, static JS).
 - **`docker cp` does NOT read stdin** (`docker cp - c:/p < f` silently no-ops). Use
   scp to the 187 tree, then `docker cp`, then verify md5 in-container.
 - **Backend changes need a container RESTART** to load (`docker restart
-  altacloset-webapp`) — docker cp alone doesn't reload a running Python process.
+  cluelesscloset-webapp`) — docker cp alone doesn't reload a running Python process.
   `docker restart` preserves env (a `force-recreate` also works but risks env loss).
 - Verify the SERVED content (curl + grep), not just the container file.
 - `node --check` the JS before deploying JS.

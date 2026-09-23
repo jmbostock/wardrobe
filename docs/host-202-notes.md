@@ -1,4 +1,4 @@
-# altacloset — Host Notes: 202 (test host) + target-machine checklist
+# cluelesscloset — Host Notes: 202 (test host) + target-machine checklist
 
 Verified **2026-08-21** over SSH (`bostock@10.0.1.202`).
 
@@ -29,7 +29,7 @@ Same GPU family is enough (any 16GB+ NVIDIA card). Minimum checklist:
 - [ ] `nvidia-container-toolkit` **≥ 1.12** + `nvidia-ctk runtime configure --runtime=docker`
 - [ ] Docker **≥ 24** + Compose **v2** (29.4.1/v5.1.3 verified)
 - [ ] `nvidia` runtime shown in `docker info` (default not required, compose uses `gpus: all`)
-- [ ] ~**25GB free disk** (CatVTON ~6GB + ComfyUI image ~8GB + base ~5GB + data)
+- [ ] ~**25GB free disk** (Qwen renderer models ~16GB + renderer image ~8GB + data)
 - [ ] Internet on first boot (model downloads) — or rsync `data/` from 202
       via `scripts/migrate-to-target.sh` (recommended: no re-download)
 
@@ -64,14 +64,21 @@ curl -s -X POST http://127.0.0.1:28082/api/recommend \
 - No systemd unit / watchtower / autoheal / timer references it → nothing will
   auto-restart it.
 
-**Current headroom (2026-08-21):**
+**Current headroom (2026-09-23):**
 
 ```
-GPU : 2.3GB / 16.3GB used   → ~14GB free for CatVTON + Ollama
-RAM : 14Gi used / 41Gi avail (was 51Gi / 5.7Gi before the stop)
-Disk: 361G free
+GPU : shared with qwen-comfy + other workloads — check nvidia-smi before a run
+RAM : thin — 202 is a busy box
+Disk: ~978G free (198G reclaimed 2026-09-23: ~33G CatVTON/IDM stack + prior)
 ```
 
-Phase 2 (CatVTON try-on) can now run on 202 without contention. If `comfy-ui` is
-ever needed again: `docker compose -f /home/bostock/comfy-ui/docker-compose-202.yml up -d`.
+The **Qwen-Image-2.1 renderer** (`~/qwen-image/` on 202, container `qwen-comfy`,
+port 8188) is the only render path now. The old CatVTON `comfyui` stack — docker
+image, custom nodes and ~33GB of weights under `~/cluelesscloset/data/comfyui/` —
+was deleted on 2026-09-23. What remains there: `models/ip2p` (~7GB) and
+`models/svd` (~9GB) for the two vestigial engines, plus `input/`+`output/`
+(~740MB of old test artifacts, deliberately preserved).
+
+A shared GPU means a render can queue behind someone else's job — check
+`curl -s localhost:8188/queue` before timing anything.
 

@@ -171,8 +171,73 @@ def _style_nudge(description: str, garment_category: str) -> int:
     return 0
 
 
+_TIGHT_MARKERS = (
+    "fitted", "slim", "skinny", "tailored", "bodycon", "tight",
+    "form-fitting", "slim-fit", "cropped", "contour", "hugging", "tucked",
+)
+_LOOSE_MARKERS = (
+    "loose", "baggy", "relaxed", "slouchy", "oversized", "boxy", "wide-leg",
+    "jogger", "joggers", "sweatpant", "sweatpants", "sweats", "casual",
+    "tee", "t-shirt", "tshirt", "graphic", "elastic cuff", "bunching",
+    "comfy", "lounge", "hoodie", "cargo",
+)
+
+
+def _fit_hint(text: str) -> str:
+    """'tight' | 'loose' | 'unknown' — from clothing keywords in a description
+    (garment name/vision line, or a base photo's description)."""
+    d = (text or "").lower()
+    tight = sum(m in d for m in _TIGHT_MARKERS)
+    loose = sum(m in d for m in _LOOSE_MARKERS)
+    if tight and not loose:
+        return "tight"
+    if loose and not tight:
+        return "loose"
+    if loose and tight:
+        return "loose" if loose >= tight else "tight"
+    return "unknown"
+
+
+def _normalize_fit(fit: str) -> str:
+    """Canonical garment-fit hint from a garment's explicit `fit` field OR a
+    text blob (name + vision line): 'tight' | 'loose' | 'regular' (neutral) |
+    'unknown'."""
+    f = (fit or "").strip().lower()
+    if f in ("", "regular", "standard", "classic", "true-to-size"):
+        return "regular"
+    tight = sum(m in f for m in _TIGHT_MARKERS)
+    loose = sum(m in f for m in _LOOSE_MARKERS)
+    if tight and not loose:
+        return "tight"
+    if loose and not tight:
+        return "loose"
+    if tight and loose:
+        return "tight" if tight >= loose else "loose"
+    return "unknown"
+
+
+def fit_nudge(base_desc: str, garment_fit: str) -> int:
+    """Base-photo FIT awareness: a loose/casual base (a relaxed tee + baggy
+    joggers) is a great base for casual/loose garments, but renders TIGHT
+    garments badly — the model warps a fitted top / skinny jeans onto the baggy
+    silhouette. So prefer a base whose fit matches the garment's fit, and
+    penalize a clearly-loose base for a clearly-tight garment.
+
+    Uses the garment's explicit `fit` (tight|regular|baggy); when unset/neutral
+    it infers from the garment name/description. A neutral/unknown fit gives no
+    nudge."""
+    b = _fit_hint(base_desc)
+    g = _normalize_fit(garment_fit)
+    if b == "unknown" or g in ("unknown", "regular"):
+        return 0
+    if b == g:
+        return 8
+    return -22   # loose base ↔ tight garment, or tight base ↔ baggy garment
+
+
 def rank_photos_for_garment(
-    user_id: int, garment_bytes: bytes, garment_category: str, fast: bool = False
+    user_id: int, garment_bytes: bytes, garment_category: str, fast: bool = False,
+    garment_name: str = "", garment_desc: str = "",
 ) -> list[dict[str, Any]]:
     """Rank the user's saved person photos best-first as the try-on base for a
     specific garment. Primary signal = outfit match via vision LLM; falls back
@@ -197,8 +262,11 @@ def rank_photos_for_garment(
 
     entries: dict[int, dict[str, Any]] = {}
     ai_scores = None if fast else _vision_rank(garment_bytes, [(p["id"], d) for p, d in candidates])
+    gdesc = f"{garment_name} {garment_desc}".strip()
     for p, d in candidates:
-        nudge = _style_nudge(p.get("description", ""), garment_category)
+        nudge = _style_nudge(p.get("description", ""), garment_category) + fit_nudge(
+            p.get("description", ""), gdesc
+        )
         if ai_scores is None:
             s = imageqa.suitability(d, garment_category)
             entries[p["id"]] = {"score": s["score"] + nudge, "reason": s["reason"], "method": "heuristic"}

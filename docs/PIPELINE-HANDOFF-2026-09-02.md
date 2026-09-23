@@ -1,6 +1,12 @@
-# Altacloset Try-On Pipeline — Debug Handoff (2026-09-02)
+# Clueless Closet Try-On Pipeline — Debug Handoff (2026-09-02)
 
-A self-contained write-up of the virtual-try-on ("Clueless Closet" / altacloset) rendering
+> ⚠️ **HISTORICAL — SUPERSEDED 2026-09-23.** Describes the CatVTON-geometry +
+> IDM-texture pipeline, which was **removed**. Try-on now runs on
+> **Qwen-Image-2.1 image-edit**; see `docs/tryon-pipeline.md` and
+> `docs/architecture.md` (#24). Kept as a record of the debugging that led to the
+> replacement.
+
+A self-contained write-up of the virtual-try-on ("Clueless Closet" / cluelesscloset) rendering
 pipeline, its full fix history, and the ONE open problem currently blocking good results
 (garment color fidelity). Written so another engineer/LLM can take over without prior context.
 
@@ -10,12 +16,12 @@ pipeline, its full fix history, and the ONE open problem currently blocking good
 
 | Thing | Detail |
 |---|---|
-| App | "Clueless Closet" (altacloset) — self-hosted virtual try-on (put clothes on a photo of a person) |
-| Webapp | FastAPI, Docker. Runs on **187** (10.0.1.187), container `altacloset-webapp`, host port `28085` → internal `8000`. SQLite at `/data/db/altacloset.db` (host: `~/altacloset/data/db/altacloset.db`) |
-| GPU box | **202** (10.0.1.202), RTX 5060 Ti **16GB**. Runs: ComfyUI `altacloset-comfyui` (`:28190`), llama.cpp vision (`llamacpp-vision`) |
+| App | "Clueless Closet" (cluelesscloset) — self-hosted virtual try-on (put clothes on a photo of a person) |
+| Webapp | FastAPI, Docker. Runs on **187** (10.0.1.187), container `cluelesscloset-webapp`, host port `28085` → internal `8000`. SQLite at `/data/db/cluelesscloset.db` (host: `~/cluelesscloset/data/db/cluelesscloset.db`) |
+| GPU box | **202** (10.0.1.202), RTX 5060 Ti **16GB**. Runs: ComfyUI `cluelesscloset-comfyui` (`:28190`), llama.cpp vision (`llamacpp-vision`) |
 | Tunnel | 187→202 via autossh: `28190` (ComfyUI) and `28117` (vision) |
 | Users | `7` = Melissa (real). `9` = test sandbox (`test@dev.local` / `Rimmer256!`), a copy of 7 — all test renders use user 9 |
-| Repo | `~/altacloset` (services/webapp/...). Remote `github.com/jmbostock/wardrobe` (loosely synced) |
+| Repo | `~/cluelesscloset` (services/webapp/...). Remote `github.com/jmbostock/wardrobe` (loosely synced) |
 
 **Vision on-demand (added 2026-09-02):** vision no longer runs 24/7. A tiny stdlib proxy
 `vision-proxy.py` runs on 202 listening on `127.0.0.1:28117` (what the tunnel/webapp targets).
@@ -23,8 +29,8 @@ On request it starts `llamacpp-vision` (now bound to `:28217`), waits for the mo
 through; it stops the service after ~5 min idle (frees ~4GB VRAM for IDM). Vision call timeouts
 in the webapp were raised 10/40s → 150s to cover the ~60s cold start.
 
-**Deploy method (critical gotcha):** scp file → `bostock@10.0.1.187:altacloset/services/webapp/app/...`
-(EXACT sub-path) → `docker cp` into `/app/app/...` → `docker restart altacloset-webapp` → verify
+**Deploy method (critical gotcha):** scp file → `bostock@10.0.1.187:cluelesscloset/services/webapp/app/...`
+(EXACT sub-path) → `docker cp` into `/app/app/...` → `docker restart cluelesscloset-webapp` → verify
 `import`. Multi-file `scp` to `.../app/../` flattens files and leaves the container on STALE code
 (hit this repeatedly). Verify md5/behavior after every deploy.
 

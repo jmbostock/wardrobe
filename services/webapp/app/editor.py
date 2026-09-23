@@ -1,9 +1,14 @@
-"""ComfyUI-based image editor for the try-on chat.
+"""ComfyUI-based image editor for the legacy /api/tryon/edit endpoint.
 
 Engine abstraction: `run_edit()` dispatches to whatever engine
 `settings.editor_engine` names, so a heavier "swap" editor (e.g. FLUX.1-Kontext
-GGUF, which can't sit resident with CatVTON) can be added later behind the same
-endpoint — no webapp changes needed, just add the engine + workflow here.
+GGUF) can be added later behind the same endpoint — no webapp changes needed,
+just add the engine + workflow here.
+
+NOTE (2026-09-23): the Outfits page "Refine this outfit" action does NOT go
+through here — it calls tryon.refine_render (Qwen-Image-2.1), which is a much
+stronger editor than InstructPix2Pix. This module and its ip2p workflow are
+currently unreferenced by any UI; kept for now, safe to delete.
 """
 from __future__ import annotations
 

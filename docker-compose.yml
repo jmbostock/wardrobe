@@ -1,23 +1,24 @@
-# altacloset — Docker stack
+# cluelesscloset — Docker stack
 # Tested host: 10.0.1.202 (RTX 5060 Ti 16GB, toolkit 1.12.1, Docker 29.4.1)
 # Migration: identical compose works on the target machine (same GPU); see PLAN.md §7.
 
-name: altacloset
+name: cluelesscloset
 
 services:
   webapp:
     build: ./services/webapp
-    image: altacloset-webapp:local
-    container_name: altacloset-webapp
+    image: cluelesscloset-webapp:local
+    container_name: cluelesscloset-webapp
     restart: unless-stopped
     env_file: .env
     environment:
       - HF_HOME=/models/huggingface
       - COMFYUI_URL=${COMFYUI_URL:-http://comfyui:8188}
       - OLLAMA_URL=http://ollama:11434
-      # opt-in higher-quality backends (need weights+workflow on the GPU box);
-      # see app/config.py TRYON_MODELS. Set e.g. TRYON_MODELS=catvton,idm_vton
-      - TRYON_MODELS=${TRYON_MODELS:-catvton}
+      # opt-in renderer selection (see app/config.py TRYON_MODELS).
+      # "qwen_edit" is the only wired renderer since the CatVTON / IDM-VTON
+      # stack was removed (2026-09-23).
+      - TRYON_MODELS=${TRYON_MODELS:-qwen_edit}
     volumes:
       - ./data/wardrobe:/data/wardrobe
       - ./data/uploads:/data/uploads
@@ -25,57 +26,25 @@ services:
       - models:/models
     ports:
       - "${WEBAPP_BIND:-127.0.0.1}:${WEBAPP_PORT:-28082}:8000"
-    networks: [altacloset]
+    networks: [cluelesscloset]
 
-  comfyui:
-    # GPU-only service, started explicitly with: docker compose --profile gpu up -d
-    profiles: ["gpu"]
-    # Image pulls the official ComfyUI CUDA build.
-    # CatVTON custom node + weights are baked in via services/comfyui/Dockerfile
-    # (bootstrap) so the target machine needs NO manual install steps.
-    build: ./services/comfyui
-    image: altacloset-comfyui:local
-    container_name: altacloset-comfyui
-    restart: unless-stopped
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
-      - HF_HOME=/root/.cache/huggingface
-    volumes:
-      # CatVTON custom node + weights are BAKED INTO the image
-      # (services/comfyui/Dockerfile). The IDM-VTON / segment-anything /
-      # controlnet_aux custom nodes + their model weights live in bind mounts
-      # below so they survive container rebuilds (node python deps are baked
-      # into the image in the Dockerfile — never pip-install into the running
-      # container: a compose recreate wipes the writable layer).
-      - ./data/comfyui/models:/root/.cache/huggingface
-      - ./data/comfyui/input:/opt/ComfyUI/input
-      - ./data/comfyui/output:/opt/ComfyUI/output
-      - ./data/comfyui/custom_nodes:/opt/ComfyUI/custom_nodes
-      - ./data/comfyui/models_dir:/opt/ComfyUI/models
-    ports:
-      - "127.0.0.1:${COMFYUI_PORT:-28188}:8188"
-    healthcheck:
-      # official image includes curl; /system_stats confirms the API + GPU up
-      test: ["CMD", "curl", "-fsS", "http://localhost:8188/system_stats"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
-    networks: [altacloset]
+  # The `comfyui` service that used to live here built ComfyUI + CatVTON
+  # (services/comfyui/Dockerfile) as the try-on renderer. It was removed on
+  # 2026-09-23 with the CatVTON / IDM-VTON stack: rendering now happens on the
+  # Qwen-Image-2.1 ComfyUI instance, which is NOT managed by this compose file
+  # (it needs ComfyUI >= 0.37 + ComfyUI-GGUF and lives on the GPU host — see
+  # QWEN_COMFYUI_URL in .env).
+  #
+  # COMFYUI_URL is still read by app/svd.py (motion clips) and app/editor.py
+  # (legacy /api/tryon/edit). Both are optional and neither is wired into the
+  # UI any more, so if you keep them you'll need to point COMFYUI_URL at a
+  # plain ComfyUI yourself.
 
   ollama:
     # Phase 3 (LLM stylist). GPU service, enabled with: docker compose --profile gpu up -d
     profiles: ["gpu"]
     image: ollama/ollama:latest
-    container_name: altacloset-ollama
+    container_name: cluelesscloset-ollama
     restart: unless-stopped
     deploy:
       resources:
@@ -96,10 +65,10 @@ services:
       timeout: 10s
       retries: 5
       start_period: 20s
-    networks: [altacloset]
+    networks: [cluelesscloset]
 
 volumes:
   models:
 
 networks:
-  altacloset:
+  cluelesscloset:

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Smoke-test POST /api/tryon against a running altacloset webapp + ComfyUI.
+# Smoke-test POST /api/tryon against a running cluelesscloset webapp + ComfyUI.
 # Usage: scripts/tryon-test.sh <person_image> <garment_id> [base_url] [email] [password]
 set -euo pipefail
 

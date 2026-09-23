@@ -1,9 +1,9 @@
-# altacloset — Wardrobe Schema & Recommender Spec
+# cluelesscloset — Wardrobe Schema & Recommender Spec
 
 The MVP recommender is **deterministic rule-based scoring** — no GPU, <10ms, fully
 explainable. An LLM (Phase 3) only *explains* the pick in natural language.
 
-## 1. Wardrobe schema (sqlite, `data/db/altacloset.db`)
+## 1. Wardrobe schema (sqlite, `data/db/cluelesscloset.db`)
 
 Multi-user: every garment belongs to a `user_id`; each user gets their own seed
 wardrobe copy. Auth (`users`, `sessions`) lives in the same db.

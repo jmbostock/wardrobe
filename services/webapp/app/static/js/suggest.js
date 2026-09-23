@@ -128,7 +128,7 @@ const _DOWN_REASONS = [
   ['just_not_today', 'Just not today'],
 ];
 
-function _toggleDownMenu(btn, send) {
+function _toggleDownMenu(btn, onPick) {
   const fb = btn.closest('.recommend-feedback');
   let menu = fb.querySelector('.fb-reasons');
   if (menu) { menu.remove(); return; }
@@ -143,8 +143,7 @@ function _toggleDownMenu(btn, send) {
     r.addEventListener('click', (e) => {
       e.stopPropagation();
       menu.remove();
-      btn.classList.add('picked');
-      send('disliked', val);
+      onPick(val);
     });
     menu.appendChild(r);
   });
@@ -157,14 +156,15 @@ function _addFeedbackActions(container, outfit) {
 
   const fb = document.createElement('div');
   fb.className = 'recommend-feedback';
+  let selected = null; // 'liked' | 'disliked' | null — only ONE value per outfit
 
-  const send = async (kind, reason) => {
+  const send = async (kind, reason, clear) => {
     fb.querySelectorAll('button').forEach((x) => (x.disabled = true));
     try {
       await apiJson('/api/recommend/feedback', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          outfit, kind, reason: reason || null,
+          outfit, kind: kind || null, reason: reason || null, clear: !!clear,
           activity: _lastActivity || 'casual',
           prompt: ($('prompt') && $('prompt').value) || null,
         }),
@@ -176,6 +176,17 @@ function _addFeedbackActions(container, outfit) {
     }
   };
 
+  const _picked = (b) => {
+    fb.querySelectorAll('.fb-thumb').forEach((x) => x.classList.remove('picked'));
+    fb.querySelectorAll('.fb-reasons').forEach((x) => x.remove());
+    b.classList.add('picked');
+  };
+  const _clear = () => {
+    fb.querySelectorAll('.fb-thumb').forEach((x) => x.classList.remove('picked'));
+    fb.querySelectorAll('.fb-reasons').forEach((x) => x.remove());
+    selected = null;
+  };
+
   const thumb = (icon, kind, title) => {
     const b = document.createElement('button');
     b.type = 'button';
@@ -185,8 +196,22 @@ function _addFeedbackActions(container, outfit) {
     b.setAttribute('aria-label', title);
     b.innerHTML = icon;
     b.addEventListener('click', () => {
-      if (kind === 'liked') { b.classList.add('picked'); send('liked'); }
-      else { _toggleDownMenu(b, send); }
+      // clicking the already-selected thumb toggles it OFF
+      if (selected === kind) {
+        _clear();
+        send(kind, null, true);
+      } else if (kind === 'liked') {
+        selected = 'liked';
+        _picked(b);
+        send('liked', null, false);
+      } else {
+        // disliking → pick a STYLE reason, which also marks the thumb as selected
+        _toggleDownMenu(b, (val) => {
+          selected = 'disliked';
+          _picked(b);
+          send('disliked', val, false);
+        });
+      }
     });
     return b;
   };

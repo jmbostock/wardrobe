@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 import threading
 
-log = logging.getLogger("altacloset.render")
+log = logging.getLogger("cluelesscloset.render")
 
 _lock = threading.Lock()
 _browser = None

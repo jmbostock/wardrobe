@@ -1,11 +1,21 @@
 # Clueless Closet — Local "Alta Daily" Clone — Project Plan
 
+> ⚠️ **RENDERER CHANGED (2026-09-23).** This plan was written around **CatVTON**,
+> which — along with IDM-VTON — has been **removed entirely** and replaced by
+> **Qwen-Image-2.1 image-edit**. Sections below that describe the CatVTON
+> pipeline, its VRAM budget, its Dockerfile and its workflow JSON are kept as a
+> historical record of the plan, not as current design. For what actually runs
+> today see **`docs/tryon-pipeline.md`** and **`docs/architecture.md`** (#24/#25).
+> The webapp also now lives on **187**, with the renderer on **202**.
+
 > Self-hosted, Dockerized, AI personal stylist. Recommend outfits from weather/activity,
 > then render the recommended clothes onto a photo (stored or live webcam).
 > Test on **202** (RTX 5060 Ti 16GB), then migrate to a second machine with the **same GPU**
 > — everything must be portable (Docker-only, env-driven, no host hardcoding).
 
-- Status: **ACTIVE** — Phase 1 & 2 DONE; Phase 4 polish in progress (2026-08-21).
+- Status: **ACTIVE** — Phases 1, 2 & 4 DONE; renderer migrated to Qwen-Image-2.1
+  and outfit **refine** shipped (2026-09-23). Phase 3 (LLM stylist) + Phase 5
+  (migration) not started.
   Current build is live on `http://10.0.1.202:28085` (clueless-closet 0.8.0).
   UI is now a **multi-page app** (Jinja2 pages + per-domain routers + shared
   templates/CSS/JS) with a **PWA manifest + service worker + icons** for the
@@ -43,50 +53,49 @@ Browser (React/HTMX)
    ▼
 Caddy/nginx (reverse proxy, TLS)  ── 127.0.0.1
    ▼
-altacloset-webapp  (FastAPI :8000)
+cluelesscloset-webapp  (FastAPI :8000)
    ├── /api/recommend   → rule-based recommender (CPU, <10ms)
    ├── /api/weather     → Open-Meteo (no key) or Home Assistant override
-   ├── /api/tryon       → calls ComfyUI with CatVTON workflow → returns rendered photo
-   └── (phase 2) /api/chat → Ollama (Qwen2.5 3B / Gemma 3 4B) explains the pick
+   ├── /api/tryon       → calls the Qwen-Image-2.1 ComfyUI → returns rendered photo
+   ├── /api/outfits/{id}/refine → promptable edit of a saved render (new outfit)
+   └── (phase 3) /api/chat → LLM explains the pick
    ▼                        ▼
-ComfyUI (:8188, GPU)   Ollama (:11434, GPU)
-   └── CatVTON node       └── small LLM (~3-3.5GB)
-       (try-on diffusion, <8GB VRAM)
+Qwen :8188 on 202       Ollama (:11434, GPU)
+   └── qwen-image-2.1     └── small LLM (~3-3.5GB)
+       (image-edit, ~13GB VRAM)
 ```
 
 ### VRAM budget on a 5060 Ti (16311 MiB)
 
 | Service | VRAM | Notes |
 |---|---|---|
-| ComfyUI + CatVTON | ~8GB | SD1.5-based, 1024×768 bf16 — official figure |
+| Qwen-Image-2.1 (DiT + Qwen3-VL encoder + VAE) | ~13GB | Q4_K_M DiT + W4A8 encoder |
 | Ollama (3–4B, Q4) | ~3–3.5GB | Qwen2.5 3B / Gemma 3 4B |
-| Webapp + segmentation | ~0.5GB | rembg runs on CPU/GPU-light |
-| **Total (concurrent)** | **~11.5GB** | comfortable headroom |
+| Webapp | ~0.2GB | CPU only |
 
-> Rule: run the LLM and the VTON **concurrently only with a ≤4B model**.
-> An 8B LLM (~7GB) + CatVTON (~8GB) ≈ 15GB — works only sequentially (recommend,
-> unload, then render). Do not plan SDXL/FLUX + 8B LLM at the same time.
+> The renderer is the whole GPU budget now — run the LLM and a render
+> **sequentially**, not concurrently. This is the deliberate cost of the quality
+> jump; the old CatVTON figure (~8GB, and the ~11.5GB concurrent total) is gone.
 
 ---
 
 ## 3. Directory Layout
 
 ```
-altacloset/
+cluelesscloset/
 ├── PLAN.md                  ← this file
 ├── README.md                ← quickstart
-├── docker-compose.yml       ← 3 services (webapp, comfyui, ollama) + proxy-ready
+├── docker-compose.yml       ← 2 services (webapp, ollama) + proxy-ready
 ├── .env.example             ← all config lives here (portability)
 ├── docs/
 │   ├── architecture.md      ← this section expanded + decision log
 │   ├── recommender.md       ← wardrobe schema + scoring spec
-│   ├── tryon-pipeline.md    ← CatVTON/ComfyUI integration + API contract
+│   ├── tryon-pipeline.md    ← Qwen-Image-2.1 integration + API contract
 │   └── host-202-notes.md    ← verified hardware on the test host
 ├── data/                    ← gitignored; bind-mounted by services
 │   ├── wardrobe/            ← garment images (one per item)
-│   ├── uploads/             ← user person photos
+│   ├── uploads/             ← user person photos + renders
 │   ├── db/                  ← sqlite wardrobe db
-│   ├── comfyui/             ← models/, custom_nodes/, output/
 │   └── ollama/              ← model blobs
 ├── services/
 │   ├── webapp/              ← FastAPI app (this is the main code we write)
@@ -101,16 +110,14 @@ altacloset/
 │   │       ├── weather.py       # Open-Meteo + HA override
 │   │       ├── wardrobe.py      # sqlite store
 │   │       ├── recommender.py   # rule-based scoring engine (MVP core)
-│   │       ├── tryon.py         # ComfyUI/CatVTON client
+│   │       ├── tryon.py         # Qwen-Image-2.1 client (try-on + refine)
 │   │       ├── routes/          # per-domain routers: pages, auth, account,
 │   │       │                    #   photos, wardrobe, outfits, tryon, recommend, image
-│   │       ├── templates/       # Jinja2: base.html + 6 pages + edit-modal partial
+│   │       ├── templates/       # Jinja2: base.html + pages + modal partials
 │   │       ├── static/          # css/app.css, js/*.js, PWA (manifest, sw, icons)
-│   │       └── workflows/       # comfyui workflow JSONs
-│   └── comfyui/            ← CatVTON install notes / build glue
+│   │       └── workflows/       # legacy ip2p/svd workflow JSONs (try-on is code-built)
 └── scripts/
-    ├── migrate-to-target.sh ← move models + data to the second machine
-    └── bootstrap-comfyui.sh ← install CatVTON custom node + weights
+    └── migrate-to-target.sh ← move data to the second machine
 ```
 
 ---
@@ -120,7 +127,7 @@ altacloset/
 ### Phase 0 — Host prep (202, ~30 min)
 - [ ] Confirm GPU/runtime (✅ already verified: driver 580.119.02, toolkit 1.12.1,
       nvidia runtime default, 361G free disk — see `docs/host-202-notes.md`).
-- [ ] Pick a home dir for persistent data, e.g. `/opt/altacloset` (or keep in `~/altacloset`).
+- [ ] Pick a home dir for persistent data, e.g. `/opt/cluelesscloset` (or keep in `~/cluelesscloset`).
 - [ ] Check 202 RAM headroom — **only ~5.7Gi available right now** (busy box). Verify
       nothing else is fighting for the GPU (`nvidia-smi`) before heavy runs.
 - [ ] `git init` + `.gitignore` (`data/`, `*.pyc`, `.env`).
@@ -135,10 +142,14 @@ altacloset/
 - **Done when:** can run on CPU with `docker compose up webapp` and get sensible outfits.
 
 ### Phase 2 — Try-on: add clothes to a photo (GPU, the wow moment)
-Status 2026-08-21: **WORKING end-to-end.** First `/api/tryon` returned a rendered
-photo (garment 27 on testdata/person.jpg). See `docs/tryon-pipeline.md` §8 + repo memory.
-- [x] Build ComfyUI image (`services/comfyui/Dockerfile`: CUDA 12.8 base + torch cu128 + ComfyUI source + CatVTON release node + detectron2).
-- [x] `services/webapp/app/workflows/catvton.json` — API-format workflow; `tryon.py` wires images + cloth_type (top→upper, bottom→lower, dress→overall).
+Status 2026-09-23: **WORKING end-to-end on Qwen-Image-2.1**, plus promptable
+outfit refine. The checklist below records the original CatVTON build-out; that
+stack was removed on 2026-09-23 — see `docs/tryon-pipeline.md` §7 for what
+replaced it and why.
+- [x] ~~Build ComfyUI image (`services/comfyui/Dockerfile`…)~~ — **DELETED**
+  (2026-09-23). The renderer is now a separate ComfyUI install on 202.
+- [x] ~~`services/webapp/app/workflows/catvton.json`~~ — **DELETED**. The Qwen
+  graph is built in code (`tryon._qwen_run`) instead of loaded from JSON.
 - [x] `scripts/tryon-test.sh` smoke script.
 - [x] **Fix SCHP inplace_abn compile** (torch 2.x): the release node's `AugmentCE2P` uses `InPlaceABNSync`, so the **CUDA** kernels are required — the base `runtime` image has **no nvcc** (`/bin/sh: nvcc: not found`). Dockerfile now installs `cuda-nvcc-12-8` + dev headers (cublas/cusparse/cusolver/cudss), patches `z.type()`→`z.scalar_type()` in `inplace_abn_cpu.cpp` (2×) **and** `inplace_abn_cuda.cu` (6×), `ENV TORCH_CUDA_ARCH_LIST=12.0` (Blackwell sm_120), and prebuilds the extension so the `.so` is baked into the image. Verified: 4 CatVTON nodes in `/object_info`, node imports in <1s.
 - [x] First try-on (auto-downloads weights ~4-6GB) → `/api/tryon` returns a rendered photo. ~1m26s first run, ~39s warm.

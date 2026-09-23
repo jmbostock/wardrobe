@@ -8,7 +8,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-os.environ.setdefault("DATA_DIR", tempfile.mkdtemp(prefix="altacloset-wardrobe-test-"))
+os.environ.setdefault("DATA_DIR", tempfile.mkdtemp(prefix="cluelesscloset-wardrobe-test-"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app import auth, wardrobe  # noqa: E402
@@ -169,30 +169,11 @@ def test_list_wardrobe_used_count():
     assert by_id[g1.id]["created_at"], by_id[g1.id]
 
 
-def test_prep_person_preserves_head_and_exif():
-    """CatVTON center-crops to 768x1024; _prep_person letterboxes first so the
-    crop is a no-op (head never cut) and EXIF-rotated photos are righted."""
-    from app import tryon
-    from PIL import Image as PILImage
-    import io as _io
-
-    # tall portrait (576x1246) — must letterbox to 3:4, not crop the top
-    buf = _io.BytesIO()
-    PILImage.new("RGB", (576, 1246), (180, 60, 60)).save(buf, "PNG")
-    out = tryon._prep_person(buf.getvalue())
-    img = PILImage.open(_io.BytesIO(out))
-    assert img.size == (768, 1024), img.size
-
-    # EXIF orientation 6 (stored landscape, meant to be portrait) — must be
-    # righted so the person isn't sideways (which distorts proportions)
-    base = PILImage.new("RGB", (1000, 500), (60, 60, 180))
-    exif = PILImage.Exif()
-    exif[0x0112] = 6
-    buf2 = _io.BytesIO()
-    base.save(buf2, "JPEG", exif=exif)
-    out2 = tryon._prep_person(buf2.getvalue())
-    img2 = PILImage.open(_io.BytesIO(out2))
-    assert img2.size == (768, 1024), img2.size
+# NOTE (2026-09-23): test_prep_person_preserves_head_and_exif was removed with
+# _prep_person(). It guarded the CatVTON 768x1024 letterbox (so CatVTON's
+# internal center-crop could not cut the head off). The Qwen renderer never
+# crops to a fixed canvas — it edits the photo at its native aspect — so the
+# invariant it protected no longer exists.
 
 
 def test_imglink_product_gallery_preferred_over_logo():

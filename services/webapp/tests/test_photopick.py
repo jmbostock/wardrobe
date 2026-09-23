@@ -10,7 +10,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-os.environ.setdefault("DATA_DIR", tempfile.mkdtemp(prefix="altacloset-photopick-test-"))
+os.environ.setdefault("DATA_DIR", tempfile.mkdtemp(prefix="cluelesscloset-photopick-test-"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app import photopick  # noqa: E402
@@ -165,6 +165,27 @@ def test_route_best_for_garment():
     # auth guard: no token -> 401; unknown garment -> 404
     assert c.get(f"/api/photos/best-for-garment/{g.id}").status_code == 401
     assert c.get("/api/photos/best-for-garment/999999", headers=h).status_code == 404
+
+
+def test_fit_nudge():
+    """Fit-aware base picking: a loose/casual base is a bad fit for tight
+    garments (and a good one for casual/loose garments)."""
+    casual_base = (
+        "relaxed non-tailored crewneck t-shirt with a graphic print, loose-fitting "
+        "sleeves; dark brown fleece joggers with a relaxed slouchy fit, bunching "
+        "along the inseam, gathered elastic cuffs"
+    )
+    assert photopick._fit_hint(casual_base) == "loose"
+    assert photopick._fit_hint("slim black skinny jeans") == "tight"
+    assert photopick._fit_hint("a person standing") == "unknown"
+    # loose base + tight garment = penalty (tight clothes warp onto baggy shape)
+    assert photopick.fit_nudge(casual_base, "Slim black skinny jeans") < 0
+    # loose base + loose garment = bonus
+    assert photopick.fit_nudge(casual_base, "relaxed black joggers") > 0
+    # tight base + tight garment = bonus
+    assert photopick.fit_nudge("fitted bodycon dress", "slim-fit blouse") > 0
+    # unknown signal -> no nudge
+    assert photopick.fit_nudge("a person standing", "an outfit") == 0
 
 
 def _run_all():

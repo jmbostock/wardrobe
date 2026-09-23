@@ -38,6 +38,13 @@ THUMB_PX = 300
 DETAIL_PX = 768
 WEBP_QUALITY = 80
 VARIANT_SUFFIXES = (".thumb.webp", ".detail.webp")
+# Generated companions of a garment photo. NEVER treat one of these as "the
+# original" — a cutout is a derived artifact, and the real photo must stay the
+# thing rotate/edit/vision operate on. See garment_display_path().
+#   .clean.png  — garment on plain white (the Qwen render reference)
+#   .cutout.png — true RGBA cutout, background removed (what the UI shows)
+CLEAN_SUFFIX = ".clean.png"
+CUTOUT_SUFFIX = ".cutout.png"
 
 # Cache: private (authed images, browser-only cache — never a shared CDN cache)
 # + max-age + immutable. Freshness comes from the ?v=<mtime> version in the URL:
@@ -47,6 +54,13 @@ IMAGE_CACHE_CONTROL = "private, max-age=86400, immutable"
 # being served from the browser cache — `immutable` let a stale copy persist
 # across hard reloads. Revalidate every time so a render can never stay stale.
 UPLOADS_CACHE_CONTROL = "private, no-cache"
+# Bump whenever the RULES for which file is served as a garment image change
+# (not when an image changes — that is the file mtime). Garment images are
+# cached `immutable` for a day, so a change that alters the bytes served for an
+# unchanged file — e.g. the wardrobe switching to the de-backgrounded
+# .cutout.png — would otherwise keep showing the old image until that cache
+# expired. Folding this into the ?v= value busts every client once per bump.
+IMAGE_SERVE_REVISION = 2
 
 # iPhone photos come in as HEIC — pillow-heif adds a PIL opener so we can
 # decode (and normalize to JPEG on save) without any system libheif.
@@ -263,16 +277,17 @@ def refine_color(coarse: str, data: bytes) -> str:
 
 
 def _is_variant(p: Path) -> bool:
-    """True for our generated <stem>.thumb.webp / .detail.webp / .clean.png
-    files — these must never be mistaken for the original image (e.g. by
-    garment_image_path)."""
+    """True for our generated <stem>.thumb.webp / .detail.webp / .clean.png /
+    .cutout.png files — these must never be mistaken for the original image
+    (e.g. by garment_image_path)."""
     name = p.name.lower()
-    return any(name.endswith(sfx) for sfx in VARIANT_SUFFIXES) or name.endswith(CLEAN_SUFFIX)
+    return (any(name.endswith(sfx) for sfx in VARIANT_SUFFIXES)
+            or name.endswith(CLEAN_SUFFIX) or name.endswith(CUTOUT_SUFFIX))
 
 
 def garment_image_path(user_id: int, garment_id: int) -> Path | None:
     """Find the on-disk ORIGINAL image for a garment (any supported extension),
-    skipping generated WebP variants."""
+    skipping generated WebP variants and derived companions."""
     d = WARDROBE_DIR / str(user_id)
     if not d.is_dir():
         return None
@@ -282,11 +297,50 @@ def garment_image_path(user_id: int, garment_id: int) -> Path | None:
     return None
 
 
+def garment_cutout_path(user_id: int, garment_id: int) -> Path | None:
+    """The de-backgrounded (true RGBA) garment image, when one has been made.
+    Produced by the background-removal pass (`bg_remove.py` on the GPU box) and
+    stored next to the photo as <gid>.cutout.png. The original is always kept."""
+    p = WARDROBE_DIR / str(user_id) / f"{garment_id}{CUTOUT_SUFFIX}"
+    return p if p.is_file() else None
+
+
+def garment_display_path(user_id: int, garment_id: int) -> Path | None:
+    """What the UI should show for a garment.
+
+    Prefer the de-backgrounded cutout: it is the same garment with the flat-lay
+    backdrop removed, so every card in a grid is the garment alone instead of a
+    photo of a garment on a duvet at a random angle. Where no cutout exists yet
+    (the removal pass has not run for that wardrobe) fall back to the original
+    photo — a missing cutout must never hide a garment.
+
+    Serve it as-is, alpha intact: see _webp_ready() for why flattening it is a
+    bug rather than a simplification.
+    """
+    return (garment_cutout_path(user_id, garment_id)
+            or garment_image_path(user_id, garment_id))
+
+
 def media_type_for(path: Path) -> str:
     return {
         ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
         ".webp": "image/webp", ".gif": "image/gif",
     }.get(path.suffix.lower(), "application/octet-stream")
+
+
+def _webp_ready(img: Image.Image) -> Image.Image:
+    """Normalise a decoded image for WebP, PRESERVING TRANSPARENCY.
+
+    A de-backgrounded garment is an RGBA cutout whose fully-transparent pixels
+    still carry colour in the RGB channels — Qwen-Image leaves a magenta/violet
+    fill there (measured ~(165,58,208)). Dropping the alpha channel (the old
+    `.convert("RGB")`) therefore painted every wardrobe card bright purple with
+    a garment floating on it. Keep the alpha; the transparent area must stay
+    transparent so the surface behind the image shows through.
+    """
+    if img.mode in ("RGBA", "LA") or "transparency" in img.info:
+        return img.convert("RGBA")
+    return img.convert("RGB")
 
 
 def _atomic_write_webp(img, dest: Path) -> None:
@@ -311,7 +365,7 @@ def image_variant(orig: Path, size: str = "thumb") -> Path:
     if not vp.is_file():
         try:
             with Image.open(io.BytesIO(orig.read_bytes())) as img:
-                img = ImageOps.exif_transpose(img).convert("RGB")
+                img = _webp_ready(ImageOps.exif_transpose(img))
                 img.thumbnail((px, px), Image.LANCZOS)
                 _atomic_write_webp(img, vp)
         except Exception:  # noqa: BLE001 — thumbnailing is best-effort
@@ -323,8 +377,7 @@ def _write_variants(data: bytes, orig: Path) -> None:
     """Generate both thumb+detail WebP variants beside `orig` from raw bytes
     (used at save time so first serve is instant). Best-effort — never raises."""
     try:
-        img = Image.open(io.BytesIO(data))
-        img = ImageOps.exif_transpose(img).convert("RGB")
+        img = _webp_ready(ImageOps.exif_transpose(Image.open(io.BytesIO(data))))
         for size, px in (("thumb", THUMB_PX), ("detail", DETAIL_PX)):
             im = img.copy()
             im.thumbnail((px, px), Image.LANCZOS)
@@ -333,13 +386,10 @@ def _write_variants(data: bytes, orig: Path) -> None:
         pass
 
 
-# The IDM texture pass must see the GARMENT only — never the flat-lay backdrop.
+# The renderer must see the GARMENT only — never the flat-lay backdrop.
 # Stored as <gid>.clean.png at save time (see _write_clean_garment); the same
 # function is called lazily at render time as a fallback for garments that were
 # saved before cleaning existed (and by the nightly rec_weekly backfill).
-CLEAN_SUFFIX = ".clean.png"
-
-
 def _write_clean_garment(data: bytes, orig: Path) -> Path:
     """Best-effort: write the background-removed garment (garment on blank
     white) next to the original as <gid>.clean.png. Never raises — on any
@@ -355,11 +405,11 @@ def _write_clean_garment(data: bytes, orig: Path) -> Path:
 
 
 def remove_garment_background(data: bytes, tolerance: int = 28) -> bytes:
-    """Remove a flat-lay garment photo's background so IDM textures the GARMENT
-    only, not the backdrop it was shot on.
+    """Remove a flat-lay garment photo's background so the renderer sees the
+    GARMENT only, not the backdrop it was shot on.
 
     A flat-lay (garment centered on a backdrop) leaks the background color into
-    the IDM texture pass — e.g. black shorts shot on a beige/wooden surface
+    the render — e.g. black shorts shot on a beige/wooden surface
     render beige, and a white waist drawstring gets over-painted as a thick band
     (the O-ZBZ4BP "white string" failure). We flood-fill from the image borders
     (background always touches the edges on a centered flat-lay), and any pixel
@@ -432,25 +482,30 @@ def garment_image_file(
     user_id: int, garment_id: int, size: str = "detail"
 ) -> tuple[Path | None, str]:
     """Resolve the file + media type to serve for a garment image at a size.
-    size: 'thumb' | 'detail' | 'full' (original). Returns (None, '') if none."""
-    orig = garment_image_path(user_id, garment_id)
-    if orig is None:
+    size: 'thumb' | 'detail' | 'full' (unscaled). Returns (None, '') if none.
+    Serves the de-backgrounded cutout when the garment has one (see
+    garment_display_path)."""
+    src = garment_display_path(user_id, garment_id)
+    if src is None:
         return None, ""
     if size == "full":
-        return orig, media_type_for(orig)
-    path = image_variant(orig, size if size in ("thumb", "detail") else "detail")
+        return src, media_type_for(src)
+    path = image_variant(src, size if size in ("thumb", "detail") else "detail")
     return path, media_type_for(path)
 
 
 def garment_image_version(user_id: int, garment_id: int) -> int:
-    """mtime of the original image, used as the ?v= cache-buster. An edit that
-    rewrites the file bumps the version -> the frontend requests a new URL ->
-    the browser fetches fresh instead of serving the cached old image."""
-    p = garment_image_path(user_id, garment_id)
+    """mtime of the image actually served, used as the ?v= cache-buster. An edit
+    that rewrites the file — or a background-removal pass that adds a
+    <gid>.cutout.png — bumps the version -> the frontend requests a new URL ->
+    the browser fetches fresh instead of serving the cached old image.
+    IMAGE_SERVE_REVISION is folded in so a change to the serving rules also
+    invalidates every already-cached URL."""
+    p = garment_display_path(user_id, garment_id)
     if p is None:
         return 0
     try:
-        return int(p.stat().st_mtime)
+        return int(p.stat().st_mtime) + IMAGE_SERVE_REVISION
     except OSError:
         return 0
 

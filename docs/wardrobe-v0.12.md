@@ -92,9 +92,9 @@ flag near-dups. Flags: `--include-dups`, `--skip-dups`, `--dry-run`.
 For HEIC folders run it **inside the webapp container**:
 
 ```bash
-docker cp ~/Downloads/<dir> altacloset-webapp:/tmp/photos
-docker cp ~/altacloset/scripts/bulk-import.py altacloset-webapp:/tmp/bulk-import.py
-docker exec -w /app -e PYTHONPATH=/app altacloset-webapp python /tmp/bulk-import.py \
+docker cp ~/Downloads/<dir> cluelesscloset-webapp:/tmp/photos
+docker cp ~/cluelesscloset/scripts/bulk-import.py cluelesscloset-webapp:/tmp/bulk-import.py
+docker exec -w /app -e PYTHONPATH=/app cluelesscloset-webapp python /tmp/bulk-import.py \
   --dir /tmp/photos --email <you>@... --password ... --base http://localhost:8000
 ```
 

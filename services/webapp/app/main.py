@@ -42,7 +42,7 @@ async def lifespan(_app: FastAPI):
     yield
 
 
-app = FastAPI(title="altacloset", version=__version__, lifespan=lifespan)
+app = FastAPI(title="cluelesscloset", version=__version__, lifespan=lifespan)
 
 
 class NoCacheStaticFiles(StaticFiles):

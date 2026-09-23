@@ -12,7 +12,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-os.environ.setdefault("DATA_DIR", tempfile.mkdtemp(prefix="altacloset-admin-test-"))
+os.environ.setdefault("DATA_DIR", tempfile.mkdtemp(prefix="cluelesscloset-admin-test-"))
 os.environ["DEV_ADMIN_ENABLED"] = "1"
 os.environ["DEV_ADMIN_LOGIN"] = "admin"
 os.environ["DEV_ADMIN_PASSWORD"] = "Rimmer256!"

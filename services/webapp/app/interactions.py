@@ -98,6 +98,38 @@ def log_many(user_id: int, garment_ids: list[int], kind: str, context: dict | No
             log(user_id, gid, kind, context)
 
 
+def set_chat_feedback(user_id: int, garment_ids: list[int], kind: str | None,
+                      context: dict | None = None) -> None:
+    """Set the user's CURRENT chat thumbs feedback for a set of garments.
+
+    This REPLACES instead of appending, so toggling a thumb on/off or switching
+    liked↔disliked never stacks duplicate rows (the user's hard rule). Any prior
+    chat liked/disliked rows for those garments are removed, then a single row is
+    inserted only when a value is being set (`kind` in liked/disliked); passing
+    `kind=None`/'' clears it entirely.
+    """
+    if kind not in ("liked", "disliked", None, ""):
+        return
+    conn = db.init()
+    with db.lock():
+        for gid in garment_ids:
+            if not gid:
+                continue
+            # drop every prior chat thumbs row for this garment (either kind)
+            conn.execute(
+                "DELETE FROM interactions WHERE user_id=? AND garment_id=? "
+                "AND kind IN ('liked','disliked') AND context LIKE '%\"source\": \"chat\"%'",
+                (user_id, gid),
+            )
+            if kind in ("liked", "disliked"):
+                conn.execute(
+                    "INSERT INTO interactions (user_id, garment_id, kind, weight, context) "
+                    "VALUES (?,?,?,?,?)",
+                    (user_id, gid, kind, WEIGHTS[kind], json.dumps(context or {})),
+                )
+        conn.commit()
+
+
 def recent(user_id: int, limit: int = 500) -> list[dict]:
     """Most recent interactions for a user (newest first) — for eval/analytics."""
     conn = db.init()

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Migrate altacloset from the test host (202) to the target machine (same GPU).
+# Migrate cluelesscloset from the test host (202) to the target machine (same GPU).
 #
 # Usage:
 #   scripts/migrate-to-target.sh <user@host> [remote_path]
-#   e.g. scripts/migrate-to-target.sh bostock@10.0.1.199 /opt/altacloset
+#   e.g. scripts/migrate-to-target.sh bostock@10.0.1.199 /opt/cluelesscloset
 #
 # What it does:
 #   1. rsync code + compose + .env (excludes data/ and .git)
@@ -12,7 +12,7 @@
 set -euo pipefail
 
 SRC_HOST="${1:?usage: migrate-to-target.sh <user@host> [remote_path]}"
-REMOTE_PATH="${2:-/opt/altacloset}"
+REMOTE_PATH="${2:-/opt/cluelesscloset}"
 THIS_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 echo ">> [1/3] syncing code / compose / .env -> $SRC_HOST:$REMOTE_PATH"

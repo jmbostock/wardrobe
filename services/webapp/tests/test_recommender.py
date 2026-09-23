@@ -11,7 +11,7 @@ import tempfile
 from pathlib import Path
 
 # MUST be set before importing app.* — app.config reads env at import time
-os.environ.setdefault("DATA_DIR", tempfile.mkdtemp(prefix="altacloset-test-"))
+os.environ.setdefault("DATA_DIR", tempfile.mkdtemp(prefix="cluelesscloset-test-"))
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 

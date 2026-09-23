@@ -9,8 +9,8 @@ Re-derives the color of garments whose stored color is a COARSE canonical bucket
 only refine where the machine has to guess anyway.
 
 Run INSIDE the webapp container (needs app code + data):
-    docker cp scripts/backfill_colors.py altacloset-webapp:/tmp/backfill_colors.py
-    docker exec -w /app -e PYTHONPATH=/app altacloset-webapp \
+    docker cp scripts/backfill_colors.py cluelesscloset-webapp:/tmp/backfill_colors.py
+    docker exec -w /app -e PYTHONPATH=/app cluelesscloset-webapp \
         python /tmp/backfill_colors.py [--apply] [--user 3]
 """
 from __future__ import annotations

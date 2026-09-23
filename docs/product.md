@@ -8,26 +8,29 @@
 
 ## 1. What it is
 
-Clueless Closet (repo name `altacloset`) is a **self-hosted, Dockerized AI personal stylist**:
+Clueless Closet (repo name `cluelesscloset`) is a **self-hosted, Dockerized AI personal stylist**:
 
 - keeps your **real wardrobe** (photos + name/category/color),
 - **recommends outfits** from weather + activity + a free-form style prompt,
 - **renders a chosen garment onto a photo of a person** (saved photo, upload, or webcam)
-  using CatVTON + ComfyUI on a local GPU.
+  using **Qwen-Image-2.1** + ComfyUI on a local GPU.
 
-**Live right now:** `http://10.0.1.202:28085` (webapp on 202; ComfyUI `127.0.0.1:28190`).
+**Live right now:** `http://10.0.1.187:28085` (webapp on 187; Qwen renderer on `10.0.1.202:8188`).
 
 ---
 
-## 2. Status (2026-08-21)
+## 2. Status (2026-09-23)
 
 | Phase | Area | State |
 |---|---|---|
 | 1 | Accounts (email), weather, rule-based recommender, wardrobe | ✅ DONE |
-| 2 | CatVTON try-on (ComfyUI, GPU) | ✅ DONE & working (~40s warm / 1m26s cold) |
+| 2 | Try-on — **Qwen-Image-2.1 image-edit** (ComfyUI on 202, GPU) | ✅ DONE & working (~60–120s per pass) |
+| 2b | **Refine this outfit** — promptable edit on a saved render | ✅ DONE (2026-09-23) |
+| 2c | CatVTON / IDM-VTON stack | ❌ REMOVED (2026-09-23, ~33 GB reclaimed) |
 | 4 | Wardrobe manager, saved outfits, image-quality, uniform + iPhone-first UI | ✅ DONE |
 | 4b | Wardrobe metadata (brand/color/sizes, AI tag-read, dedup) + orientation | ✅ DONE (2026-08-22) |
-| 3 | LLM stylist (Ollama) | ⬜ not started |
+| 4c | **De-backgrounded wardrobe cards** — cutouts shown on the app panel | ✅ DONE (2026-09-23, v0.45.0) |
+| 3 | LLM stylist (DeepSeek API) | ⬜ not started |
 | 5 | Migrate to target GPU box | ⬜ not started |
 
 ---
@@ -51,9 +54,12 @@ Clueless Closet (repo name `altacloset`) is a **self-hosted, Dockerized AI perso
   clear what's being tried on. Tap the per-slot **✕** (or *None* in the picker) to
   clear just that one, or *Reset look* to clear all. Also *Use recommendation*.
 - **Image-quality feedback** inline for both person and garment (auto on change).
-- **Progress panel**: Uploading → DensePose → SCHP → CatVTON → Finalizing, with an
-  elapsed timer, so a ~40s GPU render doesn't look stuck.
-- **Chained multi-garment try-on** (`/api/tryon/outfit`): top → bottom in sequence.
+- **Progress panel**: Uploading → reading photo+garments (Qwen3-VL) → rendering
+  outfit (Qwen-Image-2.1) → Finalizing, with an elapsed timer, so a ~60–120s GPU
+  render doesn't look stuck.
+- **Chained multi-garment try-on** (`/api/tryon/outfit`): outfits of 3+ garments
+  are rendered in several passes (lowers first, then uppers — never mixed), because
+  a single pass with 3 references collapses.
 
 ### Wardrobe
 - **Add a garment**: name/brand/color/category/sizes + upload **or** a product-page
@@ -71,6 +77,13 @@ Clueless Closet (repo name `altacloset`) is a **self-hosted, Dockerized AI perso
   footwear = numeric; accessory = One size.
 - Each card: image + category badge + name + a **⚠ similar to X** flag when the
   photo is a near-duplicate.
+- **De-backgrounded cards** (2026-09-23): where a garment has been through the
+  background-removal pass it is shown as a **cutout on the app's own slate
+  panel** (the transparent PNG the app serves), not as a photo of a garment on
+  a duvet. The original photo is still what every edit acts on, and the cutout
+  is display-only — the renderer still gets the plain-white `<gid>.clean.png`.
+  Garments without a cutout fall back to the original photo, so nothing ever
+  disappears.
 - **Detail card** (tap the card): full-size image, editable name/brand/size/
   category/color (with swatch), photo upload / set-from-link, owned checkbox,
   **rating 0–10 step-1 slider**, near-dup note, used-in-N-outfits, and Delete.
@@ -83,7 +96,11 @@ Clueless Closet (repo name `altacloset`) is a **self-hosted, Dockerized AI perso
 - **Orientation — never horizontal (automatic, no exceptions)**: every upload is
   EXIF-righted, only a portrait-preserving 180° flip (from the tag-reader) is ever
   applied, and the saved photo is **hard-guaranteed portrait** — a landscape frame
-  is never produced. (No manual rotate button.)
+  is never produced. A **↻ Rotate 90°** button in the detail card is the manual
+  escape hatch for a sideways item the reader got wrong; it re-saves through
+  `save_garment_image`, so phash/colour stay consistent (and any derived
+  `.clean.png` / `.cutout.png` is dropped, because it no longer matches the
+  photo).
 - **Clear** button on the add form resets it when a link fetch fails or picks the
   wrong thing.
 
@@ -164,7 +181,7 @@ Full write-up: **`docs/wardrobe-v0.12.md`** (metadata / dedup / dropdowns / size
   because photos are guaranteed never-horizontal (90/270 would turn a portrait
   sideways); it re-saves through `save_garment_image` so near-dup stays correct.
   (3) New **swimsuit** category (WARDROBE_CATEGORIES, size schema, AI/parse-link
-  keywords `bikini`/`one-piece`/`swim trunks`/`boardshorts`, CatVTON `overall`),
+  keywords `bikini`/`one-piece`/`swim trunks`/`boardshorts`, one-piece → swimsuit),
   recommended as a hot-weather one-piece for **beach** (new `beach` occasion tag;
   warmth 1 defaults), never paired with a bottom, and never suggested for the
   office. Try-on look builder gained a **Swimsuit** row.
@@ -251,53 +268,63 @@ Full write-up: **`docs/wardrobe-v0.12.md`** (metadata / dedup / dropdowns / size
   browser, scrape `<img>`/og:image/JSON-LD, and POST the CDN image URL directly
   (`img.abercrombie.com …policy=product-large`). A proper in-app browser fallback is on
   the roadmap (§7.5).
-- **ComfyUI must be running** for try-on: `docker compose --profile gpu up -d comfyui`.
-  Otherwise `/api/tryon*` → 503.
+- **The Qwen renderer must be running** for try-on/refine: it is a separate
+  ComfyUI on 202 (`QWEN_COMFYUI_URL`), not a service in this repo's compose file.
+  Otherwise `/api/tryon*` and `/api/outfits/{id}/refine` → 503.
 - **Embedded/preview browser**: `prompt()`/`confirm()` may be unsupported (use inline
   inputs); Playwright clicks can time out on "stability" (click via JS instead); the
   browser-tool filesystem is sandboxed (no file writes, no file-chooser uploads).
 - `GET /api/wardrobe/{id}` does **not** exist (405) — verify via `GET /api/wardrobe`.
 - **Webapp rebuild required** when `app/` changes (code is baked into the image):
   `docker compose up -d --build webapp`. `data/` is bind-mounted (survives rebuilds).
-- **VS Code occupies ports** 28082/28188/28189 on 202 — use 28085 (webapp) / 28190
-  (comfyui) on that host.
+- **VS Code occupies ports** 28082/28188/28189 on 202 — the webapp uses 28085
+  (on 187) and the Qwen renderer uses 8188 (on 202).
 
 ---
 
 ## 7. What's next (roadmap, prioritized)
 
+> What **you** (the user) can do to make the app better — feedback, ratings,
+> profile + garment data, base photos, de-backgrounding the real wardrobes — is
+> in **`docs/next-steps-2026-09-23.md`**. This section is what's next in the
+> *code*.
+
 ### Near term — polish that makes it genuinely useful
-1. **rembg background removal** for flat-lay garment images so CatVTON gets a clean
-   cutout (currently background bleed lowers quality). `rembg` or a ComfyUI
-   segment-anything node.
+1. ✅ **DONE** — garment background removal (`<gid>.clean.png`, garment on plain
+   white) so the renderer sees the garment, not the flat-lay backdrop.
 2. **Webcam → try-on polish**: downscale ≤1024px, retry button, iPhone camera-permission
    UX.
 3. **Suitability on upload** — run image-quality when a base photo is uploaded and warn
    *before* saving; add a one-tap "delete low-quality base" in Account ("no point in
    using them").
-4. **Whole-look try-on in one pass** — today we chain top→bottom sequentially; render a
-   full look in a single CatVTON workflow for speed and fewer artifacts.
+4. ✅ **DONE** — whole-look try-on in one pass. Qwen takes every garment as a
+   reference, so there is no sequential chain for ≤2 garments and a short
+   lowers-then-uppers schedule for 3+.
 5. **parse-link browser fallback** — for Akamai/JS-heavy retailers (Abercrombie): when
    the server fetch fails, fall back to a headless/Playwright fetch inside the webapp so
    "Fetch details" works for any store.
+6. **More refine presets** — the Refine box takes free text today; a few one-tap
+   chips ("warmer light", "full-body shot", "walking pose") would make it
+   discoverable.
 
 ### Phase 3 — LLM stylist
-6. **Ollama (Qwen2.5 3B / Gemma 3 4B)** concurrent with CatVTON (~11.5GB total);
-   `/api/chat` explains the pick in natural language.
+7. **DeepSeek API** for `/api/chat` (zero VRAM — see `docs/architecture.md` #22);
+   the pick is already explained by the deterministic digest.
 
 ### Phase 4 — product-ish
-7. **Auto-tagging**: infer color/material/category from the garment image.
-8. **Daily digest** ("wear this today" from weather + occasion) — Alta's daily outfit.
-9. **Person profiles**: name multiple base photos (e.g. Sam) and try looks per person.
-10. **OIDC/SSO** (Authelia/Keycloak) — swap boundary already exists
+8. **Auto-tagging**: infer color/material/category from the garment image.
+9. **Daily digest** ("wear this today" from weather + occasion) — Alta's daily outfit.
+10. **Person profiles**: name multiple base photos (e.g. Sam) and try looks per person.
+11. **OIDC/SSO** (Authelia/Keycloak) — swap boundary already exists
     (`auth.get_user_by_token`).
 
 ### Phase 5 — migration & hardening
-11. Migrate to the target GPU box (`scripts/migrate-to-target.sh`) + smoke test.
-12. **PWA / Add to Home Screen** for iPhone (standalone, icon, webcam permissions) —
+12. Migrate to the target GPU box (`scripts/migrate-to-target.sh`) + smoke test.
+13. **PWA / Add to Home Screen** for iPhone (standalone, icon, webcam permissions) —
     most usage is on a phone.
-13. **Renderer upgrade path** when wanted: IDM-VTON (solo 16GB "quality mode") →
-    FLUX.1-Kontext (GGUF ~12–16GB).
+14. **Decide on the vestigial engines** — SVD motion clips (~9 GB of weights on
+    202) and InstructPix2Pix (~7 GB) are both still installed and code-referenced
+    but no longer reachable from the UI. Delete, or re-expose.
 
 ### Layout
 14. Tablet breakpoint (~641–1024px) for the photo grid; verify landscape iPhone.

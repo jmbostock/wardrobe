@@ -2,7 +2,7 @@
 """Backfill responsive WebP variants (thumb + detail) for existing images.
 
 Run inside the webapp container so it sees the same DATA_DIR/config:
-    docker exec -w /app -e PYTHONPATH=/app altacloset-webapp python /tmp/backfill_thumbs.py
+    docker exec -w /app -e PYTHONPATH=/app cluelesscloset-webapp python /tmp/backfill_thumbs.py
 
 Covers:
   - garment originals   data/wardrobe/<uid>/<gid>.*        -> <gid>.thumb.webp / .detail.webp

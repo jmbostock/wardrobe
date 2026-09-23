@@ -12,6 +12,8 @@ from typing import Any
 
 from PIL import Image, ImageFilter, ImageOps, ImageStat
 
+from . import chromakey
+
 PERSON_MIN_PX = 400       # smaller → "low resolution"
 PERSON_IDEAL_PX = 768
 DARK = 42
@@ -200,6 +202,12 @@ def suitability(data: bytes, category: str | None = None) -> dict[str, Any]:
             score += 5
             if score >= 70:
                 reason = "Good full-body framing for a bottom/dress"
+    # A green-screen base is ideal: the background is uniform and the render
+    # gets a clean backdrop. Reward it so the base picker prefers these over a
+    # busy background.
+    if chromakey.is_green_screen(img):
+        score += 8
+        reason = "Clean green-screen background — ideal try-on base"
     score = max(0, min(100, score))
     return {"score": score, "grade": _grade(score), "reason": reason,
             "size": [w, h], "ratio": round(ratio, 3)}

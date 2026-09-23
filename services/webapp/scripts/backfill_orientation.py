@@ -7,7 +7,7 @@ into a landscape frame — e.g. #119/#122/#124 were turned 1024x768 and must go
 back to portrait. It also re-encodes every image and refreshes phash/color_sig.
 
 Run INSIDE the webapp container (has app deps + /data):
-    docker exec -w /app -e PYTHONPATH=/app altacloset-webapp \
+    docker exec -w /app -e PYTHONPATH=/app cluelesscloset-webapp \
         python /tmp/backfill_orientation.py
 """
 from __future__ import annotations

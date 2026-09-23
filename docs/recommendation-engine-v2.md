@@ -433,9 +433,9 @@ Only ship a layer when its eval beats the baseline on the user's own data.
 |---|---|---|
 | **FashionCLIP 2.0** | `patrickjohncyh/fashion-clip` (HF + `pip install fashion-clip`) | embeddings, style centroid, text retrieval, visual dup, style-compat |
 | **implicit** (ALS/BPR/LMF) | `benfred/implicit` | collaborative learning, `partial_fit` for new batches, `explain()` |
-| **rembg** | `danielgatis/rembg` | background removal for flat-lays (better CatVTON + embeddings) |
+| **rembg** | `danielgatis/rembg` | background removal for flat-lays (cleaner garment references + embeddings) |
 | Vision tag-read | existing llama.cpp Qwen2.5-VL service (187) | metadata extraction (extend prompt) |
-| Rule scorer + dHash + image-quality | existing altacloset code | baseline, explainability, QC |
+| Rule scorer + dHash + image-quality | existing cluelesscloset code | baseline, explainability, QC |
 
 ### Skip (not worth it at this scale)
 | Candidate | Why skip |

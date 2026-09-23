@@ -6,15 +6,22 @@ onto a **photo of a person** (stored image, upload, or live webcam), à la Alta 
 
 - Test host: `10.0.1.202` (RTX 5060 Ti 16GB) — then migrates to a second box with the same GPU.
 - Everything runs in Docker; all config via `.env`.
-- **Live:** `http://10.0.1.202:28085` (webapp) · ComfyUI try-on on `127.0.0.1:28190`.
+- **Live:** `http://10.0.1.187:28085` (webapp) · Qwen-Image-2.1 renderer on
+  `10.0.1.202:8188` (not managed by this compose file — see `docs/tryon-pipeline.md`).
 
-## Current status (2026-08-22)
+## Current status (2026-09-23)
 
 - ✅ Phase 1 (email accounts, weather, rule-based recommender, wardrobe)
-- ✅ Phase 2 (CatVTON try-on via ComfyUI, GPU) — working end-to-end
+- ✅ Phase 2 try-on — **Qwen-Image-2.1 image-edit**, running on its own ComfyUI
+  instance. Replaced the CatVTON + IDM-VTON stack, which was removed entirely
+  (~33 GB of weights reclaimed) because it lost garment colour, sleeve length and
+  print detail and needed mask/face-restore/colour-match repairs to compensate.
+- ✅ **Refine this outfit** — a written instruction on any saved outfit
+  ("turn her to the side", "make the top long-sleeved") re-renders it and saves
+  the result as a NEW outfit, leaving the original untouched.
 - ✅ Phase 4 polish: wardrobe **detail card**, saved outfits, **image-quality /
-  base-suitability chips**, **SVD motion clips**, **auto-saved outfits**,
-  uniform spacing + **iPhone-first** UI
+  base-suitability chips**, **auto-saved outfits**, uniform spacing +
+  **iPhone-first** UI
 - ✅ **Auto-pick the best saved photo per garment** (v0.13.0): the try-on base
   photo is chosen by outfit match with the garment being tried on (Ollama vision
   `qwen2.5vl:3b`, pure-PIL fallback)
@@ -79,7 +86,7 @@ production). The whole feature refuses to run unless `DEV_ADMIN_ENABLED=1`.
 | Webapp | FastAPI (`services/webapp`) |
 | Auth | Local accounts (PBKDF2 + bearer sessions), per-user isolation |
 | Recommender | Rule-based scoring engine (CPU) → LLM garnish later |
-| Try-on | ComfyUI + CatVTON (GPU, <8GB VRAM) |
+| Try-on | Qwen-Image-2.1 image-edit (GPU, own ComfyUI instance on 202:8188) |
 | LLM (phase 3) | Ollama + Qwen2.5 3B / Gemma 3 4B; `qwen2.5vl:3b` vision for AI tag-read + photo auto-pick |
 | Weather | Open-Meteo (no key) with Home Assistant override |
 

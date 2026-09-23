@@ -8,7 +8,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-os.environ.setdefault("DATA_DIR", tempfile.mkdtemp(prefix="altacloset-photos-test-"))
+os.environ.setdefault("DATA_DIR", tempfile.mkdtemp(prefix="cluelesscloset-photos-test-"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app import auth, photos  # noqa: E402

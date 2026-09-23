@@ -1,5 +1,10 @@
 # Clueless Closet — Architecture & Performance Review (2026-08-24)
 
+> ⚠️ **HISTORICAL.** Its VRAM / renderer analysis assumes the CatVTON + SVD
+> stack, both of which changed. CatVTON was **removed 2026-09-23** (see
+> `docs/tryon-pipeline.md`); SVD clips are no longer offered in the UI. The
+> recommender + data-layer findings may still be current.
+
 Full review of the recommendation pipeline, data layer, and the reported UI
 slowness. Includes: (1) verdict on the previous LLM's review, (2) measured
 baseline, (3) the real root causes of perceived slowness, (4) your two specific

@@ -4,7 +4,7 @@
 <section id="view-tryon">
   <div class="card">
     <h2>Try it on</h2>
-    <p class="muted">Put a garment on a photo of you — use a saved photo or upload one. (Requires ComfyUI + CatVTON running.)</p>
+    <p class="muted">Put a garment on a photo of you — use a saved photo or upload one. (Requires the Qwen-Image-2.1 renderer — set <code>QWEN_COMFYUI_URL</code>.)</p>
     <div class="block">
       <label>Person photo source</label>
       <div class="row">
@@ -84,11 +84,10 @@
       <div id="garment-qa" hidden></div>
     </div>
     <div id="result" style="margin-top:12px"></div>
-    <div id="clip-row" hidden style="margin-top:10px">
-      <button id="tryon-clip" class="ghost">✨ Make a 3s clip</button>
-      <span class="muted" id="clip-status"></span>
-      <div id="clip-box" style="margin-top:10px"></div>
-    </div>
+    <!-- Motion clips (SVD) are deliberately NOT wired to the UI — the feature is
+         on hold pending a decision. The backend is still installed and working
+         (svd.py/clips.py, POST /api/tryon/clip, workflows/svd.json, the weights),
+         so re-enabling it means adding the control back here — nothing else. -->
     <div id="compare" class="compare" hidden>
       <figure id="compare-base-fig"><img id="compare-base" alt="original" /><figcaption class="muted">original</figcaption></figure>
       <figure id="compare-new-fig" hidden><img id="compare-new" alt="latest" /><figcaption class="muted">latest</figcaption></figure>

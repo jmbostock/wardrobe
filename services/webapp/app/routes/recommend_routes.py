@@ -76,19 +76,24 @@ def recommend_outfit(req: RecommendRequest, user: dict = Depends(get_current_use
 
 class RecommendFeedbackIn(BaseModel):
     outfit: dict = {}
-    kind: str = "liked"           # liked | disliked
+    kind: str | None = "liked"    # liked | disliked | null (null = clear/toggle-off)
     activity: str = "casual"
     prompt: str | None = None
     reason: str | None = Field(None, description="style reason for a thumbs-down")
+    clear: bool = False           # true = toggle the current thumbs OFF
 
 
 @router.post("/api/recommend/feedback")
 def recommend_feedback(req: RecommendFeedbackIn, user: dict = Depends(get_current_user)) -> dict:
     """Thumbs-up/down from the chat recommendation bubble → logs liked/disliked
     for every garment in the outfit (with the activity context) so the engine
-    learns what works for each occasion."""
-    if req.kind not in ("liked", "disliked"):
-        raise HTTPException(400, "kind must be 'liked' or 'disliked'")
+    learns what works for each occasion.
+
+    Only ONE value is kept per garment: toggling the same thumb off (`clear`)
+    or switching liked↔disliked REPLACES the prior chat feedback instead of
+    appending, so the backend never stacks duplicate rows."""
+    if req.kind not in ("liked", "disliked", None):
+        raise HTTPException(400, "kind must be 'liked', 'disliked', or null")
     ids: list[int] = []
     for slot in ("top", "bottom", "outerwear", "footwear"):
         g = req.outfit.get(slot)
@@ -97,20 +102,24 @@ def recommend_feedback(req: RecommendFeedbackIn, user: dict = Depends(get_curren
     for g in req.outfit.get("accessories") or []:
         if g and g.get("id"):
             ids.append(int(g["id"]))
-    if ids:
-        interactions.log_many(user["id"], ids, req.kind,
-                              {"source": "chat", "activity": req.activity,
-                               "prompt": req.prompt or "", "reason": req.reason})
-        # A labeled thumbs-down is a STYLE signal: learn it into the taste profile
-        # (color-to-avoid / pattern guardrail) — never a temperature one.
-        if req.reason:
-            for slot in ("top", "bottom", "outerwear", "footwear"):
-                g = req.outfit.get(slot)
-                if g and g.get("id"):
-                    profile.learn_feedback_style(user["id"], g, req.kind, req.reason)
-            for g in req.outfit.get("accessories") or []:
-                if g and g.get("id"):
-                    profile.learn_feedback_style(user["id"], g, req.kind, req.reason)
+    context = {"source": "chat", "activity": req.activity,
+               "prompt": req.prompt or "", "reason": req.reason,
+               "clear": req.clear}
+    # toggled OFF → clear any chat thumbs for these garments (no duplicate kept)
+    if req.clear or req.kind is None:
+        interactions.set_chat_feedback(user["id"], ids, None, context)
+        return {"ok": True, "logged": 0, "kind": None, "cleared": True}
+    interactions.set_chat_feedback(user["id"], ids, req.kind, context)
+    # A labeled thumbs-down is a STYLE signal: learn it into the taste profile
+    # (color-to-avoid / pattern guardrail) — never a temperature one.
+    if req.reason:
+        for slot in ("top", "bottom", "outerwear", "footwear"):
+            g = req.outfit.get(slot)
+            if g and g.get("id"):
+                profile.learn_feedback_style(user["id"], g, req.kind, req.reason)
+        for g in req.outfit.get("accessories") or []:
+            if g and g.get("id"):
+                profile.learn_feedback_style(user["id"], g, req.kind, req.reason)
     return {"ok": True, "logged": len(ids), "kind": req.kind}
 
 

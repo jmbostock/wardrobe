@@ -11,9 +11,9 @@ from the now-upright image so labels match what you see.
 Runs inside the webapp container (has the app code + vision config), on the
 host that owns the data — currently 187:
 
-  docker exec -i altacloset-webapp python - < scripts/fix_orientation.py \
+  docker exec -i cluelesscloset-webapp python - < scripts/fix_orientation.py \
       --email mazarrag@gmail.com --dry-run      # preview only
-  docker exec -i altacloset-webapp python - < scripts/fix_orientation.py \
+  docker exec -i cluelesscloset-webapp python - < scripts/fix_orientation.py \
       --email mazarrag@gmail.com                # apply
 
 Flags:

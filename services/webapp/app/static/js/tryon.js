@@ -1,16 +1,16 @@
 // tryon page — look builder, try-on render, and chat-based re-render.
 const TRYON_STAGES = [
   ['Uploading photo…', 'sending your photo to the renderer'],
-  ['Detecting body (DensePose)…', 'locating pose & body parts on the GPU'],
-  ['Building mask (SCHP)…', 'parsing clothing regions'],
-  ['Rendering garment (CatVTON)…', 'diffusion step — this takes the longest'],
+  ['Reading your photo and the garments…', 'Qwen3-VL vision encoder'],
+  ['Rendering the outfit (Qwen-Image-2.1)…', 'diffusion step — this takes the longest'],
   ['Finalizing…', 'writing the result image'],
 ];
 let tryonInt = null;
 let lastResultUrl = null;   // last render URL (used as the chat base)
 let lastResultLook = null;  // JSON of the garment ids that produced lastResultUrl
 let lastIds = [];           // garment ids of the last render
-let lastOutfitId = null;    // auto-saved outfit id for the last render
+let lastOutfitId = null;    // auto-saved outfit id for the last render (currently
+                            // only tracked — the clip control that used it is unwired)
 let savedPhotos = [];       // cached /api/photos (saved-photo source for look-based try-on)
 let savedOutfits = [];      // cached /api/outfits that have a render (Saved-image source)
 let selectedSaved = null;   // the chosen saved outfit render
@@ -222,54 +222,12 @@ $('tryon-reset').addEventListener('click', () => {
   autoPickBestPhoto();
 });
 
-// ---------- SVD motion clip (async, queued in ComfyUI) ----------
-async function submitClip() {
-  const btn = $('tryon-clip');
-  const status = $('clip-status');
-  if (!lastResultUrl) { toast('render a look first'); return; }
-  if (!lastOutfitId) { toast('no auto-saved outfit to attach the clip to'); return; }
-  btn.disabled = true;
-  status.textContent = 'queuing…';
-  $('clip-box').innerHTML = '';
-  let clipId = null;
-  try {
-    const fd = new FormData();
-    fd.append('base_result', lastResultUrl);
-    fd.append('outfit_id', String(lastOutfitId));
-    const start = await apiJson('/api/tryon/clip', { method: 'POST', body: fd });
-    clipId = start.clip_id;
-    status.textContent = 'queued — it runs in the background, feel free to keep going';
-  } catch (e) {
-    status.textContent = 'clip failed: ' + e.message; btn.disabled = false; return;
-  }
-  const started = Date.now();
-  const timer = setInterval(async () => {
-    try {
-      const st = await apiJson('/api/clips/' + clipId);
-      const secs = Math.round((Date.now() - started) / 1000);
-      if (st.status === 'done') {
-        clearInterval(timer);
-        btn.disabled = false;
-        status.textContent = 'clip ready — ' + secs + 's';
-        const url = await authImageUrl(st.result_url + '?size=detail');
-        const box = $('clip-box');
-        box.innerHTML = '';
-        const img = document.createElement('img'); img.src = url; img.alt = 'motion clip';
-        box.appendChild(img);
-        loadSavedImages();
-      } else if (st.status === 'error') {
-        clearInterval(timer); btn.disabled = false;
-        status.textContent = 'clip failed: ' + (st.error || 'unknown');
-      } else {
-        status.textContent = 'rendering clip… ' + secs + 's (runs in the background)';
-      }
-    } catch (e) {
-      clearInterval(timer); btn.disabled = false;
-      status.textContent = 'clip error: ' + e.message;
-    }
-  }, 3000);
-}
-$('tryon-clip').addEventListener('click', submitClip);
+// ---------- SVD motion clip: NOT WIRED (deliberate, 2026-09-23) ----------
+// The "Make a 3s clip" control was removed from this page — the motion feature
+// is on hold. svd.py / clips.py / POST /api/tryon/clip are all still present and
+// functional, and any clip already rendered stays in the DB + on disk, so this
+// can be re-enabled with a button and a submitClip() again. Do not "fix" the
+// apparent dead code here without asking.
 
 // ---------- person source ----------
 document.querySelectorAll('input[name=psrc]').forEach((r) => r.addEventListener('change', () => {
@@ -524,12 +482,8 @@ async function runTryon(ids, baseResult, prompt) {
     else hideCompare();
     // show the "coming soon" edit teaser under the result
     $('chat-bar').hidden = false;
-    // offer an SVD motion clip for look-based renders (auto-saved outfit)
+    // look-based renders are auto-saved to Outfits (see the outfits page)
     if (data.outfit_id && ids.length) {
-      $('clip-row').hidden = false;
-      $('clip-box').innerHTML = '';
-      $('clip-status').textContent = '';
-      $('tryon-clip').disabled = false;
       $('look-status').textContent = 'saved to Outfits';
       loadSavedImages();
     }

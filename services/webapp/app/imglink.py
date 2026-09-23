@@ -81,7 +81,7 @@ def _looks_like_logo(url: str) -> bool:
 
 # Target long edge for garment images. Store CDNs (Gap Inc et al.) serve a tiny
 # thumbnail when the URL has width/wid/w=N (e.g. ?width=92) — rewriting it up
-# gives CatVTON real fabric detail instead of a mushy low-res blob.
+# gives the renderer real fabric detail instead of a mushy low-res blob.
 TARGET_IMAGE_WIDTH = 1024
 
 # Pure tracking/fingerprint noise in image URLs — safe to drop.

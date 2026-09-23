@@ -12,7 +12,7 @@ afterwards 187). Point VISION_ENGINE/VISION_URL at the llama.cpp vision server.
 
 Usage:
   VISION_ENGINE=llamacpp VISION_URL=http://127.0.0.1:28117 \
-  DATA_DIR=$HOME/altacloset/data \
+  DATA_DIR=$HOME/cluelesscloset/data \
   /usr/bin/python3 scripts/ingest_batch.py /path/to/photos --email mazarrag@gmail.com
   # --dry-run: validate + tag-read only (no DB writes)
   # --no-ai: skip the vision tag-read (pixel-color + filename only)

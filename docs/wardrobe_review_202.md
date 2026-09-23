@@ -1,8 +1,12 @@
 # Wardrobe Project — Architectural & Efficiency Review (Host 202)
 
+> ⚠️ **HISTORICAL.** Contains CatVTON-era VRAM advice that no longer applies —
+> CatVTON and IDM-VTON were **removed 2026-09-23** and replaced by
+> Qwen-Image-2.1 image-edit (`docs/tryon-pipeline.md`).
+
 **Target Hardware:** Single NVIDIA GPU with **16GB VRAM** (RTX 5060 Ti 16GB baseline)  
 **Target Performance:** Near real-time user experience (< 5–10s total end-to-end response for interactive flows)  
-**Evaluated Version:** v0.14.0 (`altacloset`)
+**Evaluated Version:** v0.14.0 (`cluelesscloset`)
 
 > **Status update (2026-08-23):** 
 > 1. **Orientation**: Replaced model-based 90° orientation with deterministic portrait normalization (`media.normalize_orientation`) + 2-call 0°/180° tag reader check.
@@ -14,7 +18,7 @@
 
 ## 1. Executive Summary & Verdict
 
-The `altacloset` project provides a rich virtual wardrobe experience with solid foundational choices (e.g., CatVTON for garment try-on, rule-based recommendation, pure-PIL image quality checks). 
+The `cluelesscloset` project provides a rich virtual wardrobe experience with solid foundational choices (e.g., CatVTON for garment try-on, rule-based recommendation, pure-PIL image quality checks). 
 
 However, **the current model pipeline suffers from VRAM contention, model swapping, and unnecessary multi-call VLM latency**, preventing it from operating in near real-time on a 16GB VRAM card.
 

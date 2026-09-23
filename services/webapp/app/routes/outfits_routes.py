@@ -1,12 +1,15 @@
-"""Saved-outfit endpoints — list, save, update (name/rating), delete."""
+"""Saved-outfit endpoints — list, save, update (name/rating), refine, delete."""
 from __future__ import annotations
+
+import time
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from ..deps import get_current_user
-from .. import interactions
-from ..media import garment_dict
+from .. import interactions, tryon
+from ..media import UPLOAD_DIR, garment_dict
 from ..store import outfits, wardrobe
 
 router = APIRouter()
@@ -21,6 +24,10 @@ class OutfitSave(BaseModel):
 class OutfitUpdate(BaseModel):
     name: str | None = Field(None, min_length=1, max_length=120)
     rating: int | None = Field(None, ge=0, le=10)
+
+
+class OutfitRefine(BaseModel):
+    prompt: str = Field(..., min_length=2, max_length=300)
 
 
 @router.get("/api/outfits")
@@ -78,3 +85,51 @@ def delete_outfit(outfit_id: int, user: dict = Depends(get_current_user)) -> dic
     if not outfits.delete(user["id"], outfit_id):
         raise HTTPException(404, "outfit not found")
     return {"ok": True}
+
+
+@router.post("/api/outfits/{outfit_id}/refine")
+async def refine_outfit(
+    outfit_id: int, req: OutfitRefine, user: dict = Depends(get_current_user)
+) -> dict:
+    """Re-render a saved outfit from a free-text instruction — restyle the
+    clothes, change the pose, adjust the light. Runs on Qwen-Image-2.1
+    (tryon.refine_render), the same renderer the Try-on page uses.
+
+    NOTHING IS OVERWRITTEN. The original outfit keeps its render and the
+    refined version is saved as a NEW outfit carrying the same garments, so the
+    two sit side by side on the Outfits page and can be compared or refined
+    again. (Standing rule: renders are permanent artifacts — only ever create.)
+
+    Synchronous from the client's point of view: one edit pass takes ~60-120s,
+    so the button shows progress and the request just waits."""
+    o = outfits.get(user["id"], outfit_id)
+    if o is None:
+        raise HTTPException(404, "outfit not found")
+    if not o.get("result_url"):
+        raise HTTPException(400, "this outfit has no render to refine yet")
+    # owner-only, path-traversal safe — same rule as the result-serving route
+    src = UPLOAD_DIR / str(user["id"]) / "out" / Path(o["result_url"]).name
+    if not src.is_file():
+        raise HTTPException(404, "the render file for this outfit is missing")
+    prompt = (req.prompt or "").strip()[:300]
+    if not prompt:
+        raise HTTPException(400, "describe the change you want")
+    try:
+        rendered = await tryon.refine_render(src.read_bytes(), prompt)
+    except tryon.ComfyUnavailable as ex:
+        raise HTTPException(503, str(ex)) from ex
+
+    out_dir = UPLOAD_DIR / str(user["id"]) / "out"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_name = f"tryon_refine_{outfit_id}_{int(time.time())}.png"
+    (out_dir / out_name).write_bytes(rendered)
+    result_url = f"/api/uploads/{out_name}"
+
+    fresh = outfits.create(
+        user["id"], f"{o['name']} — refined"[:120], list(o["garment_ids"]),
+        result_url=result_url,
+        person_photo_id=o.get("person_photo_id") or 0,
+        person_url=o.get("person_url") or "",
+    )
+    return {"outfit": fresh, "from_outfit_id": outfit_id,
+            "result_url": result_url, "prompt": prompt}
